@@ -36,13 +36,6 @@
                             <i class="bi bi-box"></i> Products
                         </a>
                     </li>
-                    {% if is_admin %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('user_list') }}">
-                            <i class="bi bi-people-fill"></i> Users
-                        </a>
-                    </li>
-                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pi_create') }}">
                             <i class="bi bi-plus-circle"></i> New PI
@@ -69,6 +62,7 @@
                         <li><span class="dropdown-item-text small text-muted">{{ current_user.salesperson_name or 'Administrator' }}</span></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> My Profile</a></li>
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('user_list') }}"><i class="bi bi-people-fill"></i> Users</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> Salespersons</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
