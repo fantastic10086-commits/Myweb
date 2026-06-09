@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+        <p class="text-muted">Welcome to the PI Management System — {{ company.name }}</p>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row g-4 mb-5">
+    <div class="col-md-4">
+        <div class="card border-primary h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-people display-4 text-primary"></i>
+                <h3 class="mt-2">{{ customer_count }}</h3>
+                <p class="text-muted mb-0">Total Customers</p>
+                <a href="{{ url_for('customer_list') }}" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-success h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-box display-4 text-success"></i>
+                <h3 class="mt-2">{{ product_count }}</h3>
+                <p class="text-muted mb-0">Total Products</p>
+                <a href="{{ url_for('product_list') }}" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-info h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-files display-4 text-info"></i>
+                <h3 class="mt-2">{{ pi_count }}</h3>
+                <p class="text-muted mb-0">Total PIs Generated</p>
+                <a href="{{ url_for('pi_list') }}" class="stretched-link"></a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col">
+        <h4>Quick Actions</h4>
+    </div>
+</div>
+<div class="row g-3 mb-5">
+    <div class="col-md-4">
+        <a href="{{ url_for('customer_add') }}" class="btn btn-outline-primary w-100 py-3">
+            <i class="bi bi-person-plus me-2"></i>Add New Customer
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="{{ url_for('product_add') }}" class="btn btn-outline-success w-100 py-3">
+            <i class="bi bi-plus-square me-2"></i>Add New Product
+        </a>
+    </div>
+    <div class="col-md-4">
+        <a href="{{ url_for('pi_create') }}" class="btn btn-outline-info w-100 py-3">
+            <i class="bi bi-file-earmark-plus me-2"></i>Create New PI
+        </a>
+    </div>
+</div>
+
+<!-- Recent PIs -->
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Recent Proforma Invoices</h5>
+                <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_pis %}
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>PI Number</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th class="text-end">Total (USD)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for pi in recent_pis %}
+                        <tr>
+                            <td><strong>{{ pi.pi_number }}</strong></td>
+                            <td>{{ pi.customer.name }}</td>
+                            <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                            <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
+                                <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-success">PDF</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox display-3"></i>
+                    <p class="mt-2">No PIs generated yet. <a href="{{ url_for('pi_create') }}">Create your first PI</a>.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">PI Preview</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
+    </div></div>
+</div>
+<script>
+function previewPI(id) {
+    var modal = new bootstrap.Modal(document.getElementById('piPreviewModal'));
+    modal.show();
+    document.getElementById('piPreviewBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
+        document.getElementById('piPreviewBody').innerHTML = html;
+    });
+}
+</script>
+{% endblock %}

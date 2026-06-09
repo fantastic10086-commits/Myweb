@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit{% else %}Add{% endif %} Salesperson{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>
+            {% if editing %}Edit Salesperson{% else %}Add New Salesperson{% endif %}
+        </h2>
+        <a href="{{ url_for('salesperson_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required
+                           value="{{ sp.name if sp else '' }}" placeholder="Salesperson name">
+                </div>
+                <div class="col-md-6">
+                    <label for="phone" class="form-label">Phone</label>
+                    <input type="text" class="form-control" id="phone" name="phone"
+                           value="{{ sp.phone if sp else '' }}" placeholder="+86 138xxxx">
+                </div>
+                <div class="col-md-6">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" class="form-control" id="email" name="email"
+                           value="{{ sp.email if sp else '' }}" placeholder="email@example.com">
+                </div>
+                <div class="col-md-6">
+                    <label for="notes" class="form-label">Notes</label>
+                    <input type="text" class="form-control" id="notes" name="notes"
+                           value="{{ sp.notes if sp else '' }}" placeholder="Optional notes">
+                </div>
+            </div>
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %}
+                </button>
+                <a href="{{ url_for('salesperson_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

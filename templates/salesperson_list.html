@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Salespersons{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+        <h2><i class="bi bi-person-badge me-2"></i>Salespersons</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{{ url_for('salesperson_add') }}" class="btn btn-primary">
+            <i class="bi bi-person-plus"></i> Add Salesperson
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if salespersons %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Notes</th>
+                        <th>Created</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sp in salespersons %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td><strong><a href="{{ url_for('pi_list', salesperson=sp.name) }}" class="text-decoration-none">{{ sp.name }}</a></strong></td>
+                        <td>{{ sp.phone or '-' }}</td>
+                        <td>{{ sp.email or '-' }}</td>
+                        <td>{{ sp.notes or '-' }}</td>
+                        <td><small class="text-muted">{{ sp.created_at.strftime('%Y-%m-%d') if sp.created_at else '-' }}</small></td>
+                        <td class="text-end">
+                            <a href="{{ url_for('salesperson_edit', id=sp.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                            <form action="{{ url_for('salesperson_delete', id=sp.id) }}" method="post" class="d-inline"
+                                  onsubmit="return confirm('Delete salesperson {{ sp.name }}?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-person-badge display-3"></i>
+            <p class="mt-2">No salespersons yet. <a href="{{ url_for('salesperson_add') }}">Add one now</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

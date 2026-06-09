@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit{% else %}Add{% endif %} Customer{% endblock %}
+
+{% block content %}
+{% include 'countries.html' %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>
+            {% if editing %}Edit Customer{% else %}Add New Customer{% endif %}
+        </h2>
+        <a href="{{ url_for('customer_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Customers
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="name" class="form-label">Customer Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required
+                           value="{{ customer.name if customer else '' }}" placeholder="Company / Customer Name">
+                </div>
+                <div class="col-md-6">
+                    <label for="country" class="form-label">Country</label>
+                    <input type="text" class="form-control" id="country" name="country" list="country_list" autocomplete="off"
+                           value="{{ customer.country if customer else '' }}" placeholder="Type Chinese or English...">
+                </div>
+                <div class="col-md-6">
+                    <label for="contact_person" class="form-label">Contact Person</label>
+                    <input type="text" class="form-control" id="contact_person" name="contact_person"
+                           value="{{ customer.contact_person if customer else '' }}" placeholder="Contact name">
+                </div>
+                <div class="col-md-6">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" class="form-control" id="email" name="email"
+                           value="{{ customer.email if customer else '' }}" placeholder="email@example.com">
+                </div>
+                <div class="col-md-6">
+                    <label for="phone" class="form-label">Phone</label>
+                    <input type="text" class="form-control" id="phone" name="phone"
+                           value="{{ customer.phone if customer else '' }}" placeholder="+1-xxx-xxx-xxxx">
+                </div>
+                <div class="col-md-6">
+                    <label for="salesperson" class="form-label">Salesperson</label>
+                    <select class="form-select" id="salesperson" name="salesperson">
+                        <option value="">— Select —</option>
+                        {% for sp in all_salespersons %}
+                        <option value="{{ sp.name }}" {% if customer and customer.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="address" class="form-label">Address</label>
+                    <textarea class="form-control" id="address" name="address" rows="2"
+                              placeholder="Full address">{{ customer.address if customer else '' }}</textarea>
+                </div>
+                <div class="col-12">
+                    <label for="notes" class="form-label">Notes</label>
+                    <textarea class="form-control" id="notes" name="notes" rows="2"
+                              placeholder="Any additional notes...">{{ customer.notes if customer else '' }}</textarea>
+                </div>
+            </div>
+            {% if editing and customer and customer.created_at %}
+            <div class="row mt-3">
+                <div class="col-12">
+                    <small class="text-muted">
+                        <i class="bi bi-clock"></i> Customer created: {{ customer.created_at.strftime('%Y-%m-%d %H:%M') }}
+                    </small>
+                </div>
+            </div>
+            {% endif %}
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %} Customer
+                </button>
+                <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

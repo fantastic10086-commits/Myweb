@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Customers{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+        <h2><i class="bi bi-people me-2"></i>Customers</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{{ url_for('customer_add') }}" class="btn btn-primary">
+            <i class="bi bi-person-plus"></i> Add Customer
+        </a>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="row mb-3">
+    <div class="col">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="search" class="form-control" placeholder="Search by name, country, contact, email..." value="{{ search }}">
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
+            {% if search %}
+            <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if customers %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Country</th>
+                        <th>Contact</th>
+                        <th>Salesperson</th>
+                        <th>Email</th>
+                        <th>Phone</th>
+                        <th>Created</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in customers %}
+                    <tr>
+                        <td><strong><a href="{{ url_for('customer_detail', id=c.id) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
+                        <td>{{ c.country }}</td>
+                        <td>{{ c.contact_person }}</td>
+                        <td>{{ c.salesperson }}</td>
+                        <td>{{ c.email }}</td>
+                        <td>{{ c.phone }}</td>
+                        <td><small class="text-muted">{{ c.created_at.strftime('%Y-%m-%d') if c.created_at else '-' }}</small></td>
+                        <td class="text-end">
+                            <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">New PI</a>
+                            <a href="{{ url_for('customer_edit', id=c.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                            <form action="{{ url_for('customer_delete', id=c.id) }}" method="post" class="d-inline"
+                                  onsubmit="return confirm('Delete customer {{ c.name }}? This will also delete all related PIs.');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-people display-3"></i>
+            <p class="mt-2">No customers found. <a href="{{ url_for('customer_add') }}">Add your first customer</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

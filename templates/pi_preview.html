@@ -1,0 +1,42 @@
+<div class="row mb-3">
+    <div class="col"><h5><i class="bi bi-file-text me-2"></i>{{ pi.pi_number }}</h5></div>
+    <div class="col text-end">
+        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-success"><i class="bi bi-download me-1"></i> PDF</a>{% endif %}
+        <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+    </div>
+</div>
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card"><div class="card-header"><h6 class="mb-0">PI Info</h6></div><div class="card-body">
+            <table class="table table-sm mb-0">
+                <tr><th>PI#</th><td>{{ pi.pi_number }}</td></tr>
+                <tr><th>Salesperson</th><td>{{ pi.salesperson or '-' }}</td></tr>
+                <tr><th>Date</th><td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td></tr>
+                <tr><th>Currency</th><td>{{ pi.currency or 'USD' }}</td></tr>
+                <tr><th>Total</th><td class="fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td></tr>
+                <tr><th>Terms</th><td>{{ pi.payment_terms or '-' }}</td></tr>
+                <tr><th>Bank</th><td style="white-space:pre-wrap;">{{ pi.bank_info or '-' }}</td></tr>
+            </table>
+        </div></div>
+    </div>
+    <div class="col-md-6">
+        <div class="card"><div class="card-header"><h6 class="mb-0">Customer</h6></div><div class="card-body">
+            {% set c = pi.customer %}
+            <table class="table table-sm mb-0">
+                <tr><th>Name</th><td><strong>{{ c.name }}</strong></td></tr>
+                <tr><th>Country</th><td>{{ c.country or '-' }}</td></tr>
+                <tr><th>Contact</th><td>{{ c.contact_person or '-' }}</td></tr>
+                <tr><th>Email</th><td>{{ c.email or '-' }}</td></tr>
+            </table>
+        </div></div>
+    </div>
+</div>
+<div class="card mt-3"><div class="card-header"><h6 class="mb-0">Items ({{ pi.items|length }})</h6></div>
+    {% if pi.items %}
+    <div class="table-responsive"><table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr><th>#</th><th>Product</th><th>Code</th><th class="text-end">Qty</th><th class="text-end">U.Price</th><th class="text-end">Amount</th></tr></thead>
+        <tbody>{% for item in pi.items %}<tr><td>{{ loop.index }}</td><td>{{ item.product.name if item.product else '-' }}{% if item.product and item.product.specification %}<br><small class="text-muted">{{ item.product.specification }}</small>{% endif %}</td><td>{{ item.product.product_code if item.product else '-' }}</td><td class="text-end">{{ item.quantity }}</td><td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.unit_price) }}</td><td class="text-end fw-bold">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.amount) }}</td></tr>{% endfor %}</tbody>
+        <tfoot><tr><th colspan="5" class="text-end">TOTAL:</th><th class="text-end text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</th></tr></tfoot>
+    </table></div>
+    {% else %}<div class="text-center py-3 text-muted">No items.</div>{% endif %}
+</div>

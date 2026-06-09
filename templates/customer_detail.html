@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}{{ customer.name }}{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+        <h2><i class="bi bi-person-badge me-2"></i>{{ customer.name }}</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{{ url_for('pi_create', customer_id=customer.id) }}" class="btn btn-info">
+            <i class="bi bi-file-earmark-plus"></i> New PI for {{ customer.name }}
+        </a>
+        <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Customer Info Card -->
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Customer Info</h5>
+                <a href="{{ url_for('customer_edit', id=customer.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm mb-0">
+                    <tr><th class="ps-0">Name</th><td class="pe-0">{{ customer.name }}</td></tr>
+                    <tr><th class="ps-0">Country</th><td class="pe-0">{{ customer.country or '-' }}</td></tr>
+                    <tr><th class="ps-0">Contact</th><td class="pe-0">{{ customer.contact_person or '-' }}</td></tr>
+                    <tr><th class="ps-0">Salesperson</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
+                    <tr><th class="ps-0">Email</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
+                    <tr><th class="ps-0">Phone</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>
+                    <tr><th class="ps-0">Created</th><td class="pe-0">{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td></tr>
+                    <tr><th class="ps-0">Address</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.address or '-' }}</td></tr>
+                    <tr><th class="ps-0">Notes</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.notes or '-' }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- PI History -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">PI History ({{ pis|length }})</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if pis %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>PI Number</th>
+                                <th>Date</th>
+                                <th>Items</th>
+                                <th class="text-end">Total (USD)</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for pi in pis %}
+                            <tr>
+                                <td><strong>{{ pi.pi_number }}</strong></td>
+                                <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                                <td>
+                                    <small>
+                                    {% for item in pi.items %}
+                                        {{ item.product.name if item.product else '-' }} ×{{ item.quantity }}{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                    </small>
+                                </td>
+                                <td class="text-end">${{ '%.2f'|format(pi.total_amount) }}</td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
+                                    {% if pi.pdf_path %}
+                                    <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i> PDF</a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5 text-muted">
+                    <i class="bi bi-inbox display-3"></i>
+                    <p class="mt-2">No PIs for this customer yet.</p>
+                    <a href="{{ url_for('pi_create', customer_id=customer.id) }}" class="btn btn-info">
+                        <i class="bi bi-plus-circle"></i> Create First PI
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">PI Preview</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
+    </div></div>
+</div>
+<script>
+function previewPI(id) {
+    var modal = new bootstrap.Modal(document.getElementById('piPreviewModal'));
+    modal.show();
+    document.getElementById('piPreviewBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+    fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
+        document.getElementById('piPreviewBody').innerHTML = html;
+    });
+}
+</script>
+{% endblock %}

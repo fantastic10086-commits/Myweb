@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Products{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+        <h2><i class="bi bi-box me-2"></i>Products</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{{ url_for('product_add') }}" class="btn btn-success">
+            <i class="bi bi-plus-square"></i> Add Product
+        </a>
+    </div>
+</div>
+
+<!-- Search -->
+<div class="row mb-3">
+    <div class="col">
+        <form method="get" class="d-flex gap-2">
+            <input type="text" name="search" class="form-control" placeholder="Search by name, code, specification..." value="{{ search }}">
+            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
+            {% if search %}
+            <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if products %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:60px;">Image</th>
+                        <th>Product Name</th>
+                        <th>Code</th>
+                        <th>Specification</th>
+                        <th class="text-end">Unit Price (USD)</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in products %}
+                    <tr>
+                        <td>{% if p.image %}<img src="{{ url_for('uploaded_file', filename=p.image) }}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td>{{ p.product_code }}</td>
+                        <td>{{ p.specification }}</td>
+                        <td class="text-end">${{ '%.2f'|format(p.unit_price) }}</td>
+                        <td class="text-end">
+                            <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                            <form action="{{ url_for('product_delete', id=p.id) }}" method="post" class="d-inline"
+                                  onsubmit="return confirm('Delete product {{ p.name }}?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-box display-3"></i>
+            <p class="mt-2">No products found. <a href="{{ url_for('product_add') }}">Add your first product</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

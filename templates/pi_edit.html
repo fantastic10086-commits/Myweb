@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Edit PI {{ pi.pi_number }}{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    var allProducts = [
+        {% for p in products %}
+        {id: {{ p.id }}, name: "{{ p.name|e }}", code: "{{ p.product_code|e }}", spec: "{{ p.specification|e }}", price: {{ p.unit_price }}, img: "{{ p.image|e }}"}{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+    var existingItems = {{ existing_items|tojson }};
+    var selectedProducts = {};
+    var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
+
+    function getSymbol() {
+        var cs = document.getElementById('currency_select');
+        return cs && cs.value === 'RMB' ? '¥' : '$';
+    }
+    function updateTotal() {
+        if (!totalDisplay || !totalInput) return;
+        var total = 0, sym = getSymbol();
+        var keys = Object.keys(selectedProducts);
+        for (var i = 0; i < keys.length; i++) { var p = selectedProducts[keys[i]]; total += (p.price || 0) * (p.qty || 0); }
+        totalDisplay.textContent = sym + total.toFixed(2); totalInput.value = total.toFixed(2);
+    }
+    function showHideEmpty() { noProductMsg.style.display = Object.keys(selectedProducts).length === 0 ? '' : 'none'; }
+
+    function imgTag(img) { return img ? '<img src="/uploads/' + img + '" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">' : ''; }
+    function makeRow(p) {
+        var tr = document.createElement('tr'); tr.id = 'product_row_' + p.id;
+        var sym = getSymbol();
+        tr.innerHTML =
+            '<td class="row-num"></td>' +
+            '<td>' + imgTag(p.img) + '<strong>' + p.name + '</strong>' + (p.spec ? '<br><small class="text-muted">' + p.spec + '</small>' : '') + '</td>' +
+            '<td>' + p.code + '</td>' +
+            '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="width:90px;"></td>' +
+            '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
+            '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
+            '<td><button type="button" class="btn btn-sm btn-outline-danger">&times;</button></td>' +
+            '<input type="hidden" name="selected_' + p.id + '" value="on">' +
+            '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
+            '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(2) + '">';
+        tr.querySelector('.sel-qty').addEventListener('input', function() {
+            var qty = parseInt(this.value) || 1; if (qty < 1) qty = 1;
+            var price = parseFloat(tr.querySelector('.sel-price').value) || 0;
+            selectedProducts[p.id].qty = qty;
+            tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
+            tr.querySelector('input[name="qty_' + p.id + '"]').value = qty; updateTotal();
+        });
+        tr.querySelector('.sel-price').addEventListener('input', function() {
+            var price = parseFloat(this.value) || 0;
+            var qty = parseInt(tr.querySelector('.sel-qty').value) || 1;
+            selectedProducts[p.id].price = price;
+            tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
+            tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2); updateTotal();
+        });
+        tr.querySelector('button').addEventListener('click', function() { delete selectedProducts[p.id]; tr.remove(); renumberRows(); showHideEmpty(); updateTotal(); });
+        return tr;
+    }
+    function renumberRows() { var rows = selectedTableBody.querySelectorAll('tr'); for (var i = 0; i < rows.length; i++) rows[i].querySelector('.row-num').textContent = i + 1; }
+    function addProduct(id) {
+        if (selectedProducts[id]) return;
+        for (var i = 0; i < allProducts.length; i++) {
+            if (allProducts[i].id == id) { var p = allProducts[i]; selectedProducts[id] = {name: p.name, code: p.code, spec: p.spec, price: p.price, qty: 1, img: p.img}; selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec, price: p.price, qty: 1, img: p.img})); renumberRows(); showHideEmpty(); updateTotal(); break; }
+        }
+        productSearch.value = ''; productDropdown.classList.remove('show'); productSearch.focus();
+    }
+    function renderDropdown(filter) {
+        filter = (filter || '').toLowerCase(); var html = ''; var count = 0;
+        for (var i = 0; i < allProducts.length; i++) { var p = allProducts[i]; if (selectedProducts[p.id]) continue; var txt = (p.name + ' ' + p.code).toLowerCase(); if (!filter || txt.indexOf(filter) !== -1) { html += '<button type="button" class="dropdown-item" data-id="' + p.id + '"><strong>' + p.name + '</strong>  <small class="text-muted">' + p.code + '</small>  <span class="float-end">$' + p.price.toFixed(2) + '</span></button>'; count++; } }
+        if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
+        productDropdown.innerHTML = html; if (count > 0 || filter) productDropdown.classList.add('show'); else productDropdown.classList.remove('show');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        productSearch = document.getElementById('product_search');
+        productDropdown = document.getElementById('product_dropdown');
+        selectedTableBody = document.querySelector('#selected_products_table tbody');
+        noProductMsg = document.getElementById('no_product_msg');
+        totalDisplay = document.getElementById('total_display');
+        totalInput = document.getElementById('total_input');
+        for (var pid in existingItems) { for (var i = 0; i < allProducts.length; i++) { if (allProducts[i].id == pid) { var p = allProducts[i]; selectedProducts[pid] = {name: p.name, code: p.code, spec: p.spec, price: p.price, qty: existingItems[pid], img: p.img}; selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec, price: p.price, qty: existingItems[pid], img: p.img})); break; } } }
+        renumberRows(); showHideEmpty(); updateTotal();
+        productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
+        productSearch.addEventListener('input', function() { renderDropdown(this.value); });
+        productSearch.addEventListener('blur', function() { setTimeout(function() { productDropdown.classList.remove('show'); }, 200); });
+        productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); renderDropdown(this.value); } });
+        productDropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.id) addProduct(item.dataset.id); });
+        document.getElementById('add_product_btn').addEventListener('click', function() {
+            var val = productSearch.value.trim(); if (!val) return; var found = null;
+            for (var i = 0; i < allProducts.length; i++) { if (allProducts[i].name.toLowerCase() === val.toLowerCase() || allProducts[i].code.toLowerCase() === val.toLowerCase()) { found = allProducts[i]; break; } }
+            if (found) addProduct(found.id); else renderDropdown(val);
+        });
+        var curSel = document.getElementById('currency_select');
+        curSel.addEventListener('change', function() { document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + this.value + ')'; updateTotal(); });
+        var form = document.getElementById('pi-form');
+        if (form) form.addEventListener('submit', function(e) {
+            var cust = document.getElementById('customer_id'), sp = document.getElementById('pi_salesperson');
+            if (!cust.value) { e.preventDefault(); alert('Please select a customer.'); return; }
+            if (!sp.value) { e.preventDefault(); alert('Please select a salesperson.'); return; }
+            if (Object.keys(selectedProducts).length === 0) { e.preventDefault(); alert('Please add at least one product.'); return; }
+            updateTotal();
+        });
+        initSearchable('cust_search', 'customer_id', 'cust_dropdown');
+        initSearchable('sp_search', 'pi_salesperson', 'sp_dropdown');
+    });
+    function initSearchable(inputId, selectId, dropdownId) {
+        var input = document.getElementById(inputId), select = document.getElementById(selectId), dropdown = document.getElementById(dropdownId);
+        function render(filter) { filter = (filter || '').toLowerCase(); var html = ''; var opts = select.querySelectorAll('option'); for (var i = 0; i < opts.length; i++) { if (!opts[i].value) continue; var label = opts[i].getAttribute('data-label') || opts[i].textContent; if (!filter || label.toLowerCase().indexOf(filter) !== -1) html += '<button type="button" class="dropdown-item" data-val="' + opts[i].value + '" data-label="' + label + '">' + label + '</button>'; } if (!html) html = '<span class="dropdown-item text-muted">No match</span>'; dropdown.innerHTML = html; dropdown.classList.add('show'); }
+        input.addEventListener('focus', function() { render(input.value); });
+        input.addEventListener('input', function() { render(input.value); });
+        input.addEventListener('blur', function() { setTimeout(function() { dropdown.classList.remove('show'); }, 200); });
+        dropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.val) { select.value = item.dataset.val; input.value = item.dataset.label; dropdown.classList.remove('show'); } });
+    }
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-3"><div class="col"><h2><i class="bi bi-pencil-square me-2"></i>Edit PI {{ pi.pi_number }}</h2><a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a></div></div>
+<form method="post" id="pi-form"><div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card mb-3"><div class="card-header"><h5 class="mb-0">Customer & PI Info</h5></div><div class="card-body">
+            <div class="mb-3"><label class="form-label">Customer <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none" id="customer_id" name="customer_id" required><option value="">— Select Customer —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
+            <div class="mb-3"><label class="form-label">Salesperson <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input" id="sp_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none" id="pi_salesperson" name="salesperson" required><option value="">— Select —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
+            <div class="mb-3"><label class="form-label">Company</label><select class="form-select" name="company"><option value="klista" {% if pi.company == 'klista' %}selected{% endif %}>克利斯达 USD</option><option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>戚所 USD</option></select></div>
+            <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
+            <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}"></div>
+            <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="{{ pi.payment_terms or '100% TT before shipment' }}"></div>
+            <div class="mb-3"><label for="bank_info" class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4">{{ pi.bank_info or '' }}</textarea></div>
+            <div class="mb-3"><label for="notes" class="form-label">PI Notes</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
+        </div></div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">Products</h5><button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> Quick Add</button></div><div class="card-body">
+            <div class="input-group mb-2"><input type="text" class="form-control" id="product_search" placeholder="Search product by name or code..." autocomplete="off"><button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> Add</button></div>
+            <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
+            <div class="table-responsive mt-2" id="selected_products_area"><table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>Product</th><th>Code</th><th class="text-end">Unit Price</th><th style="width:80px;">Qty</th><th class="text-end">Amount</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> No products selected. Search and add above.</div></div>
+        </div></div>
+        <div class="card"><div class="card-body text-center"><h6 class="text-muted mb-1" id="total_label">TOTAL AMOUNT ({{ pi.currency or 'USD' }})</h6><h2 class="text-primary fw-bold mb-0" id="total_display">$0.00</h2><input type="hidden" name="total_amount" id="total_input" value="0.00"></div></div>
+        <div class="mt-3 text-end"><button type="submit" class="btn btn-warning btn-lg"><i class="bi bi-save me-1"></i> Update PI & Regenerate PDF</button></div>
+    </div>
+</div></form>
+
+<div class="modal fade" id="quickAddProductModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-1"></i>Quick Add Product</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="qaProdError" class="alert alert-danger d-none"></div><div class="mb-3"><label class="form-label">Product Name <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_prod_name" placeholder="Product name"></div><div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Product Code</label><input type="text" class="form-control" id="qa_prod_code" placeholder="SKU"></div><div class="col-md-6"><label class="form-label">Specification</label><input type="text" class="form-control" id="qa_prod_spec" placeholder="Size, etc."></div></div><div class="mb-3"><label class="form-label">Unit Price (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.01" min="0" class="form-control" id="qa_prod_price" value="0.00"></div></div><div class="mb-3"><label class="form-label">Image</label><input type="file" class="form-control" id="qa_prod_image" accept="image/*"><small class="text-muted">Click or <strong>Ctrl+V</strong> paste</small><img id="qa_img_preview" src="#" style="display:none;max-height:60px;max-width:150px;margin-top:4px;border-radius:4px;border:1px solid #ddd;"></div><div class="mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" id="qa_prod_notes" placeholder="Optional"></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="qaProdSubmit"><i class="bi bi-check-lg"></i> Add Product</button></div></div></div></div>
+<script>(function(){var btn=document.getElementById('qaProdSubmit'),modalEl=document.getElementById('quickAddProductModal'),errEl=document.getElementById('qaProdError');function handlePaste(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;for(var i=0;i<items.length;i++){if(items[i].type.indexOf('image')!==-1){e.preventDefault();var blob=items[i].getAsFile();var dt=new DataTransfer();dt.items.add(blob);document.getElementById('qa_prod_image').files=dt.files;var preview=document.getElementById('qa_img_preview');var reader=new FileReader();reader.onload=function(ev){preview.src=ev.target.result;preview.style.display='';};reader.readAsDataURL(blob);return;}}}function clear(){document.getElementById('qa_prod_name').value='';document.getElementById('qa_prod_code').value='';document.getElementById('qa_prod_spec').value='';document.getElementById('qa_prod_price').value='0.00';document.getElementById('qa_prod_notes').value='';document.getElementById('qa_prod_image').value='';var p=document.getElementById('qa_img_preview');if(p)p.style.display='none';errEl.classList.add('d-none');}btn.addEventListener('click',function(){errEl.classList.add('d-none');var name=document.getElementById('qa_prod_name').value.trim();if(!name){errEl.textContent='Product name is required.';errEl.classList.remove('d-none');return;}btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Adding...';var fd=new FormData();fd.append('name',name);fd.append('product_code',document.getElementById('qa_prod_code').value.trim());fd.append('specification',document.getElementById('qa_prod_spec').value.trim());fd.append('unit_price',document.getElementById('qa_prod_price').value);fd.append('notes',document.getElementById('qa_prod_notes').value.trim());var imgFile=document.getElementById('qa_prod_image').files[0];if(imgFile)fd.append('image',imgFile);fetch('{{ url_for("api_product_add") }}',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errEl.textContent=d.error||'Failed.';errEl.classList.remove('d-none');}}).catch(function(){errEl.textContent='Network error.';errEl.classList.remove('d-none');}).finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> Add Product';});});modalEl.addEventListener('show.bs.modal',function(){clear();document.addEventListener('paste',handlePaste);});modalEl.addEventListener('hidden.bs.modal',function(){document.removeEventListener('paste',handlePaste);});})();</script>
+<div class="modal fade" id="quickAddCustomerModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-plus me-1"></i>Quick Add Customer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="qaCustError" class="alert alert-danger d-none"></div><div class="mb-3"><label class="form-label">Customer Name <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_cust_name" placeholder="Company name"></div><div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Country</label><input type="text" class="form-control" id="qa_cust_country" list="country_list" autocomplete="off" placeholder="Type Chinese or English..."></div><div class="col-md-6"><label class="form-label">Salesperson</label><select class="form-select" id="qa_cust_salesperson"><option value="">— Select —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}">{{ sp.name }}</option>{% endfor %}</select></div></div><div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Contact Person</label><input type="text" class="form-control" id="qa_cust_contact" placeholder="Contact name"></div><div class="col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" id="qa_cust_email" placeholder="email@example.com"></div></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" id="quickAddCustomerSubmit"><i class="bi bi-check-lg"></i> Add Customer</button></div></div></div></div>
+<script>(function(){var btn=document.getElementById('quickAddCustomerSubmit'),modalEl=document.getElementById('quickAddCustomerModal'),errorEl=document.getElementById('qaCustError');function clear(){document.getElementById('qa_cust_name').value='';document.getElementById('qa_cust_country').value='';document.getElementById('qa_cust_salesperson').value='';document.getElementById('qa_cust_contact').value='';document.getElementById('qa_cust_email').value='';errorEl.classList.add('d-none');}btn.addEventListener('click',function(){errorEl.classList.add('d-none');var name=document.getElementById('qa_cust_name').value.trim();if(!name){errorEl.textContent='Customer name is required.';errorEl.classList.remove('d-none');return;}btn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Adding...';var fd=new FormData();fd.append('name',name);fd.append('country',document.getElementById('qa_cust_country').value.trim());fd.append('contact_person',document.getElementById('qa_cust_contact').value.trim());fd.append('email',document.getElementById('qa_cust_email').value.trim());fd.append('salesperson',document.getElementById('qa_cust_salesperson').value);fetch('{{ url_for("api_customer_add") }}',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'Failed.';errorEl.classList.remove('d-none');}}).catch(function(){errorEl.textContent='Network error.';errorEl.classList.remove('d-none');}).finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> Add Customer';});});modalEl.addEventListener('show.bs.modal',clear);})();</script>
+{% include 'countries.html' %}
+{% endblock %}
