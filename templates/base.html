@@ -27,11 +27,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('profile') }}">
-                            <i class="bi bi-person-circle"></i> My Profile
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('customer_list') }}">
                             <i class="bi bi-people"></i> Customers
                         </a>
@@ -39,11 +34,6 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('product_list') }}">
                             <i class="bi bi-box"></i> Products
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('salesperson_list') }}">
-                            <i class="bi bi-person-badge"></i> Salespersons
                         </a>
                     </li>
                     {% if is_admin %}
@@ -77,6 +67,9 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><span class="dropdown-item-text small text-muted">{{ current_user.salesperson_name or 'Administrator' }}</span></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> My Profile</a></li>
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> Salespersons</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>
