@@ -9,14 +9,16 @@ import sys
 import uuid
 from datetime import datetime, date, timedelta
 from werkzeug.utils import secure_filename
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, send_file, jsonify, current_app
+    flash, send_file, jsonify, current_app, session
 )
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
-from models import db, Customer, Product, PI, PIItem, Salesperson
+from models import db, Customer, Product, PI, PIItem, Salesperson, User
 from pdf_generator import generate_pi_pdf
 
 # ── Configuration ────────────────────────────────────────────────────
@@ -53,6 +55,15 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # Seed admin account if not exists
+        if not User.query.filter_by(username='admin').first():
+            db.session.add(User(
+                username='admin',
+                password_hash=generate_password_hash('admin123'),
+                role='admin',
+                salesperson_name='',
+            ))
+            db.session.commit()
 
     return app
 
@@ -83,16 +94,75 @@ def _save_upload(file):
 ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
 
 
+# ── Auth helpers ─────────────────────────────────────────────────────
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session:
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated
+
+def get_current_user():
+    if 'user_id' in session:
+        return User.query.get(session['user_id'])
+    return None
+
+def is_admin():
+    return session.get('role') == 'admin'
+
+def filter_by_user(query, model, salesperson_field='salesperson'):
+    """Filter query by current user's salesperson if not admin."""
+    if is_admin():
+        return query
+    sp = session.get('salesperson_name', '')
+    if sp and hasattr(model, salesperson_field):
+        return query.filter(getattr(model, salesperson_field) == sp)
+    return query
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES — Auth
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            session['role'] = user.role
+            session['salesperson_name'] = user.salesperson_name
+            flash(f'Welcome, {user.username}!', 'success')
+            return redirect(url_for('index'))
+        flash('Invalid username or password.', 'danger')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    flash('Logged out.', 'info')
+    return redirect(url_for('login'))
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — Dashboard
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/')
+@login_required
 def index():
-    customer_count = Customer.query.count()
+    cust_q = filter_by_user(Customer.query, Customer, 'salesperson')
+    customer_count = cust_q.count()
     product_count = Product.query.count()
-    pi_count = PI.query.count()
-    recent_pis = PI.query.order_by(PI.created_at.desc()).limit(5).all()
+    pi_q = filter_by_user(PI.query, PI, 'salesperson')
+    pi_count = pi_q.count()
+    recent_pis = pi_q.order_by(PI.created_at.desc()).limit(5).all()
     return render_template('index.html',
                            customer_count=customer_count,
                            product_count=product_count,
@@ -105,10 +175,12 @@ def index():
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/customers')
+@login_required
 def customer_list():
     search = request.args.get('search', '').strip()
+    query = filter_by_user(Customer.query, Customer, 'salesperson')
     if search:
-        query = Customer.query.filter(
+        query = query.filter(
             db.or_(
                 Customer.name.ilike(f'%{search}%'),
                 Customer.country.ilike(f'%{search}%'),
@@ -116,13 +188,12 @@ def customer_list():
                 Customer.email.ilike(f'%{search}%'),
             )
         )
-    else:
-        query = Customer.query
     customers = query.order_by(Customer.created_at.desc()).all()
     return render_template('customers.html', customers=customers, search=search)
 
 
 @app.route('/customers/add', methods=['GET', 'POST'])
+@login_required
 def customer_add():
     if request.method == 'POST':
         customer = Customer(
@@ -146,6 +217,7 @@ def customer_add():
 
 
 @app.route('/customers/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def customer_edit(id):
     customer = Customer.query.get_or_404(id)
     if request.method == 'POST':
@@ -193,6 +265,7 @@ def api_customer_add():
 
 
 @app.route('/customers/<int:id>')
+@login_required
 def customer_detail(id):
     customer = Customer.query.get_or_404(id)
     pis = PI.query.options(
@@ -202,6 +275,7 @@ def customer_detail(id):
 
 
 @app.route('/sales-stats')
+@login_required
 def sales_stats():
     """Salesperson statistics: PI count and total amount per salesperson."""
     date_from = request.args.get('date_from', '').strip()
@@ -268,6 +342,7 @@ def sales_stats():
 
 
 @app.route('/customers/<int:id>/delete', methods=['POST'])
+@login_required
 def customer_delete(id):
     customer = Customer.query.get_or_404(id)
     db.session.delete(customer)
@@ -281,6 +356,7 @@ def customer_delete(id):
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/products')
+@login_required
 def product_list():
     search = request.args.get('search', '').strip()
     if search:
@@ -298,6 +374,7 @@ def product_list():
 
 
 @app.route('/products/add', methods=['GET', 'POST'])
+@login_required
 def product_add():
     if request.method == 'POST':
         try:
@@ -402,6 +479,7 @@ def uploaded_file(filename):
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/salespersons')
+@login_required
 def salesperson_list():
     salespersons = Salesperson.query.order_by(Salesperson.name).all()
     return render_template('salesperson_list.html', salespersons=salespersons)
@@ -466,8 +544,9 @@ def salesperson_delete(id):
 # ═══════════════════════════════════════════════════════════════════════
 
 @app.route('/pi/create', methods=['GET', 'POST'])
+@login_required
 def pi_create():
-    customers = Customer.query.order_by(Customer.name).all()
+    customers = filter_by_user(Customer.query, Customer, 'salesperson').order_by(Customer.name).all()
     products = Product.query.order_by(Product.name).all()
 
     if request.method == 'POST':
@@ -602,12 +681,13 @@ def pi_create():
 
 
 @app.route('/pi/list')
+@login_required
 def pi_list():
     salesperson_filter = request.args.get('salesperson', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
 
-    query = PI.query.options(joinedload(PI.customer))
+    query = filter_by_user(PI.query.options(joinedload(PI.customer)), PI, 'salesperson')
 
     if salesperson_filter:
         query = query.filter(PI.salesperson == salesperson_filter)
@@ -636,6 +716,7 @@ def pi_list():
 
 
 @app.route('/pi/<int:id>')
+@login_required
 def pi_detail(id):
     pi = PI.query.options(
         joinedload(PI.customer),
@@ -645,6 +726,7 @@ def pi_detail(id):
 
 
 @app.route('/pi/<int:id>/preview')
+@login_required
 def pi_preview(id):
     pi = PI.query.options(
         joinedload(PI.customer),
@@ -681,6 +763,7 @@ def pi_delete(id):
 
 
 @app.route('/pi/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
 def pi_edit(id):
     pi = PI.query.options(
         joinedload(PI.customer),
@@ -804,10 +887,13 @@ def pi_edit(id):
 
 @app.context_processor
 def inject_globals():
+    user = get_current_user()
     return {
         'company': COMPANY_CONFIG,
         'app_root': APP_ROOT,
         'all_salespersons': Salesperson.query.order_by(Salesperson.name).all(),
+        'current_user': user,
+        'is_admin': is_admin(),
     }
 
 
