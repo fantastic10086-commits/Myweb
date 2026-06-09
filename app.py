@@ -540,6 +540,95 @@ def salesperson_delete(id):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  ROUTES — Users (Admin only)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/users')
+@login_required
+def user_list():
+    if not is_admin():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    users = User.query.order_by(User.created_at.desc()).all()
+    return render_template('user_list.html', users=users)
+
+
+@app.route('/users/add', methods=['GET', 'POST'])
+@login_required
+def user_add():
+    if not is_admin():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        role = request.form.get('role', 'salesperson').strip()
+        salesperson_name = request.form.get('salesperson_name', '').strip()
+        if not username or not password:
+            flash('Username and password are required.', 'danger')
+            return render_template('user_form.html', u=None, editing=False)
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists.', 'danger')
+            return render_template('user_form.html', u=None, editing=False)
+        db.session.add(User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role=role,
+            salesperson_name=salesperson_name if role == 'salesperson' else '',
+        ))
+        db.session.commit()
+        flash('User created.', 'success')
+        return redirect(url_for('user_list'))
+    return render_template('user_form.html', u=None, editing=False)
+
+
+@app.route('/users/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def user_edit(id):
+    if not is_admin():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    user = User.query.get_or_404(id)
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        role = request.form.get('role', 'salesperson').strip()
+        salesperson_name = request.form.get('salesperson_name', '').strip()
+        if not username:
+            flash('Username is required.', 'danger')
+            return render_template('user_form.html', u=user, editing=True)
+        existing = User.query.filter_by(username=username).first()
+        if existing and existing.id != user.id:
+            flash('Username already exists.', 'danger')
+            return render_template('user_form.html', u=user, editing=True)
+        user.username = username
+        if password:
+            user.password_hash = generate_password_hash(password)
+        user.role = role
+        user.salesperson_name = salesperson_name if role == 'salesperson' else ''
+        db.session.commit()
+        flash('User updated.', 'success')
+        return redirect(url_for('user_list'))
+    return render_template('user_form.html', u=user, editing=True)
+
+
+@app.route('/users/<int:id>/delete', methods=['POST'])
+@login_required
+def user_delete(id):
+    if not is_admin():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('index'))
+    user = User.query.get_or_404(id)
+    if user.username == 'admin':
+        flash('Cannot delete the admin account.', 'danger')
+        return redirect(url_for('user_list'))
+    db.session.delete(user)
+    db.session.commit()
+    flash('User deleted.', 'success')
+    return redirect(url_for('user_list'))
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — PI (Proforma Invoice)
 # ═══════════════════════════════════════════════════════════════════════
 

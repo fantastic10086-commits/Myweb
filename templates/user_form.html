@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit{% else %}Add{% endif %} User{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col"><h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>{% if editing %}Edit User{% else %}Add New User{% endif %}</h2>
+        <a href="{{ url_for('user_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a></div>
+</div>
+
+<div class="card"><div class="card-body">
+    <form method="post">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="username" name="username" required value="{{ u.username if u else '' }}" placeholder="Login username">
+            </div>
+            <div class="col-md-6">
+                <label for="password" class="form-label">Password {% if not editing %}<span class="text-danger">*</span>{% endif %}</label>
+                <input type="text" class="form-control" id="password" name="password" {% if not editing %}required{% endif %} placeholder="{% if editing %}Leave blank to keep current{% else %}Set password{% endif %}">
+            </div>
+            <div class="col-md-6">
+                <label for="role" class="form-label">Role</label>
+                <select class="form-select" id="role" name="role" onchange="document.getElementById('sp_group').style.display=this.value==='salesperson'?'':'none'">
+                    <option value="admin" {% if u and u.role == 'admin' %}selected{% endif %}>Admin</option>
+                    <option value="salesperson" {% if u and u.role == 'salesperson' %}selected{% endif %}>Salesperson</option>
+                </select>
+            </div>
+            <div class="col-md-6" id="sp_group" style="{% if u and u.role != 'salesperson' %}display:none{% endif %}">
+                <label for="salesperson_name" class="form-label">Linked Salesperson</label>
+                <select class="form-select" id="salesperson_name" name="salesperson_name">
+                    <option value="">— Select —</option>
+                    {% for sp in all_salespersons %}
+                    <option value="{{ sp.name }}" {% if u and u.salesperson_name == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Create{% endif %} User</button>
+            <a href="{{ url_for('user_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </div>
+    </form>
+</div></div>
+{% endblock %}

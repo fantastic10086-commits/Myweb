@@ -41,6 +41,13 @@
                             <i class="bi bi-person-badge"></i> Salespersons
                         </a>
                     </li>
+                    {% if is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('user_list') }}">
+                            <i class="bi bi-people-fill"></i> Users
+                        </a>
+                    </li>
+                    {% endif %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pi_create') }}">
                             <i class="bi bi-plus-circle"></i> New PI
