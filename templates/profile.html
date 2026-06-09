@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col"><h2><i class="bi bi-person-circle me-2"></i>My Profile</h2></div>
+</div>
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card"><div class="card-header"><h5 class="mb-0">Account Info</h5></div><div class="card-body">
+            <table class="table table-sm mb-0">
+                <tr><th>Username</th><td>{{ current_user.username }}</td></tr>
+                <tr><th>Role</th><td>{% if is_admin %}<span class="badge bg-warning text-dark">Admin</span>{% else %}<span class="badge bg-info">Salesperson</span>{% endif %}</td></tr>
+                {% if sp %}
+                <tr><th>Name</th><td><strong>{{ sp.name }}</strong></td></tr>
+                {% endif %}
+            </table>
+        </div></div>
+
+        {% if sp %}
+        <div class="card mt-3"><div class="card-header"><h5 class="mb-0">Contact Info</h5></div><div class="card-body">
+            <form method="post">
+                <div class="mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="{{ sp.phone or '' }}"></div>
+                <div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="{{ sp.email or '' }}"></div>
+                <div class="mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes" value="{{ sp.notes or '' }}"></div>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Update</button>
+            </form>
+        </div></div>
+        {% endif %}
+    </div>
+
+    {% if sp and stats %}
+    <div class="col-lg-7">
+        <div class="row g-3 mb-3">
+            <div class="col-md-6"><div class="card border-primary"><div class="card-body text-center"><h6 class="text-muted">My PIs</h6><h3 class="text-primary">{{ stats.pi_count }}</h3></div></div></div>
+            <div class="col-md-6"><div class="card border-success"><div class="card-body text-center"><h6 class="text-muted">Total Amount</h6><h3 class="text-success">${{ '%.2f'|format(stats.total_amount) }}</h3></div></div></div>
+        </div>
+        <div class="card"><div class="card-header"><h5 class="mb-0">My Recent PIs</h5></div>
+            {% set my_pis = pi_list %}
+            {% if my_pis %}
+            <div class="table-responsive"><table class="table table-hover mb-0">
+                <thead><tr><th>PI#</th><th>Customer</th><th>Date</th><th class="text-end">Amount</th></tr></thead>
+                <tbody>{% for pi in my_pis[:10] %}<tr>
+                    <td><strong>{{ pi.pi_number }}</strong></td>
+                    <td>{{ pi.customer.name if pi.customer else '-' }}</td>
+                    <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                    <td class="text-end">${{ '%.2f'|format(pi.total_amount) }}</td>
+                </tr>{% endfor %}</tbody>
+            </table></div>
+            {% else %}<div class="text-center py-4 text-muted">No PIs yet.</div>{% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -150,6 +150,40 @@ def logout():
     return redirect(url_for('login'))
 
 
+@app.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    user = get_current_user()
+    sp = None
+    if not is_admin() and user.salesperson_name:
+        sp = Salesperson.query.filter_by(name=user.salesperson_name).first()
+        # Auto-create salesperson record if missing
+        if not sp:
+            sp = Salesperson(name=user.salesperson_name)
+            db.session.add(sp)
+            db.session.commit()
+
+    if request.method == 'POST' and sp:
+        sp.phone = request.form.get('phone', '').strip()
+        sp.email = request.form.get('email', '').strip()
+        sp.notes = request.form.get('notes', '').strip()
+        db.session.commit()
+        flash('Profile updated.', 'success')
+        return redirect(url_for('profile'))
+
+    # Stats for salesperson
+    stats = None
+    pi_list = []
+    if sp:
+        stats = db.session.query(
+            func.count(PI.id).label('pi_count'),
+            func.coalesce(func.sum(PI.total_amount), 0).label('total_amount'),
+        ).filter(PI.salesperson == sp.name).first()
+        pi_list = PI.query.options(joinedload(PI.customer)).filter_by(salesperson=sp.name).order_by(PI.created_at.desc()).limit(10).all()
+
+    return render_template('profile.html', sp=sp, stats=stats, pi_list=pi_list)
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — Dashboard
 # ═══════════════════════════════════════════════════════════════════════
