@@ -900,14 +900,20 @@ def pi_download(id):
 @app.route('/pi/<int:id>/excel')
 @login_required
 def pi_excel_download(id):
-    pi = PI.query.get_or_404(id)
-    if not pi.excel_path:
-        flash('Excel file not found.', 'danger')
-        return redirect(url_for('pi_detail', id=id))
+    pi = PI.query.options(
+        joinedload(PI.customer),
+        joinedload(PI.items).joinedload(PIItem.product),
+    ).get_or_404(id)
+    # Auto-generate if missing
+    if not pi.excel_path or not os.path.exists(os.path.join(app.config['PDF_DIR'], pi.excel_path)):
+        try:
+            fn = generate_pi_excel(pi, app.config['PDF_DIR'])
+            pi.excel_path = fn
+            db.session.commit()
+        except Exception as e:
+            flash(f'Error generating Excel: {e}', 'danger')
+            return redirect(url_for('pi_detail', id=id))
     filepath = os.path.join(app.config['PDF_DIR'], pi.excel_path)
-    if not os.path.exists(filepath):
-        flash('Excel file does not exist on disk.', 'danger')
-        return redirect(url_for('pi_detail', id=id))
     return send_file(filepath, as_attachment=True, download_name=pi.excel_path)
 
 
