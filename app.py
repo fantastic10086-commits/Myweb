@@ -25,6 +25,28 @@ from pdf_generator import generate_pi_pdf
 # Detect the app root directory (where this file lives)
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 
+def _migrate_db():
+    """Auto-add missing columns to existing tables without data loss."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(db.engine)
+    expected = {
+        'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME'},
+        'products': {'image': 'VARCHAR(500)'},
+        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)'},
+        'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)'},
+    }
+    for table, columns in expected.items():
+        if not inspector.has_table(table): continue
+        existing = {c['name'] for c in inspector.get_columns(table)}
+        for col_name, col_type in columns.items():
+            if col_name not in existing:
+                try:
+                    db.session.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type} DEFAULT ''"))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+
 # Company info — edit these to match your business
 COMPANY_CONFIG = {
     'name': 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
@@ -55,6 +77,7 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        _migrate_db()
         # Seed admin account if not exists
         if not User.query.filter_by(username='admin').first():
             db.session.add(User(
