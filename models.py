@@ -106,7 +106,7 @@ class PI(db.Model):
     pi_number = db.Column(db.String(50), nullable=False, unique=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     issue_date = db.Column(db.Date, default=date.today)
-    payment_terms = db.Column(db.Text, default='100% TT before shipment')
+    payment_terms = db.Column(db.Text, default='100% T/T in advance')
     bank_info = db.Column(db.Text, default='')
     salesperson = db.Column(db.String(100), nullable=False, default='')
     currency = db.Column(db.String(3), default='USD')

@@ -767,7 +767,7 @@ def pi_create():
             pi_number=pi_number,
             customer_id=customer_id,
             issue_date=issue_date,
-            payment_terms=payment_terms or '100% TT before shipment',
+            payment_terms=payment_terms or '100% T/T in advance',
             bank_info=bank_info or '',
             salesperson=salesperson,
             currency=currency,
@@ -1007,7 +1007,7 @@ def pi_edit(id):
         pi.currency = currency
         pi.company = company
         pi.issue_date = issue_date
-        pi.payment_terms = payment_terms or '100% TT before shipment'
+        pi.payment_terms = payment_terms or '100% T/T in advance'
         pi.bank_info = bank_info or ''
         pi.total_amount = total_amount
         pi.notes = notes

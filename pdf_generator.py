@@ -1,365 +1,257 @@
 """
-PI (Proforma Invoice) PDF Generator using ReportLab.
-Generates A4-sized professional foreign trade PI documents.
+PI (Proforma Invoice) PDF Generator.
+Reference format: company header, PI title, customer info, product table,
+total in words, payment terms, bank info, signatures.
 """
 
 import os
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import mm, cm
+from reportlab.lib.units import mm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.colors import HexColor, black, white, grey
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
-    HRFlowable, Image
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, HRFlowable, Image
 )
 from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate, Frame
 from reportlab.pdfgen import canvas
 
-
-# ── Company Info (editable) ──────────────────────────────────────────
 COMPANY_INFO = {
     'name': 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
     'address': 'No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China',
     'phone': '+86 17712333882',
     'email': 'fantastic10086@gmail.com',
-    'website': '',
 }
 
 BRANDS = {
-    'klista':  'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
-    'qisuo':   'Changzhou QISUO Welding and Cutting Equipment Co., Ltd.',
+    'klista': 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
+    'qisuo':  'Changzhou QISUO Welding and Cutting Equipment Co., Ltd.',
 }
 
-# A4 dimensions
-PAGE_W, PAGE_H = A4  # (595.27, 841.89) points
+PAGE_W, PAGE_H = A4
 
 
-def _draw_page_template(canvas: canvas.Canvas, doc):
-    """Draw header/footer on every page."""
+def _num_to_words(n):
+    """Convert a number to English words (US DOLLARS ... ONLY)."""
+    ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE']
+    teens = ['TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN']
+    tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY']
+
+    def _h(n):
+        if n < 10: return ones[n]
+        if n < 20: return teens[n-10]
+        if n < 100: return tens[n//10] + (' ' + ones[n%10] if n%10 else '')
+        if n < 1000: return ones[n//100] + ' HUNDRED' + (' ' + _h(n%100) if n%100 else '')
+        return ''
+
+    dollars = int(n)
+    cents = int(round((n - dollars) * 100))
+    if dollars == 0:
+        words = 'ZERO'
+    elif dollars < 1000:
+        words = _h(dollars)
+    else:
+        words = _h(dollars//1000) + ' THOUSAND'
+        r = dollars % 1000
+        if r: words += ' ' + _h(r)
+
+    result = f'US DOLLARS {words} ONLY'
+    if cents > 0:
+        result += f' AND CENTS {cents}'
+    return result
+
+
+def currency_symbol(cur): return '¥' if cur == 'RMB' else '$'
+def currency_label(cur): return 'RMB' if cur == 'RMB' else 'USD'
+
+
+def _draw_page_template(canvas, doc):
     canvas.saveState()
-
-    # ── Header background bar ──
+    # Header bar
     canvas.setFillColor(HexColor('#1a3a5c'))
-    canvas.rect(20 * mm, PAGE_H - 30 * mm, PAGE_W - 40 * mm, 18 * mm, fill=1, stroke=0)
-
-    # Company name in header
+    canvas.rect(20*mm, PAGE_H-30*mm, PAGE_W-40*mm, 16*mm, fill=1, stroke=0)
     canvas.setFillColor(white)
-    canvas.setFont('Helvetica-Bold', 16)
-    canvas.drawString(27 * mm, PAGE_H - 19 * mm, getattr(doc, 'company_name', COMPANY_INFO['name']))
-
-    # Company address in header (centered)
+    canvas.setFont('Helvetica-Bold', 15)
+    company_name = getattr(doc, 'company_name', COMPANY_INFO['name'])
+    canvas.drawString(25*mm, PAGE_H-20*mm, company_name)
     canvas.setFont('Helvetica', 7)
     canvas.setFillColor(HexColor('#cccccc'))
-    canvas.drawCentredString(PAGE_W / 2, PAGE_H - 26 * mm, COMPANY_INFO['address'])
-
-    # ── Footer ──
+    canvas.drawCentredString(PAGE_W/2, PAGE_H-27*mm, COMPANY_INFO['address'])
+    # Footer
     canvas.setFillColor(grey)
     canvas.setFont('Helvetica', 7)
-    canvas.drawCentredString(PAGE_W / 2, 15 * mm, f"Page {doc.page}")
-
-    # Footer line
+    page_num = getattr(canvas, '_pageNumber', 1)
+    canvas.drawCentredString(PAGE_W/2, 15*mm, f"Page {page_num}")
     canvas.setStrokeColor(HexColor('#1a3a5c'))
     canvas.setLineWidth(0.5)
-    canvas.line(20 * mm, 22 * mm, PAGE_W - 20 * mm, 22 * mm)
-
+    canvas.line(20*mm, 22*mm, PAGE_W-20*mm, 22*mm)
     canvas.restoreState()
 
 
-def currency_symbol(cur):
-    return '¥' if cur == 'RMB' else '$'
-
-def currency_label(cur):
-    return 'RMB' if cur == 'RMB' else 'USD'
-
 def generate_pi_pdf(pi, output_dir, salesperson_info=None):
-    """
-    Generate a PI PDF for the given PI object.
-
-    Args:
-        pi: PI model instance with items and customer loaded.
-        output_dir: Absolute path to the pdf/ directory.
-        salesperson_info: Optional dict with 'phone' and 'email' keys.
-    """
-    if salesperson_info is None:
-        salesperson_info = {}
+    if salesperson_info is None: salesperson_info = {}
     cur = getattr(pi, 'currency', 'USD') or 'USD'
     sym = currency_symbol(cur)
     cur_label = currency_label(cur)
+    brand = getattr(pi, 'company', 'klista') or 'klista'
+    company_name = BRANDS.get(brand, BRANDS['klista'])
+
     filename = f"{pi.pi_number}.pdf"
     filepath = os.path.join(output_dir, filename)
 
-    # ── Document setup ──
-    doc = BaseDocTemplate(
-        filepath,
-        pagesize=A4,
-        leftMargin=20 * mm,
-        rightMargin=20 * mm,
-        topMargin=32 * mm,
-        bottomMargin=30 * mm,
-        title=f'Proforma Invoice {pi.pi_number}',
-        author=COMPANY_INFO['name'],
-    )
-
-    # Add page template with header/footer
-    frame = Frame(
-        doc.leftMargin, doc.bottomMargin,
-        doc.width, doc.height,
-        id='normal'
-    )
-    doc.addPageTemplates([PageTemplate(id='main', frames=frame, onPage=_draw_page_template)])
-    doc._pageTemplates = doc.pageTemplates  # compatibility
-
-    # Set company name based on brand
-    brand = getattr(pi, 'company', 'klista') or 'klista'
-    company_name = BRANDS.get(brand, BRANDS['klista'])
+    doc = SimpleDocTemplate(filepath, pagesize=A4,
+        leftMargin=20*mm, rightMargin=20*mm, topMargin=32*mm, bottomMargin=30*mm,
+        title=f'PI {pi.pi_number}', author=company_name)
+    # Attach company name for header callback
     doc.company_name = company_name
 
-    # ── Styles ──
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        'PITitle', parent=styles['Title'],
-        fontSize=22, fontName='Helvetica-Bold', textColor=HexColor('#1a3a5c'),
-        spaceAfter=4 * mm, alignment=TA_CENTER,
-    )
-    section_style = ParagraphStyle(
-        'SectionLabel', parent=styles['Normal'],
-        fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#1a3a5c'),
-        spaceAfter=1 * mm, spaceBefore=4 * mm,
-    )
-    info_style = ParagraphStyle(
-        'InfoValue', parent=styles['Normal'],
-        fontSize=9, fontName='Helvetica', spaceAfter=1 * mm,
-    )
-    table_header_style = ParagraphStyle(
-        'TblHeader', parent=styles['Normal'],
-        fontSize=8, fontName='Helvetica-Bold', textColor=white, alignment=TA_CENTER,
-    )
-    table_cell_style = ParagraphStyle(
-        'TblCell', parent=styles['Normal'],
-        fontSize=8, fontName='Helvetica', alignment=TA_CENTER,
-    )
-    table_cell_left = ParagraphStyle(
-        'TblCellLeft', parent=table_cell_style,
-        alignment=TA_LEFT,
-    )
-    amount_style = ParagraphStyle(
-        'AmountRight', parent=table_cell_style,
-        alignment=TA_RIGHT,
-    )
+    title_style = ParagraphStyle('T', parent=styles['Title'], fontSize=20, fontName='Helvetica-Bold', textColor=HexColor('#1a3a5c'), spaceAfter=3*mm, alignment=TA_CENTER)
+    label_style = ParagraphStyle('L', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', spaceAfter=1*mm, spaceBefore=2*mm)
+    val_style = ParagraphStyle('V', parent=styles['Normal'], fontSize=9, fontName='Helvetica', spaceAfter=1*mm)
+    th_style = ParagraphStyle('TH', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=white, alignment=TA_CENTER)
+    td_style = ParagraphStyle('TD', parent=styles['Normal'], fontSize=8, fontName='Helvetica', alignment=TA_CENTER)
+    td_left = ParagraphStyle('TDL', parent=td_style, alignment=TA_LEFT)
+    td_right = ParagraphStyle('TDR', parent=td_style, alignment=TA_RIGHT)
+    base_color = HexColor('#1a3a5c')
 
-    # ── Build story ──
     story = []
 
     # Title
     story.append(Paragraph('PROFORMA INVOICE', title_style))
-    story.append(Spacer(1, 3 * mm))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=base_color, spaceAfter=4*mm))
 
-    # Separator line
-    story.append(HRFlowable(width="100%", thickness=1.5, color=HexColor('#1a3a5c'), spaceAfter=4 * mm))
-
-    # ── PI Info & Customer Info (side-by-side table) ──
-    pi_info_data = [
-        [Paragraph('<b>PI Number:</b>', info_style), Paragraph(pi.pi_number, info_style)],
-        [Paragraph('<b>Date:</b>', info_style),
-         Paragraph(pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '', info_style)],
+    # PI Info
+    pi_rows = [
+        ['PI Number:', pi.pi_number, 'Date:', pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else ''],
     ]
-    # Append salesperson rows to PI info column
     if pi.salesperson:
-        pi_info_data.append([Paragraph('<b>Salesperson:</b>', info_style), Paragraph(pi.salesperson, info_style)])
-        if salesperson_info.get('phone'):
-            pi_info_data.append([Paragraph('<b>Tel:</b>', info_style), Paragraph(salesperson_info['phone'], info_style)])
-        if salesperson_info.get('email'):
-            pi_info_data.append([Paragraph('<b>Email:</b>', info_style), Paragraph(salesperson_info['email'], info_style)])
-    pi_info_table = Table(pi_info_data, colWidths=[70, 140])
-    pi_info_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        pi_rows.append(['Salesperson:', pi.salesperson, '', ''])
+    if salesperson_info.get('phone'):
+        pi_rows.append(['Tel:', salesperson_info['phone'], 'Email:', salesperson_info.get('email', '')])
+    pi_table = Table(pi_rows, colWidths=[55, 140, 45, 120])
+    pi_table.setStyle(TableStyle([
+        ('FONT', (0,0), (0,-1), 'Helvetica-Bold'),
+        ('FONT', (2,0), (2,-1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 1),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
     ]))
+    story.append(pi_table)
+    story.append(Spacer(1, 3*mm))
 
+    # Customer (To / ATTN)
     customer = pi.customer
-    customer_info_data = [
-        [Paragraph('<b>To / Buyer:</b>', info_style), Paragraph(customer.name or '', info_style)],
-        [Paragraph('<b>Contact:</b>', info_style), Paragraph(customer.contact_person or '', info_style)],
-        [Paragraph('<b>Country:</b>', info_style), Paragraph(customer.country or '', info_style)],
-        [Paragraph('<b>Email:</b>', info_style), Paragraph(customer.email or '', info_style)],
-        [Paragraph('<b>Phone:</b>', info_style), Paragraph(customer.phone or '', info_style)],
-        [Paragraph('<b>Address:</b>', info_style), Paragraph(customer.address or '', info_style)],
-    ]
-    customer_info_table = Table(customer_info_data, colWidths=[70, 250])
-    customer_info_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-    ]))
+    story.append(Paragraph('To / ATTN:', label_style))
+    cust_rows = []
+    if customer:
+        cust_rows.append([Paragraph('<b>Company:</b>', val_style), Paragraph(customer.name or '', val_style)])
+        if customer.contact_person:
+            cust_rows.append([Paragraph('<b>Contact:</b>', val_style), Paragraph(customer.contact_person, val_style)])
+        if customer.country:
+            cust_rows.append([Paragraph('<b>Country:</b>', val_style), Paragraph(customer.country, val_style)])
+        if customer.address:
+            cust_rows.append([Paragraph('<b>Address:</b>', val_style), Paragraph(customer.address, val_style)])
+    if cust_rows:
+        ct = Table(cust_rows, colWidths=[55, 300])
+        ct.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),1),('BOTTOMPADDING',(0,0),(-1,-1),1),('LEFTPADDING',(0,0),(-1,-1),0)]))
+        story.append(ct)
+    story.append(Spacer(1, 4*mm))
 
-    # Two blocks side by side
-    top_table = Table([
-        [pi_info_table, customer_info_table]
-    ], colWidths=[210, 340])
-    top_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
-
-    story.append(top_table)
-
-    story.append(Spacer(1, 5 * mm))
-
-    # ── Product Table ──
-    story.append(Paragraph('ITEM DETAILS', section_style))
-    story.append(Spacer(1, 2 * mm))
-
-    # Table header
-    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+    # Product Table
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#cccccc'), spaceAfter=2*mm))
     header = [
-        Paragraph('No.', table_header_style),
-        Paragraph('Image', table_header_style),
-        Paragraph('Product Code', table_header_style),
-        Paragraph('Description', table_header_style),
-        Paragraph('Specification', table_header_style),
-        Paragraph('Quantity', table_header_style),
-        Paragraph(f'Unit Price<br/>({cur_label})', table_header_style),
-        Paragraph(f'Amount<br/>({cur_label})', table_header_style),
+        Paragraph('No.', th_style),
+        Paragraph('Description / Item', th_style),
+        Paragraph('QTY<br/>(pcs)', th_style),
+        Paragraph(f'Unit Price<br/>({cur_label})', th_style),
+        Paragraph(f'Amount<br/>({cur_label})', th_style),
     ]
-    col_widths = [22, 40, 70, 110, 80, 45, 65, 65]
-
+    col_w = [22, 260, 55, 75, 75]
     table_data = [header]
+    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
     for i, item in enumerate(pi.items, 1):
-        # Product image
-        img_cell = Paragraph('', table_cell_style)
+        desc = item.product.name if item.product else ''
+        if item.product and item.product.specification:
+            desc += f'<br/><font size="7" color="#888888">{item.product.specification}</font>'
+        img_cell = Paragraph('', td_style)
         if item.product and item.product.image:
             img_path = os.path.join(upload_dir, item.product.image)
             if os.path.exists(img_path):
-                try:
-                    img_cell = Image(img_path, width=12*mm, height=12*mm)
-                except:
-                    pass
+                try: img_cell = Image(img_path, width=10*mm, height=10*mm)
+                except: pass
         row = [
-            Paragraph(str(i), table_cell_style),
-            img_cell,
-            Paragraph(item.product.product_code if item.product else '', table_cell_style),
-            Paragraph(item.product.name if item.product else '', table_cell_left),
-            Paragraph(item.product.specification if item.product else '', table_cell_style),
-            Paragraph(str(item.quantity), table_cell_style),
-            Paragraph(f'{sym}{item.unit_price:,.2f}', amount_style),
-            Paragraph(f'{sym}{item.amount:,.2f}', amount_style),
+            Paragraph(str(i), td_style),
+            Paragraph(desc, td_left),
+            Paragraph(str(item.quantity), td_style),
+            Paragraph(f'{sym}{item.unit_price:,.2f}', td_right),
+            Paragraph(f'{sym}{item.amount:,.2f}', td_right),
         ]
         table_data.append(row)
 
-    prod_table = Table(table_data, colWidths=col_widths, repeatRows=1)
-    base_color = HexColor('#1a3a5c')
-    light_bg = HexColor('#f0f4f8')
-
-    table_style_cmds = [
-        # Header
-        ('BACKGROUND', (0, 0), (-1, 0), base_color),
-        ('TEXTCOLOR', (0, 0), (-1, 0), white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
-        # Grid
-        ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#cccccc')),
-        ('LINEBELOW', (0, 0), (-1, 0), 1, base_color),
-        # Alignment
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+    prod_table = Table(table_data, colWidths=col_w, repeatRows=1)
+    light_bg = HexColor('#f4f6f9')
+    style_cmds = [
+        ('BACKGROUND',(0,0),(-1,0), base_color), ('TEXTCOLOR',(0,0),(-1,0), white),
+        ('GRID',(0,0),(-1,-1), 0.5, HexColor('#cccccc')),
+        ('LINEBELOW',(0,0),(-1,0), 1, base_color),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ('TOPPADDING',(0,0),(-1,-1),5), ('BOTTOMPADDING',(0,0),(-1,-1),5),
+        ('LEFTPADDING',(0,0),(-1,-1),4), ('RIGHTPADDING',(0,0),(-1,-1),4),
     ]
-    # Alternate row colors
-    for row_idx in range(1, len(table_data)):
-        if row_idx % 2 == 0:
-            table_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), light_bg))
-
-    prod_table.setStyle(TableStyle(table_style_cmds))
+    for ri in range(1, len(table_data)):
+        if ri % 2 == 0: style_cmds.append(('BACKGROUND',(0,ri),(-1,ri), light_bg))
+    prod_table.setStyle(TableStyle(style_cmds))
     story.append(prod_table)
+    story.append(Spacer(1, 4*mm))
 
-    story.append(Spacer(1, 5 * mm))
-
-    # ── Total Section ──
+    # Total
     total = pi.total_amount
-    total_data = [
-        [Paragraph(f'<b>TOTAL AMOUNT ({cur_label}):</b>', ParagraphStyle(
-            'TotalLabel', parent=info_style, fontSize=12, fontName='Helvetica-Bold',
-            textColor=base_color, alignment=TA_RIGHT,
-        )),
-         Paragraph(f'<b>{sym}{total:,.2f}</b>', ParagraphStyle(
-             'TotalValue', parent=info_style, fontSize=12, fontName='Helvetica-Bold',
-             textColor=base_color, alignment=TA_RIGHT,
-         ))],
+    total_words = _num_to_words(total)
+    total_rows = [
+        [Paragraph(f'<b>TOTAL:</b>', ParagraphStyle('TL', parent=val_style, fontSize=11, fontName='Helvetica-Bold', alignment=TA_RIGHT)),
+         Paragraph(f'<b>{sym}{total:,.2f}</b>', ParagraphStyle('TV', parent=val_style, fontSize=11, fontName='Helvetica-Bold', alignment=TA_RIGHT))],
     ]
-    total_table = Table(total_data, colWidths=[140, 100])
+    if cur == 'USD':
+        total_rows.append([Paragraph('', val_style), Paragraph(f'<i>{total_words}</i>', ParagraphStyle('TW', parent=val_style, fontSize=8, fontName='Helvetica-Oblique', alignment=TA_RIGHT))])
+    total_table = Table(total_rows, colWidths=[390, 97])
     total_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('LINEABOVE', (0, 0), (-1, 0), 1.5, base_color),
-        ('LINEBELOW', (0, 0), (-1, 0), 1.5, base_color),
+        ('ALIGN',(0,0),(-1,-1),'RIGHT'), ('TOPPADDING',(0,0),(-1,-1),4), ('BOTTOMPADDING',(0,0),(-1,-1),4),
+        ('LINEABOVE',(0,0),(-1,0), 1.5, base_color), ('LINEBELOW',(0,0),(-1,0), 1.5, base_color),
     ]))
     story.append(total_table)
+    story.append(Spacer(1, 6*mm))
 
-    story.append(Spacer(1, 8 * mm))
+    # Payment & Bank
+    story.append(Paragraph('Payment Terms:', label_style))
+    story.append(Paragraph(pi.payment_terms or '100% T/T in advance', val_style))
+    story.append(Spacer(1, 2*mm))
+    if pi.bank_info:
+        story.append(Paragraph('Bank Information:', label_style))
+        story.append(Paragraph(pi.bank_info.replace('\n', '<br/>'), val_style))
+        story.append(Spacer(1, 2*mm))
 
-    # ── Payment & Bank Info ──
-    story.append(Paragraph('PAYMENT &amp; BANK DETAILS', section_style))
-    story.append(Spacer(1, 2 * mm))
+    # Country of Origin
+    story.append(Paragraph('<b>Country of Origin: China</b>', label_style))
+    story.append(Spacer(1, 6*mm))
 
-    bank_info = pi.bank_info or 'Please contact us for bank details.'
-    payment_terms = pi.payment_terms or 'T/T 30% deposit, 70% before shipment'
-
-    payment_data = [
-        [Paragraph('<b>Payment Terms:</b>', info_style), Paragraph(payment_terms, info_style)],
-        [Paragraph('<b>Bank Info:</b>', info_style), Paragraph(bank_info.replace('\n', '<br/>'), info_style)],
-    ]
-    pay_table = Table(payment_data, colWidths=[110, 430])
-    pay_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-    ]))
-    story.append(pay_table)
-
-    story.append(Spacer(1, 12 * mm))
-
-    # ── Signature Area ──
+    # Signature
+    sig_style = ParagraphStyle('Sig', parent=val_style, fontSize=9, alignment=TA_LEFT)
     sig_data = [
-        [
-            Paragraph('<b>Issued By:</b><br/><br/><br/>_________________________<br/>'
-                      f'{COMPANY_INFO["name"]}<br/>'
-                      f'Date: {datetime.now().strftime("%Y-%m-%d")}',
-                      ParagraphStyle('SigLeft', parent=info_style, fontSize=9)),
-            Paragraph('<b>Authorized Signature &amp; Stamp:</b><br/><br/><br/>'
-                      '_________________________<br/>'
-                      '<i>(Company Chop / Signature)</i>',
-                      ParagraphStyle('SigRight', parent=info_style, fontSize=9, alignment=TA_RIGHT)),
-        ]
+        [Paragraph(f'<b>{company_name}</b><br/><br/><br/>_________________________<br/>Date: {datetime.now().strftime("%Y-%m-%d")}', sig_style),
+         Paragraph('<b>BUYER:</b><br/><br/><br/>_________________________<br/>', sig_style)],
     ]
-    sig_table = Table(sig_data, colWidths=[250, 250])
-    sig_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-    ]))
+    sig_table = Table(sig_data, colWidths=[230, 230])
+    sig_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0)]))
     story.append(sig_table)
 
-    story.append(Spacer(1, 6 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#cccccc'), spaceAfter=2 * mm))
-    story.append(Paragraph(
-        '<i>This is a computer-generated Proforma Invoice. For any questions, '
-        f'please contact {COMPANY_INFO["email"]}.</i>',
-        ParagraphStyle('Disclaimer', parent=info_style, fontSize=7, textColor=grey, alignment=TA_CENTER)
-    ))
+    story.append(Spacer(1, 3*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#cccccc'), spaceAfter=2*mm))
+    story.append(Paragraph(f'<i>This is a computer-generated Proforma Invoice. For questions, contact {COMPANY_INFO["email"]}.</i>',
+        ParagraphStyle('Disc', parent=val_style, fontSize=7, textColor=grey, alignment=TA_CENTER)))
 
-    # ── Build PDF ──
-    doc.build(story)
-
+    doc.build(story, onFirstPage=_draw_page_template, onLaterPages=_draw_page_template)
     return filename
