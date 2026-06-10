@@ -1,7 +1,8 @@
 <div class="row mb-3">
     <div class="col"><h5><i class="bi bi-file-text me-2"></i>{{ pi.pi_number }}</h5></div>
     <div class="col text-end">
-        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-success"><i class="bi bi-download me-1"></i> PDF</a>{% endif %}
+        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-danger me-1"><i class="bi bi-file-pdf"></i> PDF</a>{% endif %}
+        {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-sm btn-success me-1"><i class="bi bi-file-excel"></i> Excel</a>{% endif %}
         <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
     </div>
 </div>

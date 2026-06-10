@@ -10,11 +10,8 @@
         </a>
     </div>
     <div class="col text-end">
-        {% if pi.pdf_path %}
-        <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-success">
-            <i class="bi bi-download me-1"></i> Download PDF
-        </a>
-        {% endif %}
+        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-danger me-1"><i class="bi bi-file-pdf me-1"></i>PDF</a>{% endif %}
+        {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-success me-1"><i class="bi bi-file-excel me-1"></i>Excel</a>{% endif %}
         <form action="{{ url_for('pi_delete', id=pi.id) }}" method="post" class="d-inline"
               onsubmit="return confirm('Delete PI {{ pi.pi_number }}?');">
             <button type="submit" class="btn btn-outline-danger">

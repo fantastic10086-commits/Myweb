@@ -113,6 +113,7 @@ class PI(db.Model):
     company = db.Column(db.String(50), default='klista')
     total_amount = db.Column(db.Float, default=0.0)
     pdf_path = db.Column(db.String(500), default='')
+    excel_path = db.Column(db.String(500), default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -66,7 +66,7 @@
                         <th>Salesperson</th>
                         <th>Date</th>
                         <th class="text-end">Total</th>
-                        <th>PDF</th>
+                        <th>Files</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
@@ -79,13 +79,9 @@
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
                         <td>
-                            {% if pi.pdf_path %}
-                            <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-success">
-                                <i class="bi bi-download"></i> PDF
-                            </a>
-                            {% else %}
-                            <span class="badge bg-secondary">No PDF</span>
-                            {% endif %}
+                            {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-danger me-1" title="PDF"><i class="bi bi-file-pdf"></i></a>{% endif %}
+                            {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-sm btn-outline-success" title="Excel"><i class="bi bi-file-excel"></i></a>{% endif %}
+                            {% if not pi.pdf_path and not pi.excel_path %}<span class="badge bg-secondary">—</span>{% endif %}
                         </td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>

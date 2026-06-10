@@ -20,6 +20,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 from models import db, Customer, Product, PI, PIItem, Salesperson, User
 from pdf_generator import generate_pi_pdf
+from excel_generator import generate_pi_excel
 
 # ── Configuration ────────────────────────────────────────────────────
 # Detect the app root directory (where this file lives)
@@ -32,7 +33,7 @@ def _migrate_db():
     expected = {
         'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME'},
         'products': {'image': 'VARCHAR(500)'},
-        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)'},
+        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)'},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)'},
     }
     for table, columns in expected.items():
@@ -799,7 +800,9 @@ def pi_create():
             sp = Salesperson.query.filter_by(name=pi.salesperson).first()
             sp_info = {'phone': sp.phone, 'email': sp.email} if sp else {}
             pdf_filename = generate_pi_pdf(pi_full, app.config['PDF_DIR'], sp_info)
+            excel_filename = generate_pi_excel(pi_full, app.config['PDF_DIR'])
             pi.pdf_path = pdf_filename
+            pi.excel_path = excel_filename
         except Exception as e:
             db.session.rollback()
             flash(f'Error generating PDF: {str(e)}', 'danger')
@@ -892,6 +895,20 @@ def pi_download(id):
         flash('PDF file does not exist on disk.', 'danger')
         return redirect(url_for('pi_detail', id=id))
     return send_file(filepath, as_attachment=True, download_name=pi.pdf_path)
+
+
+@app.route('/pi/<int:id>/excel')
+@login_required
+def pi_excel_download(id):
+    pi = PI.query.get_or_404(id)
+    if not pi.excel_path:
+        flash('Excel file not found.', 'danger')
+        return redirect(url_for('pi_detail', id=id))
+    filepath = os.path.join(app.config['PDF_DIR'], pi.excel_path)
+    if not os.path.exists(filepath):
+        flash('Excel file does not exist on disk.', 'danger')
+        return redirect(url_for('pi_detail', id=id))
+    return send_file(filepath, as_attachment=True, download_name=pi.excel_path)
 
 
 @app.route('/pi/<int:id>/delete', methods=['POST'])
@@ -1011,7 +1028,9 @@ def pi_edit(id):
             sp = Salesperson.query.filter_by(name=pi.salesperson).first()
             sp_info = {'phone': sp.phone, 'email': sp.email} if sp else {}
             pdf_filename = generate_pi_pdf(pi_full, app.config['PDF_DIR'], sp_info)
+            excel_filename = generate_pi_excel(pi_full, app.config['PDF_DIR'])
             pi.pdf_path = pdf_filename
+            pi.excel_path = excel_filename
         except Exception as e:
             db.session.rollback()
             flash(f'Error generating PDF: {str(e)}', 'danger')
