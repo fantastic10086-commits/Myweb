@@ -967,12 +967,16 @@ def pi_create():
 
         # Create PI record
         pi_number = _generate_pi_number()
+        bank_info_from_account = ''
+        if account_id:
+            acct = Account.query.get(account_id)
+            if acct: bank_info_from_account = acct.bank_info()
         pi = PI(
             pi_number=pi_number,
             customer_id=customer_id,
             issue_date=issue_date,
             payment_terms=payment_terms or '100% TT before shipment',
-            bank_info=bank_info or (Account.query.get(account_id).bank_info() if account_id else ''),
+            bank_info=bank_info or bank_info_from_account,
             salesperson=salesperson,
             currency=currency,
             company=company,
@@ -1236,7 +1240,11 @@ def pi_edit(id):
         pi.company = company
         pi.issue_date = issue_date
         pi.payment_terms = payment_terms or '100% TT before shipment'
-        pi.bank_info = bank_info or ''
+        bank_info_from_account = ''
+        if account_id:
+            acct = Account.query.get(account_id)
+            if acct: bank_info_from_account = acct.bank_info()
+        pi.bank_info = bank_info or bank_info_from_account
         pi.total_amount = total_amount
         pi.notes = notes
 
