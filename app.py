@@ -1235,6 +1235,18 @@ def pi_delete(id):
     return redirect(url_for('pi_list'))
 
 
+def _preload_products(pi):
+    preload = {}
+    for item in pi.items:
+        pid = str(item.product_id)
+        prod = item.product
+        if prod:
+            preload[pid] = {'id': prod.id, 'name': prod.name, 'code': prod.product_code,
+                            'spec': prod.specification or '', 'price': item.unit_price,
+                            'img': prod.image or '', 'qty': item.quantity}
+    return preload
+
+
 @app.route('/pi/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def pi_edit(id):
@@ -1246,6 +1258,7 @@ def pi_edit(id):
     products = Product.query.order_by(Product.name).all()
     # Map existing items: product_id -> {quantity, selected}
     existing_items = {item.product_id: item.quantity for item in pi.items}
+    preload = _preload_products(pi)
 
     if request.method == 'POST':
         customer_id = request.form.get('customer_id', type=int)
@@ -1261,12 +1274,14 @@ def pi_edit(id):
         if not customer_id:
             flash('Please select a customer.', 'danger')
             return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   products=products, existing_items=existing_items)
+                                   products=products, existing_items=existing_items,
+                                   preload_products=preload)
 
         if not salesperson:
             flash('Please select a salesperson.', 'danger')
             return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   products=products, existing_items=existing_items)
+                                   products=products, existing_items=existing_items,
+                                   preload_products=preload)
 
         try:
             issue_date = datetime.strptime(issue_date_str, '%Y-%m-%d').date() if issue_date_str else pi.issue_date
@@ -1302,7 +1317,8 @@ def pi_edit(id):
         if not selected_items:
             flash('Please select at least one product.', 'danger')
             return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   products=products, existing_items=existing_items)
+                                   products=products, existing_items=existing_items,
+                                   preload_products=preload)
 
         total_amount = round(total_amount, 2)
 
@@ -1350,19 +1366,14 @@ def pi_edit(id):
             db.session.rollback()
             flash(f'Error generating PDF: {str(e)}', 'danger')
             return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   products=products, existing_items=existing_items)
+                                   products=products, existing_items=existing_items,
+                                   preload_products=preload)
 
         db.session.commit()
         flash(f'PI {pi.pi_number} updated and PDF regenerated.', 'success')
         return redirect(url_for('pi_list'))
 
-    # GET request — preload only the products that are in existing items
-    preload = {}
-    for pid, qty in existing_items.items():
-        prod = Product.query.get(int(pid))
-        if prod:
-            preload[pid] = {'id': prod.id, 'name': prod.name, 'code': prod.product_code,
-                            'spec': prod.specification or '', 'price': prod.unit_price, 'img': prod.image or '', 'qty': qty}
+    # GET request
     return render_template('pi_edit.html', pi=pi, customers=customers,
                            products=products, existing_items=existing_items,
                            preload_products=preload)
