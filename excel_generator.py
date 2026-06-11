@@ -54,10 +54,8 @@ def generate_pi_excel(pi, output_dir):
     # ── Page setup for A4 portrait printing ──
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.orientation = 'portrait'
-    ws.page_margins.left = 0.5
-    ws.page_margins.right = 0.5
-    ws.page_margins.top = 0.5
-    ws.page_margins.bottom = 0.5
+    from openpyxl.worksheet.page import PageMargins
+    ws.page_margins = PageMargins(left=0.5, right=0.5, top=0.5, bottom=0.5, header=0.3, footer=0.3)
     ws.sheet_properties.pageSetUpPr = None  # reset
 
     # ── Styles ──
