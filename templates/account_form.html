@@ -4,7 +4,7 @@
 <div class="row mb-3"><div class="col"><h2><i class="bi bi-{% if editing %}pencil{% else %}plus{% endif %} me-2"></i>{% if editing %}Edit{% else %}Add{% endif %} Account</h2><a href="{{ url_for('account_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a></div></div>
 <div class="card"><div class="card-body"><form method="post"><div class="row g-3">
 <div class="col-md-6"><label class="form-label">Display Name <span class="text-danger">*</span></label><input type="text" class="form-control" name="name" required value="{{ a.name if a else '' }}" placeholder="e.g. 克利斯达-农行"></div>
-<div class="col-md-6"><label class="form-label">Brand</label><select class="form-select" name="brand"><option value="klista" {% if a and a.brand=='klista' %}selected{% endif %}>克利斯达</option><option value="qisuo" {% if a and a.brand=='qisuo' %}selected{% endif %}>戚所</option></select></div>
+<div class="col-md-6"><label class="form-label">Brand</label><select class="form-select" name="brand"><option value="klista" {% if a and a.brand=='klista' %}selected{% endif %}>克利斯达</option><option value="qisuo" {% if a and a.brand=='qisuo' %}selected{% endif %}>QISUO</option></select></div>
 <div class="col-12"><label class="form-label">Company Name on Account</label><input type="text" class="form-control" name="company_name" value="{{ a.company_name if a else '' }}"></div>
 <div class="col-md-6"><label class="form-label">Bank Name</label><input type="text" class="form-control" name="bank_name" value="{{ a.bank_name if a else '' }}"></div>
 <div class="col-md-3"><label class="form-label">Account No.</label><input type="text" class="form-control" name="account_no" value="{{ a.account_no if a else '' }}"></div>
