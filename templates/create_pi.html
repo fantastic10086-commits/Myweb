@@ -191,7 +191,21 @@
         input.addEventListener('blur', function() { setTimeout(function() { dropdown.classList.remove('show'); }, 200); });
         dropdown.addEventListener('mousedown', function(e) {
             var item = e.target.closest('.dropdown-item');
-            if (item && item.dataset.val) { select.value = item.dataset.val; input.value = item.dataset.label; dropdown.classList.remove('show'); }
+            if (item && item.dataset.val) {
+                select.value = item.dataset.val; input.value = item.dataset.label; dropdown.classList.remove('show');
+                // Auto-fill salesperson from customer
+                var opt = select.querySelector('option[value=\"' + item.dataset.val + '\"]');
+                if (opt) {
+                    var sp = opt.getAttribute('data-sp') || '';
+                    var spInput = document.getElementById('sp_search');
+                    var spSelect = document.getElementById('pi_salesperson');
+                    if (spInput) { spInput.value = sp; }
+                    if (spSelect) { spSelect.value = sp; }
+                    {% if not is_admin %}
+                    if (spInput && sp) { spInput.readOnly = true; spInput.style.background = '#e9ecef'; }
+                    {% endif %}
+                }
+            }
         });
     }
 </script>
@@ -224,7 +238,7 @@
                             <select class="form-select d-none" id="customer_id" name="customer_id" required>
                                 <option value="">— Select Customer —</option>
                                 {% for c in customers %}
-                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
+                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
                                 {% endfor %}
                             </select>
                             <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button>
