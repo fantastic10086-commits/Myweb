@@ -50,6 +50,21 @@ class Account(db.Model):
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    def bank_info(self):
+        parts = []
+        if self.bank_name: parts.append(self.bank_name)
+        if self.account_no: parts.append(f'A/C: {self.account_no}')
+        if self.swift_code: parts.append(f'SWIFT: {self.swift_code}')
+        return '\n'.join(parts)
+
+    def to_dict(self):
+        return {
+            'id': self.id, 'name': self.name, 'company_name': self.company_name,
+            'bank_name': self.bank_name, 'account_no': self.account_no,
+            'swift_code': self.swift_code, 'brand': self.brand, 'notes': self.notes,
+        }
+
+
 class Payment(db.Model):
     __tablename__ = 'payments'
 
@@ -65,24 +80,6 @@ class Payment(db.Model):
     def to_dict(self):
         return {'id': self.id, 'pi_id': self.pi_id, 'amount': self.amount,
                 'note': self.note, 'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''}
-
-
-class Account(db.Model):
-    __tablename__ = 'accounts'
-
-    def bank_info(self):
-        parts = []
-        if self.bank_name: parts.append(self.bank_name)
-        if self.account_no: parts.append(f'A/C: {self.account_no}')
-        if self.swift_code: parts.append(f'SWIFT: {self.swift_code}')
-        return '\n'.join(parts)
-
-    def to_dict(self):
-        return {
-            'id': self.id, 'name': self.name, 'company_name': self.company_name,
-            'bank_name': self.bank_name, 'account_no': self.account_no,
-            'swift_code': self.swift_code, 'brand': self.brand, 'notes': self.notes,
-        }
 
 
 class Salesperson(db.Model):
