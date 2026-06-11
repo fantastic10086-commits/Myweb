@@ -32,6 +32,7 @@
                     <tr><th>Salesperson</th><td>{{ pi.salesperson or '-' }}</td></tr>
                     <tr><th>Issue Date</th><td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td></tr>
                     <tr><th>Currency</th><td>{{ pi.currency or 'USD' }}</td></tr>
+                    <tr><th>Paid</th><td>{% if pi.paid %}<span class="badge bg-success">✓ Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td></tr>
                     <tr><th>Total Amount</th><td class="fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td></tr>
                     <tr><th>Payment Terms</th><td>{{ pi.payment_terms or '-' }}</td></tr>
                     <tr><th>Bank Info</th><td style="white-space:pre-wrap;">{{ pi.bank_info or '-' }}</td></tr>

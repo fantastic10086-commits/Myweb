@@ -32,6 +32,8 @@
                     <tr><th class="ps-0">Salesperson</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
                     <tr><th class="ps-0">Email</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
                     <tr><th class="ps-0">Phone</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>
+                    <tr><th class="ps-0">Total Deal (USD)</th><td class="pe-0"><strong class="text-success">${{ '%.2f'|format(customer.total_deal_usd or 0) }}</strong></td></tr>
+
                     <tr><th class="ps-0">Created</th><td class="pe-0">{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td></tr>
                     <tr><th class="ps-0">Address</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.address or '-' }}</td></tr>
                     <tr><th class="ps-0">Notes</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.notes or '-' }}</td></tr>

@@ -31,9 +31,9 @@ def _migrate_db():
     from sqlalchemy import inspect, text
     inspector = inspect(db.engine)
     expected = {
-        'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME'},
+        'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT'},
         'products': {'image': 'VARCHAR(500)'},
-        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)'},
+        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN'},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)'},
     }
     for table, columns in expected.items():
@@ -950,6 +950,29 @@ def pi_excel_download(id):
             return redirect(url_for('pi_detail', id=id))
     filepath = os.path.join(app.config['PDF_DIR'], pi.excel_path)
     return send_file(filepath, as_attachment=True, download_name=pi.excel_path)
+
+
+@app.route('/pi/<int:id>/toggle-paid', methods=['POST'])
+@login_required
+def pi_toggle_paid(id):
+    pi = PI.query.get_or_404(id)
+    pi.paid = not pi.paid
+    # Update customer's total_deal_usd
+    customer = Customer.query.get(pi.customer_id)
+    if customer:
+        # Recalculate from all paid PIs
+        paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).all()
+        total = 0.0
+        for p in paid_pis:
+            amount = p.total_amount
+            if p.currency == 'RMB':
+                amount = round(amount / 7.0, 2)
+            total += amount
+        customer.total_deal_usd = round(total, 2)
+    db.session.commit()
+    status = 'Paid' if pi.paid else 'Unpaid'
+    flash(f'{pi.pi_number} marked as {status}.', 'success')
+    return redirect(request.referrer or url_for('pi_list'))
 
 
 @app.route('/pi/<int:id>/delete', methods=['POST'])

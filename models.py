@@ -15,6 +15,7 @@ class Customer(db.Model):
     phone = db.Column(db.String(50), default='')
     address = db.Column(db.Text, default='')
     salesperson = db.Column(db.String(100), default='')
+    total_deal_usd = db.Column(db.Float, default=0.0)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -30,6 +31,7 @@ class Customer(db.Model):
             'phone': self.phone,
             'address': self.address,
             'salesperson': self.salesperson,
+            'total_deal_usd': self.total_deal_usd,
             'notes': self.notes,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
         }
@@ -114,6 +116,7 @@ class PI(db.Model):
     total_amount = db.Column(db.Float, default=0.0)
     pdf_path = db.Column(db.String(500), default='')
     excel_path = db.Column(db.String(500), default='')
+    paid = db.Column(db.Boolean, default=False)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -131,6 +134,7 @@ class PI(db.Model):
             'currency': self.currency,
             'total_amount': self.total_amount,
             'pdf_path': self.pdf_path,
+            'paid': self.paid,
             'notes': self.notes,
         }
 
