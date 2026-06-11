@@ -220,11 +220,11 @@
                         <label class="form-label">Customer <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off"
-                                   value="{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.name }}{% endif %}{% endfor %}{% endif %}">
+                                   value="{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% endif %}{% endfor %}{% endif %}">
                             <select class="form-select d-none" id="customer_id" name="customer_id" required>
                                 <option value="">— Select Customer —</option>
                                 {% for c in customers %}
-                                <option value="{{ c.id }}" data-label="{{ c.name }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.country %} ({{ c.country }}){% endif %}</option>
+                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
                                 {% endfor %}
                             </select>
                             <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button>
