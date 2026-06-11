@@ -3,11 +3,6 @@
 
 {% block extra_scripts %}
 <script>
-    var allProducts = [
-        {% for p in products %}
-        {id: {{ p.id }}, name: "{{ p.name|e }}", code: "{{ p.product_code|e }}", spec: "{{ p.specification|e }}", price: {{ p.unit_price }}, img: "{{ p.image|e }}"}{% if not loop.last %},{% endif %}
-        {% endfor %}
-    ];
     var existingItems = {{ existing_items|tojson }};
     var selectedProducts = {};
     var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
@@ -58,19 +53,33 @@
         return tr;
     }
     function renumberRows() { var rows = selectedTableBody.querySelectorAll('tr'); for (var i = 0; i < rows.length; i++) rows[i].querySelector('.row-num').textContent = i + 1; }
-    function addProduct(id) {
-        if (selectedProducts[id]) return;
-        for (var i = 0; i < allProducts.length; i++) {
-            if (allProducts[i].id == id) { var p = allProducts[i]; selectedProducts[id] = {name: p.name, code: p.code, spec: p.spec, price: p.price, qty: 1, img: p.img}; selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec, price: p.price, qty: 1, img: p.img})); renumberRows(); showHideEmpty(); updateTotal(); break; }
-        }
+    function addProductObj(p) {
+        if (selectedProducts[p.id]) return;
+        selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: 1, img: p.img||''};
+        selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: 1, img: p.img||''}));
+        renumberRows(); showHideEmpty(); updateTotal();
         productSearch.value = ''; productDropdown.classList.remove('show'); productSearch.focus();
     }
     function renderDropdown(filter) {
-        filter = (filter || '').toLowerCase(); var html = ''; var count = 0;
-        for (var i = 0; i < allProducts.length; i++) { var p = allProducts[i]; if (selectedProducts[p.id]) continue; var txt = (p.name + ' ' + p.code).toLowerCase(); if (!filter || txt.indexOf(filter) !== -1) { html += '<button type="button" class="dropdown-item" data-id="' + p.id + '"><strong>' + p.name + '</strong>  <small class="text-muted">' + p.code + '</small>  <span class="float-end">$' + p.price.toFixed(2) + '</span></button>'; count++; } }
-        if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
-        productDropdown.innerHTML = html; if (count > 0 || filter) productDropdown.classList.add('show'); else productDropdown.classList.remove('show');
+        filter = (filter || '').trim();
+        if (!filter) { productDropdown.classList.remove('show'); return; }
+        productDropdown.innerHTML = '<span class="dropdown-item text-muted">Searching...</span>';
+        productDropdown.classList.add('show');
+        fetch('/api/products/search?q=' + encodeURIComponent(filter))
+        .then(function(r){return r.json();})
+        .then(function(data){
+            var html = '';
+            for (var i = 0; i < data.length; i++) {
+                var p = data[i];
+                if (selectedProducts[p.id]) continue;
+                html += '<button type="button" class="dropdown-item" data-p=\'' + JSON.stringify(p).replace(/'/g,'&#39;') + '\'>' + imgTag(p.img) + '<strong>' + p.name + '</strong>  <small class="text-muted">' + p.code + '</small>  <span class="float-end">$' + p.price.toFixed(2) + '</span></button>';
+            }
+            if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
+            productDropdown.innerHTML = html;
+        });
     }
+
+    var preloadProducts = {{ preload_products|tojson }};
 
     document.addEventListener('DOMContentLoaded', function() {
         productSearch = document.getElementById('product_search');
@@ -79,18 +88,14 @@
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
-        for (var pid in existingItems) { for (var i = 0; i < allProducts.length; i++) { if (allProducts[i].id == pid) { var p = allProducts[i]; selectedProducts[pid] = {name: p.name, code: p.code, spec: p.spec, price: p.price, qty: existingItems[pid], img: p.img}; selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec, price: p.price, qty: existingItems[pid], img: p.img})); break; } } }
+        for (var pid in preloadProducts) { var p = preloadProducts[pid]; selectedProducts[pid] = {name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: p.qty, img: p.img||''}; selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: p.qty, img: p.img||''})); }
         renumberRows(); showHideEmpty(); updateTotal();
         productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
         productSearch.addEventListener('input', function() { renderDropdown(this.value); });
         productSearch.addEventListener('blur', function() { setTimeout(function() { productDropdown.classList.remove('show'); }, 200); });
         productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); renderDropdown(this.value); } });
-        productDropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.id) addProduct(item.dataset.id); });
-        document.getElementById('add_product_btn').addEventListener('click', function() {
-            var val = productSearch.value.trim(); if (!val) return; var found = null;
-            for (var i = 0; i < allProducts.length; i++) { if (allProducts[i].name.toLowerCase() === val.toLowerCase() || allProducts[i].code.toLowerCase() === val.toLowerCase()) { found = allProducts[i]; break; } }
-            if (found) addProduct(found.id); else renderDropdown(val);
-        });
+        productDropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.p) { try { addProductObj(JSON.parse(item.dataset.p)); } catch(ex) {} } });
+        document.getElementById('add_product_btn').addEventListener('click', function() { renderDropdown(productSearch.value); });
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', function() { document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + this.value + ')'; updateTotal(); });
         var form = document.getElementById('pi-form');

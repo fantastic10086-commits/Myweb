@@ -645,6 +645,22 @@ def api_product_add():
     })
 
 
+@app.route('/api/products/search')
+@login_required
+def api_product_search():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    pattern = f'%{q}%'
+    products = Product.query.filter(
+        db.or_(Product.name.ilike(pattern), Product.product_code.ilike(pattern))
+    ).limit(50).all()
+    return jsonify([{
+        'id': p.id, 'name': p.name, 'code': p.product_code,
+        'spec': p.specification or '', 'price': p.unit_price, 'img': p.image or '',
+    } for p in products])
+
+
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_file(os.path.join(current_app.config['UPLOAD_DIR'], secure_filename(filename)))
@@ -1188,9 +1204,16 @@ def pi_edit(id):
         flash(f'PI {pi.pi_number} updated and PDF regenerated.', 'success')
         return redirect(url_for('pi_list'))
 
-    # GET request
+    # GET request — preload only the products that are in existing items
+    preload = {}
+    for pid, qty in existing_items.items():
+        prod = Product.query.get(int(pid))
+        if prod:
+            preload[pid] = {'id': prod.id, 'name': prod.name, 'code': prod.product_code,
+                            'spec': prod.specification or '', 'price': prod.unit_price, 'img': prod.image or '', 'qty': qty}
     return render_template('pi_edit.html', pi=pi, customers=customers,
-                           products=products, existing_items=existing_items)
+                           products=products, existing_items=existing_items,
+                           preload_products=preload)
 
 
 # ═══════════════════════════════════════════════════════════════════════
