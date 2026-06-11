@@ -57,6 +57,35 @@ COMPANY_CONFIG = {
 }
 
 
+def _seed_products_from_csv():
+    """Seed products from bundled CSV files on first startup."""
+    import csv, re
+    for fname in ['产品信息202606111_1.csv', '产品信息202606111_2.csv', '产品信息202606111_3.csv']:
+        csv_path = os.path.join(APP_ROOT, fname)
+        if not os.path.exists(csv_path):
+            continue
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.reader(f)
+            next(reader)
+            for row in reader:
+                try:
+                    name = (row[0] or '').strip().replace('\n', ' ').replace('\r', '')[:200]
+                    if not name: continue
+                    code = (row[1] or '').strip()[:100]
+                    spec = (row[2] or '').strip()[:200]
+                    price_str = (row[5] or '').strip()
+                    price = 0.0
+                    if price_str:
+                        nums = re.findall(r'[\d.]+', price_str.replace(',', ''))
+                        if nums:
+                            try: price = float(nums[0])
+                            except: pass
+                    db.session.add(Product(name=name, product_code=code, specification=spec, unit_price=price))
+                except Exception:
+                    pass
+    db.session.commit()
+
+
 def _seed_customers_from_csv():
     """Seed customers from bundled CSV file on first startup."""
     import csv
@@ -141,6 +170,10 @@ def create_app():
         # Seed default customers from CSV (only if empty)
         if Customer.query.count() == 0:
             _seed_customers_from_csv()
+
+        # Seed default products from CSV (only if empty)
+        if Product.query.count() == 0:
+            _seed_products_from_csv()
 
         # Seed admin account if not exists
         if not User.query.filter_by(username='admin').first():
