@@ -174,6 +174,7 @@
         updateTotal();
     });
 
+    function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
     function initSearchable(inputId, selectId, dropdownId) {
         var input = document.getElementById(inputId), select = document.getElementById(selectId), dropdown = document.getElementById(dropdownId);
         function render(filter) {
@@ -183,7 +184,7 @@
                 if (!opts[i].value) continue;
                 var label = opts[i].getAttribute('data-label') || opts[i].textContent;
                 if (!filter || label.toLowerCase().indexOf(filter) !== -1) {
-                    html += '<button type="button" class="dropdown-item" data-val="' + opts[i].value + '" data-label="' + label + '">' + label + '</button>';
+                    html += '<button type="button" class="dropdown-item" data-val="' + escHtml(opts[i].value) + '" data-label="' + escHtml(label) + '">' + escHtml(label) + '</button>';
                 }
             }
             if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
