@@ -497,13 +497,24 @@ def sales_stats():
     grand_total = sum(r.total_amount for r in results)
     grand_pi_count = sum(r.pi_count for r in results)
 
+    # Detailed PI list for the same filter
+    pi_detail_q = PI.query.options(joinedload(PI.customer)).order_by(PI.created_at.desc())
+    if date_from:
+        try: pi_detail_q = pi_detail_q.filter(PI.issue_date >= datetime.strptime(date_from, '%Y-%m-%d').date())
+        except: pass
+    if date_to:
+        try: pi_detail_q = pi_detail_q.filter(PI.issue_date <= datetime.strptime(date_to, '%Y-%m-%d').date())
+        except: pass
+    all_filtered_pis = pi_detail_q.all()
+
     return render_template('sales_stats.html',
                            stats=results,
                            grand_total=grand_total,
                            grand_pi_count=grand_pi_count,
                            date_from=date_from,
                            date_to=date_to,
-                           preset=preset)
+                           preset=preset,
+                           all_pis=all_filtered_pis)
 
 
 @app.route('/customers/<int:id>/delete', methods=['POST'])

@@ -130,4 +130,33 @@
         {% endif %}
     </div>
 </div>
+
+<!-- PI Detail List -->
+{% if all_pis %}
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">PI Details ({{ all_pis|length }})</h5>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#piDetailTable">Show/Hide</button>
+    </div>
+    <div class="collapse show" id="piDetailTable">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light"><tr><th>PI Number</th><th>Customer</th><th>Salesperson</th><th>Date</th><th class="text-end">Amount</th><th>Paid</th></tr></thead>
+                <tbody>
+                    {% for pi in all_pis %}
+                    <tr>
+                        <td><strong>{{ pi.pi_number }}</strong></td>
+                        <td>{{ pi.customer.name if pi.customer else '-' }}</td>
+                        <td>{{ pi.salesperson }}</td>
+                        <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
+                        <td>{% if pi.paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endblock %}
