@@ -174,7 +174,9 @@
         updateTotal();
     });
 
-    function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function escHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
     function initSearchable(inputId, selectId, dropdownId) {
         var input = document.getElementById(inputId), select = document.getElementById(selectId), dropdown = document.getElementById(dropdownId);
         function render(filter) {
@@ -182,7 +184,8 @@
             var opts = select.querySelectorAll('option');
             for (var i = 0; i < opts.length; i++) {
                 if (!opts[i].value) continue;
-                var label = opts[i].getAttribute('data-label') || opts[i].textContent;
+                // Use textContent (already decoded by browser), avoid getAttribute which keeps HTML entities
+                var label = opts[i].textContent;
                 if (!filter || label.toLowerCase().indexOf(filter) !== -1) {
                     html += '<button type="button" class="dropdown-item" data-val="' + escHtml(opts[i].value) + '" data-label="' + escHtml(label) + '">' + escHtml(label) + '</button>';
                 }
