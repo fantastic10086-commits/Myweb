@@ -79,6 +79,19 @@ def create_app():
     with app.app_context():
         db.create_all()
         _migrate_db()
+
+        # Seed default salespersons
+        default_sp = [
+            ('Shu Kei', '+86 17712333882', 'fantastic10086@gmail.com'),
+            ('Limon', '+86 15301506008', 'limon@qisuowelding.com'),
+            ('Kristi', '+86 18112500618', 'kristi@qisuowelding.com'),
+            ('Lu Yan', '+86 18019696608', 'luyan@qisuowelding.com'),
+        ]
+        for name, phone, email in default_sp:
+            if not Salesperson.query.filter_by(name=name).first():
+                db.session.add(Salesperson(name=name, phone=phone, email=email))
+        db.session.commit()
+
         # Seed admin account if not exists
         if not User.query.filter_by(username='admin').first():
             db.session.add(User(
