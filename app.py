@@ -1201,6 +1201,19 @@ def payment_delete(id, pid):
     return redirect(request.referrer or url_for('pi_list'))
 
 
+@app.route('/api/pi/<int:id>/payments')
+@login_required
+def api_pi_payments(id):
+    pi = PI.query.get_or_404(id)
+    return jsonify({
+        'currency': pi.currency or 'USD',
+        'total_amount': pi.total_amount,
+        'received': pi.received_amount or 0,
+        'paid': pi.paid,
+        'payments': [{'id': p.id, 'amount': p.amount, 'created_at': p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''} for p in pi.payments]
+    })
+
+
 @app.route('/pi/<int:id>/delete', methods=['POST'])
 def pi_delete(id):
     pi = PI.query.get_or_404(id)

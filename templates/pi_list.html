@@ -166,18 +166,31 @@ function updateUsdEquiv() {
     document.getElementById('usdEquiv').textContent = '$' + (amt / 7).toFixed(2);
 }
 function viewPayments(id) {
-    fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
-        // Extract payment info from preview
-        var div = document.createElement('div'); div.innerHTML = html;
-        var paidEl = div.querySelector('.badge');
-        var totalText = div.querySelector('td.fw-bold') ? div.querySelector('td.fw-bold').textContent : '';
+    fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
+        var sym = data.currency === 'RMB' ? '¥' : '$';
         document.getElementById('payModalTitle').textContent = 'Payment History';
-        document.getElementById('payPINumber').textContent = id;
-        document.getElementById('payPITotal').textContent = totalText;
-        // Reload to see payments (simplified approach: just show add form)
-        document.getElementById('payHistory').innerHTML = '<p class=\"text-muted\">Add another payment below.</p>';
-        document.getElementById('payAmount').value = '';
+        document.getElementById('payPINumber').textContent = '#' + id;
+        document.getElementById('payPITotal').textContent = sym + data.total_amount.toFixed(2) + ' | Received: ' + sym + data.received.toFixed(2);
+        document.getElementById('payCurrency').textContent = data.currency;
+        document.getElementById('payAmount').value = (data.total_amount - data.received).toFixed(2);
+        if (data.currency === 'RMB') {
+            document.getElementById('usdEquivRow').style.display = '';
+            updateUsdEquiv();
+        } else {
+            document.getElementById('usdEquivRow').style.display = 'none';
+        }
         document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
+        // Build history
+        var histHtml = '';
+        var pmts = data.payments;
+        if (pmts.length > 0) {
+            histHtml = '<h6>History (' + pmts.length + ')</h6><table class=\"table table-sm\"><thead><tr><th>#</th><th>Amount</th><th>Date</th></tr></thead><tbody>';
+            for (var i = 0; i < pmts.length; i++) {
+                histHtml += '<tr><td>' + (i+1) + '</td><td>' + sym + pmts[i].amount.toFixed(2) + '</td><td><small>' + pmts[i].created_at + '</small></td></tr>';
+            }
+            histHtml += '</tbody></table>';
+        }
+        document.getElementById('payHistory').innerHTML = histHtml;
         new bootstrap.Modal(document.getElementById('paymentModal')).show();
     });
 }
