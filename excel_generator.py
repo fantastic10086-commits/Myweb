@@ -1,5 +1,5 @@
 """
-PI Excel Generator — compact A4 portrait, all columns fit to page.
+PI Excel Generator — matches PDF side-by-side layout, A4 portrait.
 """
 
 import os
@@ -35,134 +35,131 @@ def generate_pi_excel(pi, output_dir):
 
     # ── Styles ──
     hdr_fill = PatternFill(start_color='1a3a5c', end_color='1a3a5c', fill_type='solid')
-    hdr_font = Font(name='Arial', bold=True, color='FFFFFF', size=9)
-    bold8 = Font(name='Arial', bold=True, size=8)
-    bold9 = Font(name='Arial', bold=True, size=9)
-    nrm8 = Font(name='Arial', size=8)
-    nrm9 = Font(name='Arial', size=9)
+    hf = Font(name='Arial', bold=True, color='FFFFFF', size=9)
+    b8 = Font(name='Arial', bold=True, size=8)
+    b9 = Font(name='Arial', bold=True, size=9)
+    n8 = Font(name='Arial', size=8)
+    n9 = Font(name='Arial', size=9)
     thin = Border(left=Side('thin'), right=Side('thin'), top=Side('thin'), bottom=Side('thin'))
     ctr = Alignment(horizontal='center', vertical='center', wrap_text=True)
     rgt = Alignment(horizontal='right', vertical='center')
     lft = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    light_fill = PatternFill(start_color='f4f6f9', end_color='f4f6f9', fill_type='solid')
 
-    # Column widths — total ~200 units to fit A4
-    ws.column_dimensions['A'].width = 4    # No.
-    ws.column_dimensions['B'].width = 40   # Description
-    ws.column_dimensions['C'].width = 10   # QTY
-    ws.column_dimensions['D'].width = 14   # Unit Price
-    ws.column_dimensions['E'].width = 14   # Amount
+    # Columns for side-by-side layout:
+    # A:Label(12)  B:Value(30)  C:gap(2)  D:Label(12)  E:Value(35)
+    ws.column_dimensions['A'].width = 14
+    ws.column_dimensions['B'].width = 34
+    ws.column_dimensions['C'].width = 3
+    ws.column_dimensions['D'].width = 14
+    ws.column_dimensions['E'].width = 38
 
     r = 1
 
-    # ── Company header ──
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-    c = ws.cell(row=r, column=1, value=company_name)
-    c.font = Font(name='Arial', bold=True, size=12, color='1a3a5c')
-    c.alignment = Alignment(horizontal='center')
+    # ── Company + Title ──
+    ws.merge_cells('A1:E1')
+    c = ws['A1']; c.value = company_name
+    c.font = Font(name='Arial', bold=True, size=13, color='1a3a5c'); c.alignment = Alignment(horizontal='center')
     r += 1
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-    ws.cell(row=r, column=1, value='No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China').font = Font(name='Arial', size=6, color='888888')
-    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
+    ws.merge_cells(f'A{r}:E{r}')
+    c = ws.cell(row=r, column=1, value='No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China')
+    c.font = Font(name='Arial', size=6, color='888888'); c.alignment = Alignment(horizontal='center')
     r += 1
-
-    # ── Title ──
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
+    ws.merge_cells(f'A{r}:E{r}')
     c = ws.cell(row=r, column=1, value='PROFORMA INVOICE')
-    c.font = Font(name='Arial', bold=True, size=16, color='1a3a5c')
-    c.alignment = Alignment(horizontal='center')
+    c.font = Font(name='Arial', bold=True, size=16, color='1a3a5c'); c.alignment = Alignment(horizontal='center')
     r += 2
 
-    # ── PI Info section ──
-    info_rows = [
-        ('PI Number:', pi.pi_number, 'Date:', pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else ''),
-    ]
+    # ── PI Info (left) + Customer Info (right) ──
+    pi_start = r
+
+    # Left column: PI info
+    ws.cell(row=r, column=1, value='PI Number:').font = b9
+    ws.cell(row=r, column=2, value=pi.pi_number).font = n9; r += 1
+    ws.cell(row=r, column=1, value='Date:').font = b9
+    ws.cell(row=r, column=2, value=pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '').font = n9; r += 1
     if pi.salesperson:
-        info_rows.append(('Salesperson:', pi.salesperson, '', ''))
+        ws.cell(row=r, column=1, value='Salesperson:').font = b9
+        ws.cell(row=r, column=2, value=pi.salesperson).font = n9; r += 1
+    r = pi_start  # reset for right side
 
-    for left_lb, left_vl, right_lb, right_vl in info_rows:
-        ws.cell(row=r, column=1, value=left_lb).font = bold9
-        ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=2)
-        ws.cell(row=r, column=2, value=left_vl).font = nrm9
-        if right_lb:
-            ws.cell(row=r, column=3, value=right_lb).font = bold9
-            ws.merge_cells(start_row=r, start_column=4, end_row=r, end_column=5)
-            ws.cell(row=r, column=4, value=right_vl).font = nrm9
-        r += 1
-    r += 1
-
-    # ── Customer Info ──
-    ws.cell(row=r, column=1, value='To / ATTN:').font = Font(name='Arial', bold=True, size=9)
-    r += 1
+    # Right column: Customer info
     customer = pi.customer
+    ws.cell(row=r, column=4, value='To / Buyer:').font = b9
+    ws.cell(row=r, column=5, value=customer.name if customer else '').font = n9; r += 1
     if customer:
-        for lb, vl in [('Company:', customer.name), ('Contact:', customer.contact_person),
-                       ('Country:', customer.country), ('Address:', customer.address)]:
-            if vl:
-                ws.cell(row=r, column=1, value=lb).font = bold8
-                ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
-                ws.cell(row=r, column=2, value=vl).font = nrm8
-                ws.cell(row=r, column=2).alignment = lft
-                r += 1
-    r += 1
+        if customer.contact_person:
+            ws.cell(row=r, column=4, value='Contact:').font = b9
+            ws.cell(row=r, column=5, value=customer.contact_person).font = n9; r += 1
+        if customer.country:
+            ws.cell(row=r, column=4, value='Country:').font = b9
+            ws.cell(row=r, column=5, value=customer.country).font = n9; r += 1
+        if customer.email:
+            ws.cell(row=r, column=4, value='Email:').font = b9
+            ws.cell(row=r, column=5, value=customer.email).font = n9; r += 1
+        if customer.phone:
+            ws.cell(row=r, column=4, value='Phone:').font = b9
+            ws.cell(row=r, column=5, value=customer.phone).font = n9; r += 1
+        if customer.address:
+            ws.cell(row=r, column=4, value='Address:').font = b9
+            ws.cell(row=r, column=5, value=customer.address).font = n9; ws.cell(row=r, column=5).alignment = lft; r += 1
 
-    # ── Product Table ──
-    headers = ['No.', 'Description / Item', 'QTY(pcs)', f'Unit Price({cur})', f'Amount({cur})']
+    r = max(r, pi_start + 3) + 2
+
+    # ── Product table (full width) ──
+    # Adjust columns for table
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 50
+    ws.column_dimensions['C'].width = 12
+    ws.column_dimensions['D'].width = 16
+    ws.column_dimensions['E'].width = 16
+
+    headers = ['No.', 'Description / Item', 'QTY(pcs)', f'U.Price({cur})', f'Amount({cur})']
     for i, h in enumerate(headers):
-        c = ws.cell(row=r, column=i+1, value=h)
-        c.font = hdr_font; c.fill = hdr_fill; c.alignment = ctr; c.border = thin
+        c = ws.cell(row=r, column=i+1, value=h); c.font = hf; c.fill = hdr_fill; c.alignment = ctr; c.border = thin
     r += 1
 
-    light_bg = PatternFill(start_color='f4f6f9', end_color='f4f6f9', fill_type='solid')
     for idx, item in enumerate(pi.items, 1):
         desc = item.product.name if item.product else ''
         if item.product and item.product.specification:
             desc += f'\n{item.product.specification}'
         vals = [idx, desc, item.quantity, item.unit_price, item.amount]
         for j, v in enumerate(vals):
-            c = ws.cell(row=r, column=j+1, value=v)
-            c.font = nrm8; c.border = thin
+            c = ws.cell(row=r, column=j+1, value=v); c.font = n8; c.border = thin
             if j >= 2: c.alignment = rgt; c.number_format = '#,##0.00' if j > 2 else '#,##0'
             elif j == 0: c.alignment = ctr
             else: c.alignment = lft
-            # alternate row
-            if idx % 2 == 0: c.fill = light_bg
+            if idx % 2 == 0: c.fill = light_fill
         r += 1
     r += 1
 
     # ── Total ──
     total = pi.total_amount
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
-    c = ws.cell(row=r, column=1, value='TOTAL:')
-    c.font = Font(name='Arial', bold=True, size=11); c.alignment = rgt
-    c = ws.cell(row=r, column=5, value=total)
-    c.font = Font(name='Arial', bold=True, size=11); c.alignment = rgt
-    c.number_format = f'{sym}#,##0.00'
-    c.border = Border(bottom=Side('double'))
-    r += 1
-
-    # ── Payment / Bank / Origin ──
-    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-    ws.cell(row=r, column=1, value=f'Payment Terms: {pi.payment_terms or "100% TT before shipment"}').font = nrm8
-    r += 1
-    if pi.bank_info:
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5)
-        ws.cell(row=r, column=1, value=f'Bank: {pi.bank_info}').font = nrm8
-        ws.cell(row=r, column=1).alignment = lft
-        r += 1
-    ws.cell(row=r, column=1, value='Country of Origin: China').font = bold8
+    ws.cell(row=r, column=1, value='TOTAL:').font = Font(name='Arial', bold=True, size=12); ws.cell(row=r, column=1).alignment = rgt
+    c = ws.cell(row=r, column=5, value=total); c.font = Font(name='Arial', bold=True, size=12); c.alignment = rgt
+    c.number_format = f'{sym}#,##0.00'; c.border = Border(bottom=Side('double'))
     r += 2
 
+    # ── Payment / Bank / Origin ──
+    ws.merge_cells(f'A{r}:E{r}')
+    ws.cell(row=r, column=1, value=f'Payment Terms: {pi.payment_terms or "100% TT before shipment"}').font = n9; r += 1
+    if pi.bank_info:
+        ws.merge_cells(f'A{r}:E{r}')
+        ws.cell(row=r, column=1, value=f'Bank: {pi.bank_info}').font = n9
+        ws.cell(row=r, column=1).alignment = lft; r += 1
+    ws.cell(row=r, column=1, value='Country of Origin: China').font = b9; r += 2
+
     # ── Signature ──
-    ws.cell(row=r, column=1, value=company_name).font = bold9
-    ws.cell(row=r, column=4, value='BUYER:').font = bold9
+    ws.cell(row=r, column=1, value=company_name).font = b9
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=2)
+    ws.cell(row=r, column=4, value='BUYER:').font = b9
     r += 3
     ws.cell(row=r, column=1, value='_________________________')
     ws.cell(row=r, column=4, value='_________________________')
     r += 1
     ws.cell(row=r, column=1, value=f'Date: {__import__("datetime").datetime.now().strftime("%Y-%m-%d")}')
 
-    # ── Print area ──
     ws.print_area = f'A1:E{r}'
-
     wb.save(filepath)
     return filename
