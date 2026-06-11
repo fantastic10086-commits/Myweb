@@ -4,6 +4,7 @@ Generates A4-sized professional foreign trade PI documents.
 """
 
 import os
+import glob
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm, cm
@@ -16,6 +17,61 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate, Frame
 from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+
+# ── Chinese Font Detection ──────────────────────────────────────────
+_CJK_FONT_NAME = 'Helvetica'  # fallback
+
+def _find_cjk_font():
+    """Find a CJK-capable font on the system and register it."""
+    candidates = [
+        # macOS
+        '/System/Library/Fonts/STHeiti Light.ttc',
+        '/System/Library/Fonts/STHeiti Medium.ttc',
+        '/System/Library/Fonts/Hiragino Sans GB.ttc',
+        '/System/Library/Fonts/Supplemental/Songti.ttc',
+        '/Library/Fonts/Arial Unicode.ttf',
+        '/System/Library/Fonts/Supplemental/Arial Unicode.ttf',
+        # Linux (NAS)
+        '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+        '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+        '/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf',
+        '/usr/share/fonts/truetype/arphic/uming.ttc',
+        # Windows
+        'C:/Windows/Fonts/msyh.ttc',
+        'C:/Windows/Fonts/simsun.ttc',
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                # Try subfont index 0 for .ttc files
+                pdfmetrics.registerFont(TTFont('CJK', path, subfontIndex=0))
+                return 'CJK'
+            except:
+                try:
+                    pdfmetrics.registerFont(TTFont('CJK', path))
+                    return 'CJK'
+                except:
+                    continue
+    # Try glob for any .ttc/.ttf with CJK in name
+    for d in ['/usr/share/fonts', '/System/Library/Fonts', '/Library/Fonts']:
+        for f in glob.glob(os.path.join(d, '**', '*.tt*'), recursive=True):
+            name = os.path.basename(f).lower()
+            if any(k in name for k in ['wqy', 'noto', 'cjk', 'chinese', 'hei', 'song', 'ming', 'kai', 'unicode', 'arialuni']):
+                try:
+                    pdfmetrics.registerFont(TTFont('CJK', f))
+                    return 'CJK'
+                except:
+                    pass
+    return 'Helvetica'
+
+_CJK_FONT_NAME = _find_cjk_font()
+_FONT = _CJK_FONT_NAME if _CJK_FONT_NAME != 'Helvetica' else 'Helvetica'
+_FONT_BOLD = 'Helvetica-Bold' if _FONT == 'Helvetica' else _FONT  # CJK fonts use same name for bold
 
 
 # ── Company Info (editable) ──────────────────────────────────────────
@@ -44,19 +100,19 @@ def _draw_page_template(canvas: canvas.Canvas, doc):
     canvas.setFillColor(HexColor('#1a3a5c'))
     canvas.rect(20 * mm, PAGE_H - 30 * mm, PAGE_W - 40 * mm, 18 * mm, fill=1, stroke=0)
 
-    # Company name in header
+    # Company name in header (use CJK font for Chinese support)
     canvas.setFillColor(white)
-    canvas.setFont('Helvetica-Bold', 16)
+    canvas.setFont(_FONT_BOLD, 16)
     canvas.drawString(27 * mm, PAGE_H - 19 * mm, getattr(doc, 'company_name', COMPANY_INFO['name']))
 
     # Company address in header (centered)
-    canvas.setFont('Helvetica', 7)
+    canvas.setFont(_FONT, 7)
     canvas.setFillColor(HexColor('#cccccc'))
     canvas.drawCentredString(PAGE_W / 2, PAGE_H - 26 * mm, COMPANY_INFO['address'])
 
     # ── Footer ──
     canvas.setFillColor(grey)
-    canvas.setFont('Helvetica', 7)
+    canvas.setFont(_FONT, 7)
     canvas.drawCentredString(PAGE_W / 2, 15 * mm, f"Page {doc.page}")
 
     # Footer line
@@ -120,25 +176,25 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     styles = getSampleStyleSheet()
     title_style = ParagraphStyle(
         'PITitle', parent=styles['Title'],
-        fontSize=22, fontName='Helvetica-Bold', textColor=HexColor('#1a3a5c'),
+        fontSize=22, fontName=_FONT_BOLD, textColor=HexColor('#1a3a5c'),
         spaceAfter=4 * mm, alignment=TA_CENTER,
     )
     section_style = ParagraphStyle(
         'SectionLabel', parent=styles['Normal'],
-        fontSize=9, fontName='Helvetica-Bold', textColor=HexColor('#1a3a5c'),
+        fontSize=9, fontName=_FONT_BOLD, textColor=HexColor('#1a3a5c'),
         spaceAfter=1 * mm, spaceBefore=4 * mm,
     )
     info_style = ParagraphStyle(
         'InfoValue', parent=styles['Normal'],
-        fontSize=9, fontName='Helvetica', spaceAfter=1 * mm,
+        fontSize=9, fontName=_FONT, spaceAfter=1 * mm,
     )
     table_header_style = ParagraphStyle(
         'TblHeader', parent=styles['Normal'],
-        fontSize=8, fontName='Helvetica-Bold', textColor=white, alignment=TA_CENTER,
+        fontSize=8, fontName=_FONT_BOLD, textColor=white, alignment=TA_CENTER,
     )
     table_cell_style = ParagraphStyle(
         'TblCell', parent=styles['Normal'],
-        fontSize=8, fontName='Helvetica', alignment=TA_CENTER,
+        fontSize=8, fontName=_FONT, alignment=TA_CENTER,
     )
     table_cell_left = ParagraphStyle(
         'TblCellLeft', parent=table_cell_style,
@@ -288,11 +344,11 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     total = pi.total_amount
     total_data = [
         [Paragraph(f'<b>TOTAL AMOUNT ({cur_label}):</b>', ParagraphStyle(
-            'TotalLabel', parent=info_style, fontSize=12, fontName='Helvetica-Bold',
+            'TotalLabel', parent=info_style, fontSize=12, fontName=_FONT_BOLD,
             textColor=base_color, alignment=TA_RIGHT,
         )),
          Paragraph(f'<b>{sym}{total:,.2f}</b>', ParagraphStyle(
-             'TotalValue', parent=info_style, fontSize=12, fontName='Helvetica-Bold',
+             'TotalValue', parent=info_style, fontSize=12, fontName=_FONT_BOLD,
              textColor=base_color, alignment=TA_RIGHT,
          ))],
     ]
