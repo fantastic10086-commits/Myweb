@@ -56,6 +56,7 @@
                         <td class="text-end">
                             <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">New PI</a>
                             <a href="{{ url_for('customer_edit', id=c.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                            {% if is_admin %}<button type="button" class="btn btn-sm btn-outline-primary" onclick="reassignCustomer({{ c.id }}, '{{ c.name|e }}', '{{ c.salesperson|e }}')">Reassign</button>{% endif %}
                             <form action="{{ url_for('customer_delete', id=c.id) }}" method="post" class="d-inline"
                                   onsubmit="return confirm('Delete customer {{ c.name }}? This will also delete all related PIs.');">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
@@ -74,4 +75,37 @@
         {% endif %}
     </div>
 </div>
+
+{% if is_admin %}
+<div class="modal fade" id="reassignModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Reassign Customer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <form id="reassignForm" method="post">
+            <div class="modal-body">
+                <p>Reassign <strong id="reassignCustName"></strong> to:</p>
+                <select class="form-select" name="salesperson" required>
+                    <option value="">— Select —</option>
+                    {% for sp in all_salespersons %}
+                    <option value="{{ sp.name }}">{{ sp.name }}</option>
+                    {% endfor %}
+                </select>
+                <small class="text-muted">All PIs under this customer will also be updated.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Reassign</button>
+            </div>
+        </form>
+    </div></div>
+</div>
+<script>
+function reassignCustomer(id, name, currentSp) {
+    document.getElementById('reassignCustName').textContent = name;
+    var sel = document.querySelector('#reassignForm select');
+    sel.value = currentSp || '';
+    document.getElementById('reassignForm').action = '/customers/' + id + '/reassign';
+    new bootstrap.Modal(document.getElementById('reassignModal')).show();
+}
+</script>
+{% endif %}
 {% endblock %}

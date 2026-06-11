@@ -409,6 +409,28 @@ def customer_delete(id):
     return redirect(url_for('customer_list'))
 
 
+@app.route('/customers/<int:id>/reassign', methods=['POST'])
+@login_required
+def customer_reassign(id):
+    if not is_admin():
+        flash('Access denied.', 'danger')
+        return redirect(url_for('customer_list'))
+    customer = Customer.query.get_or_404(id)
+    new_sp = request.form.get('salesperson', '').strip()
+    old_sp = customer.salesperson
+    if not new_sp:
+        flash('Please select a salesperson.', 'danger')
+        return redirect(url_for('customer_edit', id=id))
+    # Update customer
+    customer.salesperson = new_sp
+    # Update all PIs under this customer
+    count = PI.query.filter_by(customer_id=id).update({'salesperson': new_sp})
+    db.session.commit()
+    old_label = old_sp or 'unassigned'
+    flash(f'Customer and {count} PI(s) reassigned from "{old_label}" to "{new_sp}".', 'success')
+    return redirect(url_for('customer_list'))
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — Products
 # ═══════════════════════════════════════════════════════════════════════
