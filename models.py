@@ -47,6 +47,7 @@ class Account(db.Model):
     account_no = db.Column(db.String(100), default='')
     swift_code = db.Column(db.String(50), default='')
     brand = db.Column(db.String(20), default='klista')  # 'klista' or 'qisuo'
+    currency = db.Column(db.String(3), default='USD')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -61,7 +62,7 @@ class Account(db.Model):
         return {
             'id': self.id, 'name': self.name, 'company_name': self.company_name,
             'bank_name': self.bank_name, 'account_no': self.account_no,
-            'swift_code': self.swift_code, 'brand': self.brand, 'notes': self.notes,
+            'swift_code': self.swift_code, 'brand': self.brand, 'currency': self.currency, 'notes': self.notes,
         }
 
 

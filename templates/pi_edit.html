@@ -101,8 +101,16 @@
             var opt = sel.options[sel.selectedIndex];
             var bank = opt.getAttribute('data-bank') || '';
             var brand = opt.getAttribute('data-brand') || 'klista';
+            var currency = opt.getAttribute('data-currency') || '';
             document.getElementById('bank_info').value = bank;
             document.getElementById('company_hidden').value = brand;
+            if (currency) {
+                var curSel = document.getElementById('currency_select');
+                curSel.value = currency;
+                curSel.disabled = true;
+                curSel.style.background = '#e9ecef';
+                document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + currency + ')';
+            }
         };
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', function() { document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + this.value + ')'; updateTotal(); });
@@ -136,7 +144,7 @@
         <div class="card mb-3"><div class="card-header"><h5 class="mb-0">Customer & PI Info</h5></div><div class="card-body">
             <div class="mb-3"><label class="form-label">Customer <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none" id="customer_id" name="customer_id" required><option value="">— Select Customer —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label class="form-label">Salesperson <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input" id="sp_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none" id="pi_salesperson" name="salesperson" required><option value="">— Select —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
-            <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}" {% if pi.company == a.brand and a.bank_name in (pi.bank_info or '') %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></div>
+            <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}" data-currency="{{ a.currency or '' }}" {% if pi.company == a.brand and a.bank_name in (pi.bank_info or '') %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></div>
             <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
             <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}"></div>
             <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="{{ pi.payment_terms or '100% TT before shipment' }}"></div>

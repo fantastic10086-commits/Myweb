@@ -170,14 +170,14 @@ def create_app():
 
         # Seed default accounts (by name, won't overwrite existing)
         default_accounts = [
-            ('克利斯达-农行', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'AGRICULTURAL BANK OF CHINA H.O.BEIJING', '10618114040004700', 'ABOCCNBJ', 'klista'),
-            ('QISUO-花旗', 'Changzhou Q1 Suo Welding And Cutting Equipment Co., Ltd.', 'CITIBANK N. A. HONG KONG BRANCH', '39740000004173', 'CITIHKHXXXX', 'qisuo'),
-            ('姜舒棋的支付宝', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Alipay', '17712333882', '', 'klista'),
-            ('姜舒棋的微信', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Wechat', '17712333882', '', 'klista'),
+            ('克利斯达-农行', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'AGRICULTURAL BANK OF CHINA H.O.BEIJING', '10618114040004700', 'ABOCCNBJ', 'klista', 'USD'),
+            ('QISUO-花旗', 'Changzhou Q1 Suo Welding And Cutting Equipment Co., Ltd.', 'CITIBANK N. A. HONG KONG BRANCH', '39740000004173', 'CITIHKHXXXX', 'qisuo', 'USD'),
+            ('姜舒棋的支付宝', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Alipay', '17712333882', '', 'klista', 'RMB'),
+            ('姜舒棋的微信', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Wechat', '17712333882', '', 'klista', 'RMB'),
         ]
-        for name, co_name, bank_name, acct_no, swift, brand in default_accounts:
+        for name, co_name, bank_name, acct_no, swift, brand, currency in default_accounts:
             if not Account.query.filter_by(name=name).first():
-                db.session.add(Account(name=name, company_name=co_name, bank_name=bank_name, account_no=acct_no, swift_code=swift, brand=brand))
+                db.session.add(Account(name=name, company_name=co_name, bank_name=bank_name, account_no=acct_no, swift_code=swift, brand=brand, currency=currency))
         db.session.commit()
 
         # Seed default customers from CSV (only if empty)
@@ -867,6 +867,7 @@ def account_add():
             account_no=request.form.get('account_no','').strip(),
             swift_code=request.form.get('swift_code','').strip(),
             brand=request.form.get('brand','klista').strip(),
+            currency=request.form.get('currency','USD').strip(),
             notes=request.form.get('notes','').strip(),
         ))
         db.session.commit()
@@ -886,6 +887,7 @@ def account_edit(id):
         a.account_no = request.form.get('account_no','').strip()
         a.swift_code = request.form.get('swift_code','').strip()
         a.brand = request.form.get('brand','klista').strip()
+        a.currency = request.form.get('currency','USD').strip()
         a.notes = request.form.get('notes','').strip()
         db.session.commit()
         flash('Account updated.', 'success')

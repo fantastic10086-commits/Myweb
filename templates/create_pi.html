@@ -135,8 +135,20 @@
             var opt = sel.options[sel.selectedIndex];
             var bank = opt.getAttribute('data-bank') || '';
             var brand = opt.getAttribute('data-brand') || 'klista';
+            var currency = opt.getAttribute('data-currency') || '';
             document.getElementById('bank_info').value = bank;
             document.getElementById('company_hidden').value = brand;
+            if (currency) {
+                var curSel = document.getElementById('currency_select');
+                curSel.value = currency;
+                curSel.disabled = true;
+                curSel.style.background = '#e9ecef';
+                document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + currency + ')';
+            } else {
+                var curSel = document.getElementById('currency_select');
+                curSel.disabled = false;
+                curSel.style.background = '';
+            }
         };
 
         var curSel = document.getElementById('currency_select');
@@ -256,7 +268,7 @@
                         </select>
                         <div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
-                    <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}">{{ a.name }}</option>{% endfor %}</select></div>
+                    <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}" data-currency="{{ a.currency or '' }}">{{ a.name }}</option>{% endfor %}</select></div>
                     <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" name="currency" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select></div>
                     <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ today }}"></div>
                     <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
