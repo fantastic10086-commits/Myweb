@@ -18,7 +18,7 @@ from flask import (
 )
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
-from models import db, Customer, Product, PI, PIItem, Salesperson, User, Account
+from models import db, Customer, Product, PI, PIItem, Salesperson, User, Account, Payment
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 
@@ -1140,32 +1140,62 @@ def pi_excel_download(id):
 @login_required
 def pi_toggle_paid(id):
     pi = PI.query.get_or_404(id)
-    if not pi.paid:
-        # Marking as paid: accept received amount
-        received_str = request.form.get('received_amount', '').strip()
-        try:
-            pi.received_amount = float(received_str) if received_str else pi.total_amount
-        except ValueError:
-            pi.received_amount = pi.total_amount
-        pi.paid = True
-    else:
-        # Unmarking
-        pi.paid = False
-        pi.received_amount = 0.0
+    received_str = request.form.get('received_amount', '').strip()
+    try:
+        amount = float(received_str) if received_str else pi.total_amount
+    except ValueError:
+        amount = pi.total_amount
+    if amount <= 0:
+        flash('Amount must be greater than 0.', 'danger')
+        return redirect(request.referrer or url_for('pi_list'))
+
+    # Add payment record
+    db.session.add(Payment(pi_id=pi.id, amount=amount))
+
+    # Update PI aggregates
+    total_paid = sum(p.amount for p in pi.payments)
+    pi.received_amount = total_paid
+    pi.paid = total_paid >= pi.total_amount
+
     # Update customer's total_deal_usd
     customer = Customer.query.get(pi.customer_id)
     if customer:
         paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).all()
         total = 0.0
         for p in paid_pis:
-            amount = p.received_amount if p.received_amount > 0 else p.total_amount
+            deal_amount = p.received_amount if p.received_amount > 0 else p.total_amount
             if p.currency == 'RMB':
-                amount = round(amount / 7.0, 2)
-            total += amount
+                deal_amount = round(deal_amount / 7.0, 2)
+            total += deal_amount
+        customer.total_deal_usd = round(total, 2)
+
+    db.session.commit()
+    remaining = max(0, pi.total_amount - total_paid)
+    flash(f'Payment ${amount:,.2f} recorded. Total received: ${total_paid:,.2f}. Remaining: ${remaining:,.2f}.', 'success')
+    return redirect(request.referrer or url_for('pi_list'))
+
+@app.route('/pi/<int:id>/payment/<int:pid>/delete', methods=['POST'])
+@login_required
+def payment_delete(id, pid):
+    payment = Payment.query.get_or_404(pid)
+    pi = PI.query.get_or_404(id)
+    db.session.delete(payment)
+    # Recalculate
+    total_paid = sum(p.amount for p in pi.payments)
+    pi.received_amount = total_paid
+    pi.paid = total_paid >= pi.total_amount
+    # Update customer
+    customer = Customer.query.get(pi.customer_id)
+    if customer:
+        paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).all()
+        total = 0.0
+        for p in paid_pis:
+            deal_amount = p.received_amount if p.received_amount > 0 else p.total_amount
+            if p.currency == 'RMB': deal_amount = round(deal_amount / 7.0, 2)
+            total += deal_amount
         customer.total_deal_usd = round(total, 2)
     db.session.commit()
-    status = 'Paid' if pi.paid else 'Unpaid'
-    flash(f'{pi.pi_number} marked as {status}.', 'success')
+    flash('Payment record deleted.', 'info')
     return redirect(request.referrer or url_for('pi_list'))
 
 

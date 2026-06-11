@@ -80,10 +80,11 @@
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
                         <td class="text-center">
+                            {% set total_received = pi.received_amount or 0 %}
                             {% if pi.paid %}
-                            <form action="{{ url_for('pi_toggle_paid', id=pi.id) }}" method="post" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-success" title="Paid: ${{ '%.2f'|format(pi.received_amount or pi.total_amount) }} - Click to undo">✓</button>
-                            </form>
+                            <button type="button" class="btn btn-sm btn-success" onclick="viewPayments({{ pi.id }})" title="Fully Paid: ${{ '%.2f'|format(total_received) }} of ${{ '%.2f'|format(pi.total_amount) }}">✓</button>
+                            {% elif total_received > 0 %}
+                            <button type="button" class="btn btn-sm btn-warning" onclick="viewPayments({{ pi.id }})" title="Partial: ${{ '%.2f'|format(total_received) }} of ${{ '%.2f'|format(pi.total_amount) }}">◐</button>
                             {% else %}
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount }})">Confirm</button>
                             {% endif %}
@@ -125,23 +126,47 @@
     </div></div>
 </div>
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-sm"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">Confirm Payment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <form id="paymentForm" method="post">
-            <div class="modal-body">
-                <p>PI: <strong id="payPINumber"></strong></p>
-                <div class="mb-3"><label class="form-label">Received Amount</label><input type="number" step="0.01" min="0" class="form-control" name="received_amount" id="payAmount" required></div>
-            </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-success">Confirm Payment</button></div>
-        </form>
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="payModalTitle">Confirm Payment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p>PI: <strong id="payPINumber"></strong> | Total: <strong id="payPITotal"></strong></p>
+            <div id="payHistory"></div>
+            <hr>
+            <form id="paymentForm" method="post">
+                <div class="mb-3"><label class="form-label">Add Payment Amount</label><input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required></div>
+                <button type="submit" class="btn btn-success w-100">Add Payment</button>
+            </form>
+        </div>
     </div></div>
 </div>
 <script>
+var paymentData = {}; // cache PI payment info
 function confirmPayment(id, total) {
-    document.getElementById('payPINumber').textContent = 'PI #' + id;
-    document.getElementById('payAmount').value = total.toFixed(2);
+    document.getElementById('payModalTitle').textContent = 'Confirm Payment';
+    document.getElementById('payPINumber').textContent = id;
+    document.getElementById('payPITotal').textContent = '$' + total.toFixed(2);
+    document.getElementById('payAmount').value = '';
+    document.getElementById('payHistory').innerHTML = '';
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
     new bootstrap.Modal(document.getElementById('paymentModal')).show();
+    // Pre-fill amount
+    document.getElementById('payAmount').value = total.toFixed(2);
+}
+function viewPayments(id) {
+    fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
+        // Extract payment info from preview
+        var div = document.createElement('div'); div.innerHTML = html;
+        var paidEl = div.querySelector('.badge');
+        var totalText = div.querySelector('td.fw-bold') ? div.querySelector('td.fw-bold').textContent : '';
+        document.getElementById('payModalTitle').textContent = 'Payment History';
+        document.getElementById('payPINumber').textContent = id;
+        document.getElementById('payPITotal').textContent = totalText;
+        // Reload to see payments (simplified approach: just show add form)
+        document.getElementById('payHistory').innerHTML = '<p class=\"text-muted\">Add another payment below.</p>';
+        document.getElementById('payAmount').value = '';
+        document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
+        new bootstrap.Modal(document.getElementById('paymentModal')).show();
+    });
 }
 function previewPI(id) {
     var modal = new bootstrap.Modal(document.getElementById('piPreviewModal'));

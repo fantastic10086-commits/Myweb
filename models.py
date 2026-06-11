@@ -50,6 +50,25 @@ class Account(db.Model):
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class Payment(db.Model):
+    __tablename__ = 'payments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False, default=0.0)
+    note = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    pi = db.relationship('PI', backref=db.backref('payments', lazy=True, cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        return {'id': self.id, 'pi_id': self.pi_id, 'amount': self.amount,
+                'note': self.note, 'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''}
+
+
+class Account(db.Model):
+    __tablename__ = 'accounts'
+
     def bank_info(self):
         parts = []
         if self.bank_name: parts.append(self.bank_name)
