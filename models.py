@@ -145,6 +145,7 @@ class PI(db.Model):
     pdf_path = db.Column(db.String(500), default='')
     excel_path = db.Column(db.String(500), default='')
     paid = db.Column(db.Boolean, default=False)
+    received_amount = db.Column(db.Float, default=0.0)
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -33,7 +33,7 @@ def _migrate_db():
     expected = {
         'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT'},
         'products': {'image': 'VARCHAR(500)'},
-        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN'},
+        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT'},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)'},
         'accounts': {},  # table auto-created by create_all
     }
@@ -1140,15 +1140,25 @@ def pi_excel_download(id):
 @login_required
 def pi_toggle_paid(id):
     pi = PI.query.get_or_404(id)
-    pi.paid = not pi.paid
+    if not pi.paid:
+        # Marking as paid: accept received amount
+        received_str = request.form.get('received_amount', '').strip()
+        try:
+            pi.received_amount = float(received_str) if received_str else pi.total_amount
+        except ValueError:
+            pi.received_amount = pi.total_amount
+        pi.paid = True
+    else:
+        # Unmarking
+        pi.paid = False
+        pi.received_amount = 0.0
     # Update customer's total_deal_usd
     customer = Customer.query.get(pi.customer_id)
     if customer:
-        # Recalculate from all paid PIs
         paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).all()
         total = 0.0
         for p in paid_pis:
-            amount = p.total_amount
+            amount = p.received_amount if p.received_amount > 0 else p.total_amount
             if p.currency == 'RMB':
                 amount = round(amount / 7.0, 2)
             total += amount
