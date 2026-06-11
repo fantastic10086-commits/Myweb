@@ -81,12 +81,13 @@
                         <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
                         <td class="text-center">
                             {% set total_received = pi.received_amount or 0 %}
+                            {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
                             {% if pi.paid %}
-                            <button type="button" class="btn btn-sm btn-success" onclick="viewPayments({{ pi.id }})" title="Fully Paid: ${{ '%.2f'|format(total_received) }} of ${{ '%.2f'|format(pi.total_amount) }}">✓</button>
+                            <button type="button" class="btn btn-sm btn-success" onclick="viewPayments({{ pi.id }})" title="Fully Paid: {{ sym }}{{ '%.2f'|format(total_received) }} of {{ sym }}{{ '%.2f'|format(pi.total_amount) }}">✓</button>
                             {% elif total_received > 0 %}
-                            <button type="button" class="btn btn-sm btn-warning" onclick="viewPayments({{ pi.id }})" title="Partial: ${{ '%.2f'|format(total_received) }} of ${{ '%.2f'|format(pi.total_amount) }}">◐</button>
+                            <button type="button" class="btn btn-sm btn-warning" onclick="viewPayments({{ pi.id }})" title="Partial: {{ sym }}{{ '%.2f'|format(total_received) }} of {{ sym }}{{ '%.2f'|format(pi.total_amount) }}">◐</button>
                             {% else %}
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount }})">Confirm</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount }}, '{{ pi.currency or 'USD' }}')">Confirm</button>
                             {% endif %}
                         </td>
                         <td>
@@ -133,24 +134,36 @@
             <div id="payHistory"></div>
             <hr>
             <form id="paymentForm" method="post">
-                <div class="mb-3"><label class="form-label">Add Payment Amount</label><input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required></div>
+                <div class="mb-3"><label class="form-label">Add Payment (<span id="payCurrency">USD</span>)</label><input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()"></div>
+                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">≈ USD: <strong id="usdEquiv">$0.00</strong> (÷7)</small></div>
                 <button type="submit" class="btn btn-success w-100">Add Payment</button>
             </form>
         </div>
     </div></div>
 </div>
 <script>
-var paymentData = {}; // cache PI payment info
-function confirmPayment(id, total) {
+var paymentData = {};
+function confirmPayment(id, total, currency) {
+    var sym = currency === 'RMB' ? '¥' : '$';
     document.getElementById('payModalTitle').textContent = 'Confirm Payment';
-    document.getElementById('payPINumber').textContent = id;
-    document.getElementById('payPITotal').textContent = '$' + total.toFixed(2);
-    document.getElementById('payAmount').value = '';
+    document.getElementById('payPINumber').textContent = '#' + id;
+    document.getElementById('payPITotal').textContent = sym + total.toFixed(2);
+    document.getElementById('payCurrency').textContent = currency;
+    document.getElementById('payAmount').value = total.toFixed(2);
     document.getElementById('payHistory').innerHTML = '';
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
+    var usdRow = document.getElementById('usdEquivRow');
+    if (currency === 'RMB') {
+        usdRow.style.display = '';
+        updateUsdEquiv();
+    } else {
+        usdRow.style.display = 'none';
+    }
     new bootstrap.Modal(document.getElementById('paymentModal')).show();
-    // Pre-fill amount
-    document.getElementById('payAmount').value = total.toFixed(2);
+}
+function updateUsdEquiv() {
+    var amt = parseFloat(document.getElementById('payAmount').value) || 0;
+    document.getElementById('usdEquiv').textContent = '$' + (amt / 7).toFixed(2);
 }
 function viewPayments(id) {
     fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
