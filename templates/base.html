@@ -64,6 +64,7 @@
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> My Profile</a></li>
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('user_list') }}"><i class="bi bi-people-fill"></i> Users</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-bank"></i> Accounts</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> Salespersons</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>

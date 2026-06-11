@@ -130,6 +130,15 @@
             renderDropdown(productSearch.value);
         });
 
+        window.onAccountChange = function() {
+            var sel = document.getElementById('account_select');
+            var opt = sel.options[sel.selectedIndex];
+            var bank = opt.getAttribute('data-bank') || '';
+            var brand = opt.getAttribute('data-brand') || 'klista';
+            document.getElementById('bank_info').value = bank;
+            document.getElementById('company_hidden').value = brand;
+        };
+
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', function() {
             var sym = getSymbol();
@@ -233,11 +242,12 @@
                         </select>
                         <div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
-                    <div class="mb-3"><label class="form-label">Company</label><select class="form-select" name="company"><option value="klista">克利斯达 USD</option><option value="qisuo">戚所 USD</option></select></div>
+                    <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}">{{ a.name }}</option>{% endfor %}</select></div>
                     <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" name="currency" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select></div>
                     <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ today }}"></div>
                     <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
-                    <div class="mb-3"><label for="bank_info" class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4" placeholder="Bank name, account number, SWIFT code, etc."></textarea></div>
+                    <div class="mb-3"><label class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4" readonly></textarea>
+                    <input type="hidden" name="company" id="company_hidden" value="klista"></div>
                     <div class="mb-3"><label for="notes" class="form-label">PI Notes</label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Additional notes on this PI..."></textarea></div>
                 </div>
             </div>

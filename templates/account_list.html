@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+{% block content %}
+<div class="row mb-3 align-items-center"><div class="col-md-6"><h2><i class="bi bi-bank me-2"></i>Bank Accounts</h2></div><div class="col-md-6 text-md-end"><a href="{{ url_for('account_add') }}" class="btn btn-primary"><i class="bi bi-plus"></i> Add Account</a></div></div>
+<div class="card"><div class="card-body p-0">
+{% if accounts %}
+<div class="table-responsive"><table class="table table-hover mb-0 align-middle">
+<thead class="table-light"><tr><th>Name</th><th>Company</th><th>Bank</th><th>Account No.</th><th>SWIFT</th><th>Brand</th><th class="text-end">Actions</th></tr></thead>
+<tbody>{% for a in accounts %}<tr>
+<td><strong>{{ a.name }}</strong></td><td>{{ a.company_name[:30] }}</td><td>{{ a.bank_name[:30] }}</td><td>{{ a.account_no }}</td><td>{{ a.swift_code }}</td><td>{{ '戚所' if a.brand == 'qisuo' else '克利斯达' }}</td>
+<td class="text-end"><a href="{{ url_for('account_edit', id=a.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+<form action="{{ url_for('account_delete', id=a.id) }}" method="post" class="d-inline" onsubmit="return confirm('Delete this account?');"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td>
+</tr>{% endfor %}</tbody>
+</table></div>{% else %}<div class="text-center py-5 text-muted">No accounts yet.</div>{% endif %}
+</div></div>
+{% endblock %}

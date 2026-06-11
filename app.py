@@ -18,7 +18,7 @@ from flask import (
 )
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
-from models import db, Customer, Product, PI, PIItem, Salesperson, User
+from models import db, Customer, Product, PI, PIItem, Salesperson, User, Account
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 
@@ -35,6 +35,7 @@ def _migrate_db():
         'products': {'image': 'VARCHAR(500)'},
         'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN'},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)'},
+        'accounts': {},  # table auto-created by create_all
     }
     for table, columns in expected.items():
         if not inspector.has_table(table): continue
@@ -166,6 +167,16 @@ def create_app():
             if not Salesperson.query.filter_by(name=name).first():
                 db.session.add(Salesperson(name=name, phone=phone, email=email))
         db.session.commit()
+
+        # Seed default accounts
+        if Account.query.count() == 0:
+            default_accounts = [
+                ('克利斯达-农行', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'AGRICULTURAL BANK OF CHINA H.O.BEIJING', '10618114040004700', 'ABOCCNBJ', 'klista'),
+                ('戚所-花旗', 'Changzhou Q1 Suo Welding And Cutting Equipment Co., Ltd.', 'CITIBANK N. A. HONG KONG BRANCH', '39740000004173', 'CITIHKHXXXX', 'qisuo'),
+            ]
+            for name, co_name, bank_name, acct_no, swift, brand in default_accounts:
+                db.session.add(Account(name=name, company_name=co_name, bank_name=bank_name, account_no=acct_no, swift_code=swift, brand=brand))
+            db.session.commit()
 
         # Seed default customers from CSV (only if empty)
         if Customer.query.count() == 0:
@@ -821,6 +832,64 @@ def user_delete(id):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  ROUTES — Accounts (Admin only)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/accounts')
+@login_required
+def account_list():
+    if not is_admin(): return redirect(url_for('index'))
+    accounts = Account.query.order_by(Account.name).all()
+    return render_template('account_list.html', accounts=accounts)
+
+@app.route('/accounts/add', methods=['GET', 'POST'])
+@login_required
+def account_add():
+    if not is_admin(): return redirect(url_for('index'))
+    if request.method == 'POST':
+        db.session.add(Account(
+            name=request.form.get('name','').strip(),
+            company_name=request.form.get('company_name','').strip(),
+            bank_name=request.form.get('bank_name','').strip(),
+            account_no=request.form.get('account_no','').strip(),
+            swift_code=request.form.get('swift_code','').strip(),
+            brand=request.form.get('brand','klista').strip(),
+            notes=request.form.get('notes','').strip(),
+        ))
+        db.session.commit()
+        flash('Account added.', 'success')
+        return redirect(url_for('account_list'))
+    return render_template('account_form.html', a=None, editing=False)
+
+@app.route('/accounts/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def account_edit(id):
+    if not is_admin(): return redirect(url_for('index'))
+    a = Account.query.get_or_404(id)
+    if request.method == 'POST':
+        a.name = request.form.get('name','').strip()
+        a.company_name = request.form.get('company_name','').strip()
+        a.bank_name = request.form.get('bank_name','').strip()
+        a.account_no = request.form.get('account_no','').strip()
+        a.swift_code = request.form.get('swift_code','').strip()
+        a.brand = request.form.get('brand','klista').strip()
+        a.notes = request.form.get('notes','').strip()
+        db.session.commit()
+        flash('Account updated.', 'success')
+        return redirect(url_for('account_list'))
+    return render_template('account_form.html', a=a, editing=True)
+
+@app.route('/accounts/<int:id>/delete', methods=['POST'])
+@login_required
+def account_delete(id):
+    if not is_admin(): return redirect(url_for('index'))
+    db.session.delete(Account.query.get_or_404(id))
+    db.session.commit()
+    flash('Account deleted.', 'success')
+    return redirect(url_for('account_list'))
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — PI (Proforma Invoice)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -839,6 +908,7 @@ def pi_create():
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', 'USD').strip()
         company = request.form.get('company', 'klista').strip()
+        account_id = request.form.get('account_id', type=int)
 
         if not customer_id:
             flash('Please select a customer.', 'danger')
@@ -902,7 +972,7 @@ def pi_create():
             customer_id=customer_id,
             issue_date=issue_date,
             payment_terms=payment_terms or '100% TT before shipment',
-            bank_info=bank_info or '',
+            bank_info=bank_info or (Account.query.get(account_id).bank_info() if account_id else ''),
             salesperson=salesperson,
             currency=currency,
             company=company,
@@ -1109,6 +1179,7 @@ def pi_edit(id):
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', 'USD').strip()
         company = request.form.get('company', 'klista').strip()
+        account_id = request.form.get('account_id', type=int)
 
         if not customer_id:
             flash('Please select a customer.', 'danger')
@@ -1227,6 +1298,7 @@ def inject_globals():
         'company': COMPANY_CONFIG,
         'app_root': APP_ROOT,
         'all_salespersons': Salesperson.query.order_by(Salesperson.name).all(),
+        'all_accounts': Account.query.order_by(Account.name).all(),
         'current_user': user,
         'is_admin': is_admin(),
     }

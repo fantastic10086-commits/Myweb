@@ -96,6 +96,14 @@
         productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); renderDropdown(this.value); } });
         productDropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.p) { try { addProductObj(JSON.parse(item.dataset.p)); } catch(ex) {} } });
         document.getElementById('add_product_btn').addEventListener('click', function() { renderDropdown(productSearch.value); });
+        window.onAccountChange = function() {
+            var sel = document.getElementById('account_select');
+            var opt = sel.options[sel.selectedIndex];
+            var bank = opt.getAttribute('data-bank') || '';
+            var brand = opt.getAttribute('data-brand') || 'klista';
+            document.getElementById('bank_info').value = bank;
+            document.getElementById('company_hidden').value = brand;
+        };
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', function() { document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + this.value + ')'; updateTotal(); });
         var form = document.getElementById('pi-form');
@@ -128,11 +136,12 @@
         <div class="card mb-3"><div class="card-header"><h5 class="mb-0">Customer & PI Info</h5></div><div class="card-body">
             <div class="mb-3"><label class="form-label">Customer <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none" id="customer_id" name="customer_id" required><option value="">— Select Customer —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label class="form-label">Salesperson <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input" id="sp_search" placeholder="Type to search..." autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none" id="pi_salesperson" name="salesperson" required><option value="">— Select —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
-            <div class="mb-3"><label class="form-label">Company</label><select class="form-select" name="company"><option value="klista" {% if pi.company == 'klista' %}selected{% endif %}>克利斯达 USD</option><option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>戚所 USD</option></select></div>
+            <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}" {% if pi.company == a.brand and a.bank_name in (pi.bank_info or '') %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></div>
             <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
             <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}"></div>
             <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="{{ pi.payment_terms or '100% TT before shipment' }}"></div>
-            <div class="mb-3"><label for="bank_info" class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4">{{ pi.bank_info or '' }}</textarea></div>
+            <div class="mb-3"><label class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4" readonly>{{ pi.bank_info or '' }}</textarea>
+            <input type="hidden" name="company" id="company_hidden" value="{{ pi.company or 'klista' }}"></div>
             <div class="mb-3"><label for="notes" class="form-label">PI Notes</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
         </div></div>
     </div>
