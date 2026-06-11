@@ -57,6 +57,52 @@ COMPANY_CONFIG = {
 }
 
 
+def _seed_customers_from_csv():
+    """Seed customers from bundled CSV file on first startup."""
+    import csv
+    csv_path = os.path.join(APP_ROOT, 'CUSTOMER_EXPORT_56677547_1_1781157273.csv')
+    if not os.path.exists(csv_path):
+        return
+    count = 0
+    with open(csv_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        next(reader)
+        for row in reader:
+            try:
+                name = (row[0] or '').strip()
+                if not name or name.startswith('NA_') or name.startswith('nocompany_'):
+                    contact = (row[3] or '').strip()
+                    name = contact if (contact and not contact.startswith('NA_')) else f'Customer_{row[2]}'
+                contact_person = (row[3] or '').strip()[:100]
+                email = (row[4] or '').strip() if len(row) > 4 else ''
+                salesperson = (row[5] or '').strip() if len(row) > 5 else ''
+                country = (row[6] or '').strip() if len(row) > 6 else ''
+                address = (row[7] or '').strip() if len(row) > 7 else ''
+                phone_raw = (row[9] or '').strip() if len(row) > 9 else ''
+                phone = ''
+                if phone_raw:
+                    for p in phone_raw.replace("'", '').split(';'):
+                        p = p.strip().strip('"+').strip()
+                        if p and any(c.isdigit() for c in p):
+                            phone = p[:50]; break
+                deal_str = row[-1].strip() if row[-1] else '0'
+                try:
+                    total_deal = float(deal_str) if deal_str else 0.0
+                except ValueError:
+                    total_deal = 0.0
+                name = name.replace('&amp;', '&')[:200]
+                db.session.add(Customer(
+                    name=name, country=country, contact_person=contact_person,
+                    email=email, phone=phone, address=address,
+                    salesperson=salesperson, total_deal_usd=total_deal,
+                ))
+                count += 1
+                if count % 500 == 0: db.session.commit()
+            except Exception:
+                pass
+    db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'pi-manager-secret-key-change-in-production'
@@ -91,6 +137,10 @@ def create_app():
             if not Salesperson.query.filter_by(name=name).first():
                 db.session.add(Salesperson(name=name, phone=phone, email=email))
         db.session.commit()
+
+        # Seed default customers from CSV (only if empty)
+        if Customer.query.count() == 0:
+            _seed_customers_from_csv()
 
         # Seed admin account if not exists
         if not User.query.filter_by(username='admin').first():
