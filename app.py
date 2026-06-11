@@ -1143,23 +1143,28 @@ def pi_excel_download(id):
 def pi_toggle_paid(id):
     pi = PI.query.get_or_404(id)
     received_str = request.form.get('received_amount', '').strip()
+    fee_str = request.form.get('fee', '0').strip()
     try:
         amount = float(received_str) if received_str else pi.total_amount
     except ValueError:
         amount = pi.total_amount
+    try:
+        fee = float(fee_str) if fee_str else 0.0
+    except ValueError:
+        fee = 0.0
     if amount <= 0:
         flash('Amount must be greater than 0.', 'danger')
         return redirect(request.referrer or url_for('pi_list'))
 
     # Add payment record
-    db.session.add(Payment(pi_id=pi.id, amount=amount))
+    db.session.add(Payment(pi_id=pi.id, amount=amount, fee=fee))
 
-    # Update PI aggregates
-    total_paid = sum(p.amount for p in pi.payments)
-    pi.received_amount = total_paid
+    # Update PI aggregates (amount + fee counts toward paid, but only amount toward deal)
+    total_paid = sum(p.amount + (p.fee or 0) for p in pi.payments)
+    pi.received_amount = sum(p.amount for p in pi.payments)
     pi.paid = total_paid >= pi.total_amount
 
-    # Update customer's total_deal_usd
+    # Update customer's total_deal_usd (excludes fee)
     customer = Customer.query.get(pi.customer_id)
     if customer:
         paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).all()
@@ -1173,7 +1178,7 @@ def pi_toggle_paid(id):
 
     db.session.commit()
     remaining = max(0, pi.total_amount - total_paid)
-    flash(f'Payment ${amount:,.2f} recorded. Total received: ${total_paid:,.2f}. Remaining: ${remaining:,.2f}.', 'success')
+    flash(f'Payment ${amount:,.2f} (+fee ${fee:,.2f}) recorded. Remaining: ${remaining:,.2f}.', 'success')
     return redirect(request.referrer or url_for('pi_list'))
 
 @app.route('/pi/<int:id>/payment/<int:pid>/delete', methods=['POST'])
@@ -1183,8 +1188,8 @@ def payment_delete(id, pid):
     pi = PI.query.get_or_404(id)
     db.session.delete(payment)
     # Recalculate
-    total_paid = sum(p.amount for p in pi.payments)
-    pi.received_amount = total_paid
+    total_paid = sum(p.amount + (p.fee or 0) for p in pi.payments)
+    pi.received_amount = sum(p.amount for p in pi.payments)
     pi.paid = total_paid >= pi.total_amount
     # Update customer
     customer = Customer.query.get(pi.customer_id)
@@ -1210,7 +1215,7 @@ def api_pi_payments(id):
         'total_amount': pi.total_amount,
         'received': pi.received_amount or 0,
         'paid': pi.paid,
-        'payments': [{'id': p.id, 'amount': p.amount, 'created_at': p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''} for p in pi.payments]
+        'payments': [{'id': p.id, 'amount': p.amount, 'fee': p.fee or 0, 'created_at': p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else ''} for p in pi.payments]
     })
 
 

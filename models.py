@@ -56,6 +56,7 @@ class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False, default=0.0)
+    fee = db.Column(db.Float, default=0.0)
     note = db.Column(db.String(200), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
