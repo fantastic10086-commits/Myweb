@@ -182,11 +182,16 @@ var selectedProducts = {};
         var form = document.getElementById('pi-form');
         if (form) {
             form.addEventListener('submit', function(e) {
+                var st = document.getElementById('submit_status');
+                if (st) { st.style.display='block'; st.textContent='Submit handler FIRED'; st.style.background='#cce5ff'; }
                 var cust = document.getElementById('customer_id');
                 var sp = document.getElementById('pi_salesperson');
-                if (!cust.value) { e.preventDefault(); alert('Please select a customer.'); return; }
-                if (!sp.value) { e.preventDefault(); alert('Please select a salesperson.'); return; }
-                if (Object.keys(selectedProducts).length === 0) { e.preventDefault(); alert('Please add at least one product.'); return; }
+                var np = Object.keys(selectedProducts).length;
+                if (st) st.textContent += ' | cust=' + (cust?cust.value:'?') + ' sp=' + (sp?sp.value:'?') + ' items=' + np;
+                if (!cust.value) { e.preventDefault(); if(st)st.textContent+=' FAIL: no customer'; alert('Please select a customer.'); return; }
+                if (!sp.value) { e.preventDefault(); if(st)st.textContent+=' FAIL: no salesperson'; alert('Please select a salesperson.'); return; }
+                if (np === 0) { e.preventDefault(); if(st)st.textContent+=' FAIL: no products'; alert('Please add at least one product.'); return; }
+                if (st) { st.textContent += ' OK, submitting...'; st.style.background='#d4edda'; }
                 updateTotal();
             });
         }
@@ -267,8 +272,9 @@ var selectedProducts = {};
 <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No customers found. <a href="{{ url_for('customer_add') }}" class="alert-link">Add a customer first</a>.</div>
 {% endif %}
 
+<div id="submit_status" style="background:#fff3cd;border:1px solid #ffc107;padding:4px 8px;margin:8px 0;font-size:13px;display:none;">Submit status: waiting</div>
 {% if customers %}
-<form method="post" id="pi-form">
+<form method="post" action="{{ url_for('pi_create') }}" id="pi-form">
     <div class="row g-4">
         <div class="col-lg-5">
             <div class="card mb-3">
