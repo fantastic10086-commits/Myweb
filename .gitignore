@@ -7,4 +7,3 @@ pdf/
 .DS_Store
 static/uploads/
 *.xlsx
-*.csv
