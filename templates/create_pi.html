@@ -2,13 +2,12 @@
 {% block title %}Create PI{% endblock %}
 
 {% block extra_scripts %}
-<div id="js_debug" style="background:#ffe0e0;border:2px solid red;padding:8px;margin:8px 0;font-size:14px;"><b>Loading...</b><br><small>If you see this, the page loaded. Waiting for JS...</small></div>
+<div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS: waiting...</div>
 <script>
-(function(){
-    var dbg = document.getElementById('js_debug');
-    function log(msg, isErr){ dbg.style.display='block'; dbg.innerHTML += (isErr?'<span style="color:red">✗</span> ':'<span style="color:green">✓</span> ') + msg + '<br>'; }
-    try {
-    var selectedProducts = {};
+document.getElementById('js_status').textContent='JS: RUNNING ✓';
+document.getElementById('js_status').style.background='#e0ffe0';
+document.getElementById('js_status').style.borderColor='green';
+var selectedProducts = {};
     var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
     function getSymbol() {
@@ -120,18 +119,6 @@
         });
     }
 
-    function onCustomerChange() {
-        var sel = document.getElementById('customer_id');
-        if (!sel || !sel.value) return;
-        var opt = sel.options[sel.selectedIndex];
-        var sp = opt.getAttribute('data-sp') || '';
-        var addr = opt.getAttribute('data-address') || '';
-        var spSel = document.getElementById('pi_salesperson');
-        if (spSel && sp) { spSel.value = sp; }
-        var addrEl = document.getElementById('shipping_address');
-        if (addrEl) { addrEl.value = addr; }
-    }
-
     document.addEventListener('DOMContentLoaded', function() {
         productSearch = document.getElementById('product_search');
         productDropdown = document.getElementById('product_dropdown');
@@ -139,23 +126,6 @@
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
-
-        // Sync search input with native customer/salesperson selects
-        var custSelect = document.getElementById('customer_id');
-        var custSearch = document.getElementById('cust_search');
-        if (custSelect && custSearch) {
-            custSelect.addEventListener('change', function() {
-                custSearch.value = this.options[this.selectedIndex].text;
-                onCustomerChange();
-            });
-        }
-        var spSelect = document.getElementById('pi_salesperson');
-        var spSearch = document.getElementById('sp_search');
-        if (spSelect && spSearch) {
-            spSelect.addEventListener('change', function() {
-                spSearch.value = this.options[this.selectedIndex].text;
-            });
-        }
 
         productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
         productSearch.addEventListener('input', function() { renderDropdown(this.value); });
@@ -235,10 +205,8 @@
             }
         }
         updateTotal();
-        log('JS loaded OK. Products in form: ' + (Object.keys(selectedProducts).length) + ', customers: ' + (document.querySelectorAll('#customer_id option').length-1) + ', salespersons: ' + (document.querySelectorAll('#pi_salesperson option').length-1));
     });
 
-    } catch(e) { dbg.style.display='block'; dbg.innerHTML='<span style="color:red;font-weight:bold">JS ERROR: ' + e.message + '</span><br><small>' + (e.stack||'').split('\n').slice(0,3).join('<br>') + '</small>'; }
     function escHtml(s) {
         return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
@@ -311,10 +279,10 @@
                         <div class="input-group">
                             <input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off"
                                    value="{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% endif %}{% endfor %}{% endif %}">
-                            <select class="form-select" id="customer_id" name="customer_id" required onchange="onCustomerChange()">
+                            <select class="form-select d-none js-hide" id="customer_id" name="customer_id" required>
                                 <option value="">— Select Customer —</option>
                                 {% for c in customers %}
-                                <option value="{{ c.id }}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
+                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
                                 {% endfor %}
                             </select>
                             <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button>
@@ -324,10 +292,10 @@
                     <div class="mb-3">
                         <label class="form-label">Salesperson <span class="text-danger">*</span></label>
                         <input type="text" class="form-control searchable-input" id="sp_search" placeholder="Type to search..." autocomplete="off" value="{{ preselected_salesperson }}">
-                        <select class="form-select" id="pi_salesperson" name="salesperson" required>
+                        <select class="form-select d-none js-hide" id="pi_salesperson" name="salesperson" required>
                             <option value="">— Select —</option>
                             {% for sp in all_salespersons %}
-                            <option value="{{ sp.name }}" {% if preselected_salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                            <option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if preselected_salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                             {% endfor %}
                         </select>
                         <div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div>
