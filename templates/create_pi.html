@@ -272,7 +272,7 @@ var selectedProducts = {};
 <div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No customers found. <a href="{{ url_for('customer_add') }}" class="alert-link">Add a customer first</a>.</div>
 {% endif %}
 
-<div id="submit_status" style="background:#fff3cd;border:1px solid #ffc107;padding:4px 8px;margin:8px 0;font-size:13px;display:none;">Submit status: waiting</div>
+<div id="submit_status" style="background:#fff3cd;border:2px solid #ffc107;padding:8px 10px;margin:8px 0;font-size:14px;font-weight:bold;">📋 Form loaded. Ready to create PI. (v2)</div>
 {% if customers %}
 <form method="post" action="{{ url_for('pi_create') }}" id="pi-form">
     <div class="row g-4">
