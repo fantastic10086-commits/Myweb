@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ pi.pi_number }}{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-6">
+        <h2><i class="bi bi-pencil-square me-2"></i>Online PDF Editor — {{ pi.pi_number }}</h2>
+    </div>
+    <div class="col-md-6 text-md-end">
+        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to PI List</a>
+    </div>
+</div>
+
+<form method="post" id="liveEditForm" target="_blank">
+<!-- PDF-like layout -->
+<div class="card shadow-sm">
+    <div class="card-body p-4" style="max-width:800px;margin:0 auto;font-family:Arial,sans-serif;">
+
+        <!-- Header -->
+        <div class="text-center mb-3 pb-3" style="border-bottom:2px solid #1a3a5c;">
+            <input type="text" class="form-control-plaintext text-center fw-bold text-uppercase" style="font-size:16px;color:#1a3a5c;" name="company_name"
+                value="{% if pi.company == 'qisuo' %}Changzhou QISUO Welding and Cutting Equipment Co., Ltd.{% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}">
+            <input type="text" class="form-control-plaintext text-center text-muted" style="font-size:9px;" name="company_addr"
+                value="No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China">
+        </div>
+
+        <!-- Title -->
+        <h4 class="text-center fw-bold mb-3" style="color:#1a3a5c;">PROFORMA INVOICE</h4>
+
+        <!-- PI Info & Customer Info (side-by-side) -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless mb-0" style="font-size:13px;">
+                    <tr>
+                        <td style="width:90px;" class="fw-bold text-end pe-2">PI Number:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi.pi_number }}" style="width:180px;"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Date:</td>
+                        <td><input type="date" class="form-control form-control-sm" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}" style="width:150px;"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Salesperson:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="salesperson" value="{{ pi.salesperson or '' }}" style="width:150px;"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Currency:</td>
+                        <td>
+                            <select class="form-select form-select-sm" name="currency" style="width:120px;" onchange="onCurrencyChange()">
+                                <option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option>
+                                <option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option>
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless mb-0" style="font-size:13px;">
+                    <tr>
+                        <td style="width:80px;" class="fw-bold text-end pe-2">To / Buyer:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="cust_name" value="{{ pi.customer.name if pi.customer else '' }}"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Contact:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="cust_contact" value="{{ pi.customer.contact_person if pi.customer else '' }}"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Country:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="cust_country" value="{{ pi.customer.country if pi.customer else '' }}"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Email:</td>
+                        <td><input type="email" class="form-control form-control-sm" name="cust_email" value="{{ pi.customer.email if pi.customer else '' }}"></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-end pe-2">Phone:</td>
+                        <td><input type="text" class="form-control form-control-sm" name="cust_phone" value="{{ pi.customer.phone if pi.customer else '' }}"></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Product Table -->
+        <h6 class="fw-bold mb-2" style="color:#1a3a5c;">ITEM DETAILS</h6>
+        <div class="table-responsive mb-3">
+            <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:12px;">
+                <thead style="background:#1a3a5c;color:#fff;">
+                    <tr>
+                        <th class="text-center" style="width:30px;">No.</th>
+                        <th>Product / Description</th>
+                        <th>Code</th>
+                        <th>Spec</th>
+                        <th class="text-end" style="width:60px;">Qty</th>
+                        <th class="text-end" style="width:80px;">Unit Price</th>
+                        <th class="text-end" style="width:80px;">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pi.items %}
+                    <tr>
+                        <td class="text-center">{{ loop.index }}</td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm" name="prod_name_{{ item.id }}" value="{{ item.product.name if item.product else '' }}">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm" name="prod_code_{{ item.id }}" value="{{ item.product.product_code if item.product else '' }}" style="width:90px;">
+                        </td>
+                        <td>
+                            <input type="text" class="form-control form-control-sm" name="prod_spec_{{ item.id }}" value="{{ item.product.specification if item.product else '' }}" style="width:80px;">
+                        </td>
+                        <td class="text-end">
+                            <input type="number" class="form-control form-control-sm text-end" name="qty_{{ item.id }}" value="{{ item.quantity }}" min="0" style="width:60px;display:inline-block;" onchange="recalcRow(this)">
+                        </td>
+                        <td class="text-end">
+                            <input type="number" step="0.01" class="form-control form-control-sm text-end" name="price_{{ item.id }}" value="{{ '%.2f'|format(item.unit_price) }}" min="0" style="width:80px;display:inline-block;" onchange="recalcRow(this)">
+                        </td>
+                        <td class="text-end fw-bold total-cell" data-base="{{ item.amount }}">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(item.amount) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot style="background:#f8f9fa;">
+                    <tr>
+                        <th colspan="4" class="text-end">Adj. / Cost:</th>
+                        <th colspan="2"><input type="text" class="form-control form-control-sm" name="shipping_note" placeholder="e.g. DHL, by sea..." value="{{ pi.shipping_note or '' }}"></th>
+                        <th class="text-end">
+                            <div class="input-group input-group-sm" style="width:130px;float:right;">
+                                <span class="input-group-text" id="shipping_sym">{{ '¥' if pi.currency == 'RMB' else '$' }}</span>
+                                <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format(pi.shipping_cost) if pi.shipping_cost else '0.00' }}" onchange="recalcGrand()">
+                            </div>
+                        </th>
+                    </tr>
+                    <tr>
+                        <th colspan="6" class="text-end">TOTAL:</th>
+                        <th class="text-end" style="font-size:14px;color:#1a3a5c;" id="grand_total">
+                            {{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.total_amount + (pi.shipping_cost or 0)) }}
+                        </th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+
+        <!-- Payment / Bank / Address -->
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label fw-bold small">Payment Terms</label>
+                <textarea class="form-control form-control-sm" name="payment_terms" rows="2">{{ pi.payment_terms or '100% TT before shipment' }}</textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold small">Bank Information</label>
+                <textarea class="form-control form-control-sm" name="bank_info" rows="4">{{ pi.bank_info or '' }}</textarea>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label class="form-label fw-bold small">Shipping Address</label>
+                <textarea class="form-control form-control-sm" name="shipping_address" rows="3">{{ pi.shipping_address or '' }}</textarea>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label fw-bold small">PI Notes</label>
+                <textarea class="form-control form-control-sm" name="notes" rows="3">{{ pi.notes or '' }}</textarea>
+            </div>
+        </div>
+
+        <!-- Signature -->
+        <div class="row mt-4 pt-3" style="border-top:1px solid #ddd;">
+            <div class="col-6">
+                <small class="fw-bold">Issued By:</small><br><br><br>
+                <div style="border-top:1px solid #000;width:200px;"></div>
+                <small>
+                    <input type="text" class="form-control-plaintext" name="company_short" value="{% if pi.company == 'qisuo' %}QISUO{% else %}KLISTA{% endif %}" style="font-size:12px;">
+                </small><br>
+                <small>Date: <span id="sig_date"></span></small>
+            </div>
+            <div class="col-6 text-end">
+                <small class="fw-bold">Buyer:</small><br><br><br>
+                <div style="border-top:1px solid #000;width:200px;display:inline-block;"></div><br>
+                <small class="text-muted"><i>(Signature / Stamp)</i></small>
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="text-center mt-4">
+            <button type="button" class="btn btn-primary btn-lg px-5" onclick="exportPDF()">
+                <i class="bi bi-file-pdf"></i> Export PDF (No Save)
+            </button>
+            <button type="submit" class="btn btn-success btn-lg px-5 ms-2">
+                <i class="bi bi-save"></i> Save & Regenerate PDF
+            </button>
+            <div id="saveStatus" class="mt-2"></div>
+        </div>
+
+    </div>
+</div>
+</form>
+
+<script>
+document.getElementById('sig_date').textContent = new Date().toISOString().slice(0,10);
+
+function getSym() {
+    var sel = document.querySelector('[name="currency"]');
+    return sel && sel.value === 'RMB' ? '¥' : '$';
+}
+
+function recalcRow(input) {
+    var row = input.closest('tr');
+    var qtyEl = row.querySelector('[name^="qty_"]');
+    var priceEl = row.querySelector('[name^="price_"]');
+    var totalCell = row.querySelector('.total-cell');
+    if (!qtyEl || !priceEl || !totalCell) return;
+    var qty = parseInt(qtyEl.value) || 0;
+    var price = parseFloat(priceEl.value) || 0;
+    var amt = qty * price;
+    totalCell.textContent = getSym() + amt.toFixed(2);
+    recalcGrand();
+}
+
+function recalcGrand() {
+    var grand = 0;
+    document.querySelectorAll('.total-cell').forEach(function(cell) {
+        var v = parseFloat(cell.textContent.replace(/[^0-9.]/g, '')) || 0;
+        grand += v;
+    });
+    var shippingEl = document.getElementById('shipping_cost');
+    grand += parseFloat(shippingEl ? shippingEl.value : '0') || 0;
+    document.getElementById('grand_total').textContent = getSym() + grand.toFixed(2);
+}
+
+function onCurrencyChange() {
+    document.querySelectorAll('.total-cell').forEach(function(cell) {
+        var v = parseFloat(cell.textContent.replace(/[^0-9.]/g, '')) || 0;
+        cell.textContent = getSym() + v.toFixed(2);
+    });
+    var shippingSym = document.getElementById('shipping_sym');
+    if (shippingSym) shippingSym.textContent = getSym();
+    recalcGrand();
+}
+
+// Export PDF without saving to DB
+function exportPDF() {
+    var form = document.getElementById('liveEditForm');
+    var fd = new FormData(form);
+    fd.append('action', 'export_pdf');
+
+    var status = document.getElementById('saveStatus');
+    status.innerHTML = '<span class="text-info"><span class="spinner-border spinner-border-sm me-1"></span>Generating PDF...</span>';
+
+    fetch(window.location.href, { method: 'POST', body: fd })
+        .then(function(r) {
+            if (r.ok) return r.blob();
+            throw new Error('Failed');
+        })
+        .then(function(blob) {
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = '{{ pi.pi_number }}_edited.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> PDF exported!</span>';
+        })
+        .catch(function() {
+            status.innerHTML = '<span class="text-danger">Export failed.</span>';
+        });
+}
+
+// Save form (original behavior)
+document.getElementById('liveEditForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var btn = this.querySelector('button[type="submit"]');
+    var status = document.getElementById('saveStatus');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+    status.innerHTML = '';
+
+    var fd = new FormData(this);
+    fd.append('action', 'save');
+    fetch(window.location.href, { method: 'POST', body: fd })
+        .then(function(r) {
+            if (r.ok) return r.blob();
+            throw new Error('Save failed');
+        })
+        .then(function(blob) {
+            var url = window.URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = '{{ pi.pi_number }}.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Saved & PDF downloaded!</span>';
+        })
+        .catch(function(err) {
+            status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-save"></i> Save & Regenerate PDF';
+        });
+});
+</script>
+{% endblock %}

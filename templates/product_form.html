@@ -3,6 +3,47 @@
 
 {% block extra_scripts %}
 <script>
+function calcUsdFromRmb() {
+    var rmb = parseFloat(document.getElementById('unit_price_rmb').value) || 0;
+    var rate = parseFloat(document.getElementById('formRate').value) || 7;
+    if (rate <= 0) rate = 7;
+    var usd = Math.round(rmb / rate * 1000) / 1000;
+    document.getElementById('unit_price').value = usd.toFixed(3);
+}
+function calcRmbFromUsd() {
+    var usd = parseFloat(document.getElementById('unit_price').value) || 0;
+    var rate = parseFloat(document.getElementById('formRate').value) || 7;
+    if (rate <= 0) rate = 7;
+    var rmb = Math.round(usd * rate * 100) / 100;
+    document.getElementById('unit_price_rmb').value = rmb.toFixed(2);
+}
+function translateName() {
+    var nameInput = document.getElementById('name');
+    var chineseInput = document.getElementById('chinese_name');
+    var btn = document.getElementById('translateBtn');
+    var text = nameInput.value.trim();
+    if (!text) { alert('Please enter English product name first.'); return; }
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Translating...';
+    var fd = new FormData();
+    fd.append('text', text);
+    fetch('/api/translate', {method: 'POST', body: fd})
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.success) {
+                chineseInput.value = d.translated;
+            } else {
+                alert(d.error || 'Translation failed');
+            }
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-translate"></i> 翻译';
+        })
+        .catch(function() {
+            alert('Network error.');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-translate"></i> 翻译';
+        });
+}
 document.addEventListener('paste', function(e) {
     var items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
@@ -42,8 +83,12 @@ document.addEventListener('paste', function(e) {
         <form method="post" enctype="multipart/form-data">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label for="name" class="form-label">Product Name <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="Product description / name">
+                    <label for="name" class="form-label">Product Name (EN) <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="Product description / name in English">
+                </div>
+                <div class="col-md-6">
+                    <label for="chinese_name" class="form-label">Chinese Name <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="translateBtn" onclick="translateName()" title="Auto-translate from English name"><i class="bi bi-translate"></i> 翻译</button></label>
+                    <input type="text" class="form-control" id="chinese_name" name="chinese_name" value="{{ product.chinese_name if product else '' }}" placeholder="中文名称（点击翻译自动生成）">
                 </div>
                 <div class="col-md-6">
                     <label for="product_code" class="form-label">Product Code</label>
@@ -54,8 +99,18 @@ document.addEventListener('paste', function(e) {
                     <input type="text" class="form-control" id="specification" name="specification" value="{{ product.specification if product else '' }}" placeholder="Size, color, material, etc.">
                 </div>
                 <div class="col-md-6">
-                    <label for="unit_price" class="form-label">Unit Price (USD)</label>
-                    <div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.01" min="0" class="form-control" id="unit_price" name="unit_price" value="{{ '%.2f'|format(product.unit_price) if product else '0.00' }}"></div>
+                    <label for="unit_price_rmb" class="form-label">Price (RMB) <span class="text-danger">*</span></label>
+                    <div class="input-group"><span class="input-group-text">¥</span><input type="number" step="0.01" min="0" class="form-control" id="unit_price_rmb" name="unit_price_rmb" value="{{ '%.2f'|format(product.unit_price_rmb) if product and product.unit_price_rmb else '0.00' }}" oninput="calcUsdFromRmb()"></div>
+                </div>
+                <div class="col-md-6">
+                    <label for="unit_price" class="form-label">Price (USD)</label>
+                    <div class="input-group">
+                        <span class="input-group-text">$</span>
+                        <input type="number" step="0.001" min="0" class="form-control" id="unit_price" name="unit_price" value="{{ '%.3f'|format(product.unit_price) if product and product.unit_price else '0.000' }}" oninput="calcRmbFromUsd()">
+                        <span class="input-group-text" style="font-size:11px;">Rate:</span>
+                        <input type="text" class="form-control" id="formRate" value="{{ '%.2f'|format(exchange_rate) }}" style="max-width:70px;" oninput="calcUsdFromRmb()" placeholder="7.0">
+                    </div>
+                    <small class="text-muted">USD ⟷ RMB 双向自动换算 | 参考: 1 USD = {{ '%.2f'|format(exchange_rate) }} RMB</small>
                 </div>
                 <div class="col-md-6">
                     <label for="image" class="form-label">Product Image</label>
@@ -73,9 +128,28 @@ document.addEventListener('paste', function(e) {
             </div>
             <div class="mt-4">
                 <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %} Product</button>
+                {% if editing and product %}
+                <button type="button" class="btn btn-outline-info ms-2" onclick="copyProduct({{ product.id }})"><i class="bi bi-copy"></i> Copy Product</button>
+                {% endif %}
                 <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
             </div>
         </form>
     </div>
 </div>
+{% if editing and product %}
+<script>
+function copyProduct(id) {
+    if (!confirm('Copy this product? A new product will be created with the same info.')) return;
+    fetch('/api/products/' + id + '/copy', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                window.location.href = '/products/' + data.product.id + '/edit';
+            } else {
+                alert('Copy failed');
+            }
+        }).catch(function() { alert('Network error'); });
+}
+</script>
+{% endif %}
 {% endblock %}

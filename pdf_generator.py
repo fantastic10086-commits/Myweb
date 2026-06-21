@@ -167,9 +167,15 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     doc.addPageTemplates([PageTemplate(id='main', frames=frame, onPage=_draw_page_template)])
     doc._pageTemplates = doc.pageTemplates  # compatibility
 
-    # Set company name based on brand
-    brand = getattr(pi, 'company', 'klista') or 'klista'
-    company_name = BRANDS.get(brand, BRANDS['klista'])
+    # Set company name based on brand (allow override from export_pdf)
+    override_name = getattr(pi, '_company_name_override', None)
+    override_addr = getattr(pi, '_company_addr_override', None)
+    if override_name:
+        company_name = override_name
+        COMPANY_INFO['address'] = override_addr or COMPANY_INFO['address']
+    else:
+        brand = getattr(pi, 'company', 'klista') or 'klista'
+        company_name = BRANDS.get(brand, BRANDS['klista'])
     doc.company_name = company_name
 
     # ── Styles ──
@@ -181,20 +187,20 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     )
     section_style = ParagraphStyle(
         'SectionLabel', parent=styles['Normal'],
-        fontSize=9, fontName=_FONT_BOLD, textColor=HexColor('#1a3a5c'),
+        fontSize=10, fontName=_FONT_BOLD, textColor=HexColor('#1a3a5c'),
         spaceAfter=1 * mm, spaceBefore=4 * mm,
     )
     info_style = ParagraphStyle(
         'InfoValue', parent=styles['Normal'],
-        fontSize=9, fontName=_FONT, spaceAfter=1 * mm,
+        fontSize=10, fontName=_FONT, spaceAfter=1 * mm,
     )
     table_header_style = ParagraphStyle(
         'TblHeader', parent=styles['Normal'],
-        fontSize=8, fontName=_FONT_BOLD, textColor=white, alignment=TA_CENTER,
+        fontSize=10, fontName=_FONT_BOLD, textColor=white, alignment=TA_CENTER,
     )
     table_cell_style = ParagraphStyle(
         'TblCell', parent=styles['Normal'],
-        fontSize=8, fontName=_FONT, alignment=TA_CENTER,
+        fontSize=10, fontName=_FONT, alignment=TA_CENTER,
     )
     table_cell_left = ParagraphStyle(
         'TblCellLeft', parent=table_cell_style,
@@ -255,13 +261,14 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
     ]))
 
-    # Two blocks side by side
+    # Two blocks side by side — indent left block to align with header company name (27mm)
     top_table = Table([
         [pi_info_table, customer_info_table]
     ], colWidths=[210, 340])
     top_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('LEFTPADDING', (0, 0), (0, 0), 10 * mm),
+        ('LEFTPADDING', (1, 0), (1, 0), 4 * mm),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
 
@@ -281,11 +288,11 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         Paragraph('Product Code', table_header_style),
         Paragraph('Description', table_header_style),
         Paragraph('Specification', table_header_style),
-        Paragraph('Quantity', table_header_style),
-        Paragraph(f'Unit Price<br/>({cur_label})', table_header_style),
-        Paragraph(f'Amount<br/>({cur_label})', table_header_style),
+        Paragraph('Qty', table_header_style),
+        Paragraph(f'Unit Price ({cur_label})', table_header_style),
+        Paragraph(f'Amount ({cur_label})', table_header_style),
     ]
-    col_widths = [22, 40, 70, 110, 80, 45, 65, 65]
+    col_widths = [22, 35, 58, 120, 65, 40, 66, 66]
 
     table_data = [header]
     for i, item in enumerate(pi.items, 1):
@@ -295,7 +302,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
             img_path = os.path.join(upload_dir, item.product.image)
             if os.path.exists(img_path):
                 try:
-                    img_cell = Image(img_path, width=12*mm, height=12*mm)
+                    img_cell = Image(img_path, width=10*mm, height=10*mm)
                 except:
                     pass
         row = [
@@ -304,7 +311,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
             Paragraph(item.product.product_code if item.product else '', table_cell_style),
             Paragraph(item.product.name if item.product else '', table_cell_left),
             Paragraph(item.product.specification if item.product else '', table_cell_style),
-            Paragraph(str(item.quantity), table_cell_style),
+            Paragraph(str(item.quantity), amount_style),
             Paragraph(f'{sym}{item.unit_price:,.2f}', amount_style),
             Paragraph(f'{sym}{item.amount:,.2f}', amount_style),
         ]
@@ -318,17 +325,17 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         # Header
         ('BACKGROUND', (0, 0), (-1, 0), base_color),
         ('TEXTCOLOR', (0, 0), (-1, 0), white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
         # Grid
         ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#cccccc')),
         ('LINEBELOW', (0, 0), (-1, 0), 1, base_color),
         # Alignment
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ('LEFTPADDING', (0, 0), (-1, -1), 5),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 5),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
     ]
     # Alternate row colors
     for row_idx in range(1, len(table_data)):
@@ -341,28 +348,61 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     story.append(Spacer(1, 5 * mm))
 
     # ── Total Section ──
+    # Align with product table: the Amount column spans col 5-7 in the footer
+    # Table full width = sum(col_widths) = 472; Amount col at offset 406, width 66
     total = pi.total_amount
+    shipping_cost = getattr(pi, 'shipping_cost', 0.0) or 0.0
+    tbl_w = sum(col_widths)  # 472
+
+    right_label_style = ParagraphStyle('RLabel', parent=info_style, fontSize=10,
+                                        fontName=_FONT, textColor=base_color, alignment=TA_RIGHT)
+    right_value_style = ParagraphStyle('RValue', parent=info_style, fontSize=10,
+                                        fontName=_FONT, textColor=base_color, alignment=TA_RIGHT)
+    right_total_label = ParagraphStyle('RTLabel', parent=info_style, fontSize=13,
+                                        fontName=_FONT_BOLD, textColor=base_color, alignment=TA_RIGHT)
+    right_total_value = ParagraphStyle('RTValue', parent=info_style, fontSize=13,
+                                        fontName=_FONT_BOLD, textColor=base_color, alignment=TA_RIGHT)
+
+    # Adjustment row (if non-zero)
+    if abs(shipping_cost) > 0.001:
+        # Use a table that matches the product table width, with the value in the rightmost columns
+        spacer_w = tbl_w - 140 - 66  # space + label + value columns
+        shipping_data = [
+            ['', Paragraph(f'Subtotal ({cur_label}):', right_label_style),
+             Paragraph(f'{sym}{total:,.2f}', right_value_style)],
+            ['', Paragraph(f'Adj. / Cost:', right_label_style),
+             Paragraph(f'{sym}{shipping_cost:,.2f}', right_value_style)],
+        ]
+        # Add shipping note as a separate row if present
+        shipping_note = getattr(pi, 'shipping_note', '') or ''
+        if shipping_note:
+            shipping_data.append(['', Paragraph(f'({shipping_note})', ParagraphStyle(
+                'ShipNote', parent=info_style, fontSize=9, fontName=_FONT,
+                textColor=grey, alignment=TA_RIGHT,
+            )), ''])
+        ship_table = Table(shipping_data, colWidths=[spacer_w, 140, 66])
+        ship_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        story.append(ship_table)
+
+    spacer_w2 = tbl_w - 140 - 66
     total_data = [
-        [Paragraph(f'<b>TOTAL AMOUNT ({cur_label}):</b>', ParagraphStyle(
-            'TotalLabel', parent=info_style, fontSize=12, fontName=_FONT_BOLD,
-            textColor=base_color, alignment=TA_RIGHT,
-        )),
-         Paragraph(f'<b>{sym}{total:,.2f}</b>', ParagraphStyle(
-             'TotalValue', parent=info_style, fontSize=12, fontName=_FONT_BOLD,
-             textColor=base_color, alignment=TA_RIGHT,
-         ))],
+        ['', Paragraph(f'<b>TOTAL AMOUNT ({cur_label}):</b>', right_total_label),
+         Paragraph(f'<b>{sym}{total + shipping_cost:,.2f}</b>', right_total_value)],
     ]
-    total_table = Table(total_data, colWidths=[140, 100])
+    total_table = Table(total_data, colWidths=[spacer_w2, 140, 66])
     total_table.setStyle(TableStyle([
-        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('LINEABOVE', (0, 0), (-1, 0), 1.5, base_color),
-        ('LINEBELOW', (0, 0), (-1, 0), 1.5, base_color),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LINEABOVE', (0, 0), (-1, 0), 1, base_color),
     ]))
     story.append(total_table)
 
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     # ── Payment & Bank Info ──
     story.append(Paragraph('PAYMENT &amp; BANK DETAILS', section_style))
@@ -384,6 +424,13 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     ]))
     story.append(pay_table)
 
+    # ── Notes ──
+    if pi.notes and pi.notes.strip():
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph('NOTES', section_style))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(pi.notes.strip().replace('\n', '<br/>'), info_style))
+
     story.append(Spacer(1, 12 * mm))
 
     # ── Signature Area ──
@@ -392,11 +439,11 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
             Paragraph('<b>Issued By:</b><br/><br/><br/>_________________________<br/>'
                       f'{COMPANY_INFO["name"]}<br/>'
                       f'Date: {datetime.now().strftime("%Y-%m-%d")}',
-                      ParagraphStyle('SigLeft', parent=info_style, fontSize=9)),
+                      ParagraphStyle('SigLeft', parent=info_style, fontSize=10)),
             Paragraph('<b>Authorized Signature &amp; Stamp:</b><br/><br/><br/>'
                       '_________________________<br/>'
                       '<i>(Company Chop / Signature)</i>',
-                      ParagraphStyle('SigRight', parent=info_style, fontSize=9, alignment=TA_RIGHT)),
+                      ParagraphStyle('SigRight', parent=info_style, fontSize=10, alignment=TA_RIGHT)),
         ]
     ]
     sig_table = Table(sig_data, colWidths=[250, 250])

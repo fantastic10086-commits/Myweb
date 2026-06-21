@@ -16,6 +16,7 @@ class Customer(db.Model):
     address = db.Column(db.Text, default='')
     salesperson = db.Column(db.String(100), default='')
     total_deal_usd = db.Column(db.Float, default=0.0)
+    image = db.Column(db.String(500), default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -32,6 +33,7 @@ class Customer(db.Model):
             'address': self.address,
             'salesperson': self.salesperson,
             'total_deal_usd': self.total_deal_usd,
+            'image': self.image,
             'notes': self.notes,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
         }
@@ -73,6 +75,7 @@ class Payment(db.Model):
     pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False)
     amount = db.Column(db.Float, nullable=False, default=0.0)
     fee = db.Column(db.Float, default=0.0)
+    order_no = db.Column(db.String(200), default='')
     note = db.Column(db.String(200), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -80,6 +83,7 @@ class Payment(db.Model):
 
     def to_dict(self):
         return {'id': self.id, 'pi_id': self.pi_id, 'amount': self.amount,
+                'fee': self.fee, 'order_no': self.order_no,
                 'note': self.note, 'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else ''}
 
 
@@ -90,6 +94,7 @@ class Salesperson(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     phone = db.Column(db.String(50), default='')
     email = db.Column(db.String(200), default='')
+    dingtalk_user_id = db.Column(db.String(100), default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -112,6 +117,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), nullable=False, default='salesperson')  # 'admin' or 'salesperson'
     salesperson_name = db.Column(db.String(100), default='')
+    active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -130,7 +136,9 @@ class Product(db.Model):
     name = db.Column(db.String(200), nullable=False)
     product_code = db.Column(db.String(100), default='')
     specification = db.Column(db.String(200), default='')
+    chinese_name = db.Column(db.String(200), default='')
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
+    unit_price_rmb = db.Column(db.Float, nullable=False, default=0.0)
     notes = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -141,7 +149,9 @@ class Product(db.Model):
             'name': self.name,
             'product_code': self.product_code,
             'specification': self.specification,
+            'chinese_name': self.chinese_name,
             'unit_price': self.unit_price,
+            'unit_price_rmb': self.unit_price_rmb,
             'notes': self.notes,
             'image': self.image,
         }
@@ -160,10 +170,15 @@ class PI(db.Model):
     currency = db.Column(db.String(3), default='USD')
     company = db.Column(db.String(50), default='klista')
     total_amount = db.Column(db.Float, default=0.0)
+    shipping_cost = db.Column(db.Float, default=0.0)
+    shipping_note = db.Column(db.Text, default='')
+    actual_shipping_cost = db.Column(db.Float, default=0.0)
+    procurement_confirmed = db.Column(db.Boolean, default=False)
     pdf_path = db.Column(db.String(500), default='')
     excel_path = db.Column(db.String(500), default='')
     paid = db.Column(db.Boolean, default=False)
     received_amount = db.Column(db.Float, default=0.0)
+    shipping_address = db.Column(db.Text, default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -209,4 +224,86 @@ class PIItem(db.Model):
             'quantity': self.quantity,
             'unit_price': self.unit_price,
             'amount': self.amount,
+        }
+
+
+class Expense(db.Model):
+    __tablename__ = 'expenses'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=True)
+    category = db.Column(db.String(200), nullable=False)
+    amount = db.Column(db.Float, nullable=False, default=0.0)
+    currency = db.Column(db.String(3), default='USD')
+    note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    pi = db.relationship('PI', backref=db.backref('expenses', lazy=True, cascade='all, delete-orphan'))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pi_id': self.pi_id,
+            'category': self.category,
+            'amount': self.amount,
+            'currency': self.currency,
+            'note': self.note,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
+        }
+
+
+class Supplier(db.Model):
+    __tablename__ = 'suppliers'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    contact_person = db.Column(db.String(100), default='')
+    phone = db.Column(db.String(50), default='')
+    email = db.Column(db.String(200), default='')
+    address = db.Column(db.Text, default='')
+    notes = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'contact_person': self.contact_person,
+            'phone': self.phone,
+            'email': self.email,
+            'address': self.address,
+            'notes': self.notes,
+        }
+
+
+class Procurement(db.Model):
+    __tablename__ = 'procurements'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False)
+    pi_item_id = db.Column(db.Integer, db.ForeignKey('pi_items.id'), nullable=False)
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    unit_price = db.Column(db.Float, nullable=False, default=0.0)
+    quantity = db.Column(db.Integer, nullable=False, default=0)
+    total = db.Column(db.Float, nullable=False, default=0.0)
+    procurement_date = db.Column(db.String(20), default='')
+    note = db.Column(db.Text, default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    pi = db.relationship('PI', backref=db.backref('procurements', lazy=True, cascade='all, delete-orphan'))
+    pi_item = db.relationship('PIItem', backref=db.backref('procurements', lazy=True, cascade='all, delete-orphan'))
+    supplier = db.relationship('Supplier', backref=db.backref('procurements', lazy=True))
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'pi_id': self.pi_id,
+            'pi_item_id': self.pi_item_id,
+            'supplier_id': self.supplier_id,
+            'supplier_name': self.supplier.name if self.supplier else '',
+            'unit_price': self.unit_price,
+            'quantity': self.quantity,
+            'total': self.total,
+            'procurement_date': self.procurement_date,
+            'note': self.note,
         }

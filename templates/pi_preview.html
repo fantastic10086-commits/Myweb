@@ -1,44 +1,143 @@
-<div class="row mb-3">
-    <div class="col"><h5><i class="bi bi-file-text me-2"></i>{{ pi.pi_number }}</h5></div>
-    <div class="col text-end">
-        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-danger me-1"><i class="bi bi-file-pdf"></i> PDF</a>{% endif %}
-        {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-sm btn-success me-1"><i class="bi bi-file-excel"></i> Excel</a>{% endif %}
-        <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+{% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+<!-- Action buttons -->
+<div class="text-end mb-3" style="max-width:750px;margin:0 auto;">
+    {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-danger me-1"><i class="bi bi-file-pdf"></i> Download PDF</a>{% endif %}
+    <a href="{{ url_for('pi_live_edit', id=pi.id) }}" class="btn btn-sm btn-success">Live Edit</a>
+</div>
+
+<div style="max-width:750px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#222;">
+
+<!-- Company Header -->
+<div class="text-center mb-2 pb-2" style="border-bottom:2px solid #1a3a5c;">
+    <div style="font-size:16px;font-weight:bold;color:#1a3a5c;">
+        {% if pi.company == 'qisuo' %}Changzhou QISUO Welding and Cutting Equipment Co., Ltd.
+        {% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}
+    </div>
+    <div style="font-size:9px;color:#888;">No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China</div>
+</div>
+
+<!-- Title -->
+<div class="text-center mb-3" style="font-size:20px;font-weight:bold;color:#1a3a5c;">PROFORMA INVOICE</div>
+
+<!-- PI Info + Customer Info -->
+<div class="row g-0 mb-3">
+    <div class="col-5">
+        <table style="font-size:11px;width:100%;">
+            <tr><td style="width:75px;font-weight:bold;padding:1px 0;">PI Number:</td><td style="padding:1px 0;">{{ pi.pi_number }}</td></tr>
+            <tr><td style="font-weight:bold;padding:1px 0;">Date:</td><td style="padding:1px 0;">{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}</td></tr>
+            {% if pi.salesperson %}<tr><td style="font-weight:bold;padding:1px 0;">Salesperson:</td><td style="padding:1px 0;">{{ pi.salesperson }}</td></tr>{% endif %}
+        </table>
+    </div>
+    <div class="col-7">
+        <table style="font-size:11px;width:100%;">
+            <tr><td style="width:65px;font-weight:bold;padding:1px 0;">To / Buyer:</td><td style="padding:1px 0;"><strong>{{ pi.customer.name if pi.customer else '' }}</strong></td></tr>
+            {% if pi.customer and pi.customer.contact_person %}<tr><td style="font-weight:bold;padding:1px 0;">Contact:</td><td style="padding:1px 0;">{{ pi.customer.contact_person }}</td></tr>{% endif %}
+            {% if pi.customer and pi.customer.country %}<tr><td style="font-weight:bold;padding:1px 0;">Country:</td><td style="padding:1px 0;">{{ pi.customer.country }}</td></tr>{% endif %}
+            {% if pi.customer and pi.customer.email %}<tr><td style="font-weight:bold;padding:1px 0;">Email:</td><td style="padding:1px 0;">{{ pi.customer.email }}</td></tr>{% endif %}
+            {% if pi.customer and pi.customer.phone %}<tr><td style="font-weight:bold;padding:1px 0;">Phone:</td><td style="padding:1px 0;">{{ pi.customer.phone }}</td></tr>{% endif %}
+        </table>
     </div>
 </div>
-<div class="row g-3">
-    <div class="col-md-6">
-        <div class="card"><div class="card-header"><h6 class="mb-0">PI Info</h6></div><div class="card-body">
-            <table class="table table-sm mb-0">
-                <tr><th>PI#</th><td>{{ pi.pi_number }}</td></tr>
-                <tr><th>Salesperson</th><td>{{ pi.salesperson or '-' }}</td></tr>
-                <tr><th>Date</th><td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td></tr>
-                <tr><th>Currency</th><td>{{ pi.currency or 'USD' }}</td></tr>
-                <tr><th>Paid</th><td>{% if pi.paid %}<span class="badge bg-success">✓ Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td></tr>
-                <tr><th>Total</th><td class="fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td></tr>
-                <tr><th>Terms</th><td>{{ pi.payment_terms or '-' }}</td></tr>
-                <tr><th>Bank</th><td style="white-space:pre-wrap;">{{ pi.bank_info or '-' }}</td></tr>
-            </table>
-        </div></div>
+
+<!-- Product Table -->
+<div style="font-size:10px;font-weight:bold;color:#1a3a5c;margin-bottom:4px;">ITEM DETAILS</div>
+<table style="width:100%;font-size:10px;border-collapse:collapse;margin-bottom:10px;">
+    <thead>
+        <tr style="background:#1a3a5c;color:#fff;">
+            <th style="padding:4px 6px;text-align:center;width:30px;">No.</th>
+            <th style="padding:4px 6px;text-align:left;">Description</th>
+            <th style="padding:4px 6px;text-align:center;width:50px;">Qty</th>
+            <th style="padding:4px 6px;text-align:right;width:70px;">U.Price</th>
+            <th style="padding:4px 6px;text-align:right;width:80px;">Amount</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in pi.items %}
+        <tr style="border:0.5px solid #ddd;{% if loop.index % 2 == 0 %}background:#f4f6f9;{% endif %}">
+            <td style="padding:4px 6px;text-align:center;">{{ loop.index }}</td>
+            <td style="padding:4px 6px;">
+                <strong>{{ item.product.name if item.product else '-' }}</strong>
+                {% if item.product and item.product.specification %}<br><span style="color:#666;">{{ item.product.specification }}</span>{% endif %}
+                {% if item.product and item.product.product_code %}<br><span style="color:#999;">Code: {{ item.product.product_code }}</span>{% endif %}
+            </td>
+            <td style="padding:4px 6px;text-align:center;">{{ item.quantity }}</td>
+            <td style="padding:4px 6px;text-align:right;">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>
+            <td style="padding:4px 6px;text-align:right;font-weight:bold;">{{ sym }}{{ '%.2f'|format(item.amount) }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        {% set shipping = pi.shipping_cost or 0.0 %}
+        {% if shipping > 0 %}
+        {% set subtotal = pi.total_amount - shipping %}
+        <tr>
+            <th colspan="4" style="padding:4px 6px;text-align:right;font-size:10px;font-weight:normal;">Subtotal ({{ pi.currency or 'USD' }}):</th>
+            <th style="padding:4px 6px;text-align:right;font-size:10px;">{{ sym }}{{ '%.2f'|format(subtotal) }}</th>
+        </tr>
+        <tr>
+            <th colspan="3" style="padding:4px 6px;text-align:right;font-size:10px;font-weight:normal;">Shipping / Freight ({{ pi.currency or 'USD' }}):</th>
+            <th style="padding:4px 6px;text-align:left;font-size:10px;">{{ pi.shipping_note or '' }}</th>
+            <th style="padding:4px 6px;text-align:right;font-size:10px;">{{ sym }}{{ '%.2f'|format(shipping) }}</th>
+        </tr>
+        {% endif %}
+        <tr style="border-top:2px solid #1a3a5c;border-bottom:2px solid #1a3a5c;">
+            <th colspan="4" style="padding:6px;text-align:right;font-size:11px;">TOTAL ({{ pi.currency or 'USD' }}):</th>
+            <th style="padding:6px;text-align:right;font-size:11px;color:#1a3a5c;">{{ sym }}{{ '%.2f'|format(pi.total_amount) }}</th>
+        </tr>
+    </tfoot>
+</table>
+
+<!-- Payment & Bank -->
+{% if pi.payment_terms or pi.bank_info or pi.shipping_address %}
+<div style="font-size:10px;margin-bottom:10px;">
+    <div style="font-weight:bold;color:#1a3a5c;margin-bottom:3px;">PAYMENT &amp; BANK</div>
+    {% if pi.payment_terms %}
+    <table style="font-size:10px;width:100%;"><tr>
+        <td style="width:90px;font-weight:bold;padding:1px 0;">Payment Terms:</td>
+        <td style="padding:1px 0;">{{ pi.payment_terms }}</td>
+    </tr></table>
+    {% endif %}
+    {% if pi.bank_info %}
+    <table style="font-size:10px;width:100%;"><tr>
+        <td style="width:90px;font-weight:bold;padding:1px 0;">Bank Info:</td>
+        <td style="padding:1px 0;white-space:pre-wrap;">{{ pi.bank_info }}</td>
+    </tr></table>
+    {% endif %}
+    {% if pi.shipping_address %}
+    <table style="font-size:10px;width:100%;"><tr>
+        <td style="width:90px;font-weight:bold;padding:1px 0;">Address:</td>
+        <td style="padding:1px 0;">{{ pi.shipping_address }}</td>
+    </tr></table>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if pi.notes %}
+<div style="font-size:10px;margin-bottom:10px;">
+    <div style="font-weight:bold;color:#1a3a5c;margin-bottom:2px;">NOTES</div>
+    <div style="white-space:pre-wrap;">{{ pi.notes }}</div>
+</div>
+{% endif %}
+
+<!-- Signature -->
+<div class="row g-0 mt-4 pt-3" style="border-top:1px solid #ccc;">
+    <div class="col-6" style="font-size:10px;">
+        <strong>Issued By:</strong><br><br><br>
+        <div style="border-top:1px solid #000;width:180px;"></div>
+        {% if pi.company == 'qisuo' %}Changzhou QISUO Welding and Cutting Equipment Co., Ltd.
+        {% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}<br>
+        <span style="color:#888;">Date: {{ pi.created_at.strftime('%Y-%m-%d') if pi.created_at else '' }}</span>
     </div>
-    <div class="col-md-6">
-        <div class="card"><div class="card-header"><h6 class="mb-0">Customer</h6></div><div class="card-body">
-            {% set c = pi.customer %}
-            <table class="table table-sm mb-0">
-                <tr><th>Name</th><td><strong>{{ c.name }}</strong></td></tr>
-                <tr><th>Country</th><td>{{ c.country or '-' }}</td></tr>
-                <tr><th>Contact</th><td>{{ c.contact_person or '-' }}</td></tr>
-                <tr><th>Email</th><td>{{ c.email or '-' }}</td></tr>
-            </table>
-        </div></div>
+    <div class="col-6 text-end" style="font-size:10px;">
+        <strong>BUYER:</strong><br><br><br>
+        <div style="border-top:1px solid #000;width:180px;display:inline-block;"></div><br>
+        <span style="color:#888;"><i>(Signature / Stamp)</i></span>
     </div>
 </div>
-<div class="card mt-3"><div class="card-header"><h6 class="mb-0">Items ({{ pi.items|length }})</h6></div>
-    {% if pi.items %}
-    <div class="table-responsive"><table class="table table-sm table-hover mb-0">
-        <thead class="table-light"><tr><th>#</th><th>Product</th><th>Code</th><th class="text-end">Qty</th><th class="text-end">U.Price</th><th class="text-end">Amount</th></tr></thead>
-        <tbody>{% for item in pi.items %}<tr><td>{{ loop.index }}</td><td>{{ item.product.name if item.product else '-' }}{% if item.product and item.product.specification %}<br><small class="text-muted">{{ item.product.specification }}</small>{% endif %}</td><td>{{ item.product.product_code if item.product else '-' }}</td><td class="text-end">{{ item.quantity }}</td><td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.unit_price) }}</td><td class="text-end fw-bold">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.amount) }}</td></tr>{% endfor %}</tbody>
-        <tfoot><tr><th colspan="5" class="text-end">TOTAL:</th><th class="text-end text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</th></tr></tfoot>
-    </table></div>
-    {% else %}<div class="text-center py-3 text-muted">No items.</div>{% endif %}
+
+<!-- Footer -->
+<div style="font-size:8px;color:#999;text-align:center;margin-top:15px;border-top:1px solid #eee;padding-top:6px;">
+    This is a computer-generated Proforma Invoice. For questions, contact {{ company.email }}.
+</div>
+
 </div>

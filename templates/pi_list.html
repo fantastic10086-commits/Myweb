@@ -75,10 +75,16 @@
                     {% for pi in pis %}
                     <tr>
                         <td><strong>{{ pi.pi_number }}</strong></td>
-                        <td>{{ pi.customer.name if pi.customer else '-' }}</td>
+                        <td>
+                            {% if pi.customer %}
+                            <a href="{{ url_for('customer_detail', id=pi.customer.id) }}" class="text-decoration-none fw-bold">{{ pi.customer.name }}</a>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
+                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount + (pi.shipping_cost or 0)) }}</td>
                         <td class="text-center">
                             {% set total_received = pi.received_amount or 0 %}
                             {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
@@ -87,16 +93,16 @@
                             {% elif total_received > 0 %}
                             <button type="button" class="btn btn-sm btn-warning" onclick="viewPayments({{ pi.id }})" title="Partial: {{ sym }}{{ '%.2f'|format(total_received) }} of {{ sym }}{{ '%.2f'|format(pi.total_amount) }}">◐</button>
                             {% else %}
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount }}, '{{ pi.currency or 'USD' }}')">Confirm</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount + (pi.shipping_cost or 0) }}, '{{ pi.currency or 'USD' }}')">Confirm</button>
                             {% endif %}
                         </td>
                         <td>
                             {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-danger me-1" title="PDF"><i class="bi bi-file-pdf"></i></a>{% endif %}
-                            {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-sm btn-outline-success" title="Excel"><i class="bi bi-file-excel"></i></a>{% endif %}
-                            {% if not pi.pdf_path and not pi.excel_path %}<span class="badge bg-secondary">—</span>{% endif %}
+                            {% if not pi.pdf_path %}<span class="badge bg-secondary">—</span>{% endif %}
                         </td>
                         <td class="text-end">
                             <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
+                            <a href="{{ url_for('pi_live_edit', id=pi.id) }}" class="btn btn-sm btn-outline-success">Live Edit</a>
                             <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
                             <form action="{{ url_for('pi_delete', id=pi.id) }}" method="post" class="d-inline"
                                   onsubmit="return confirm('Delete PI {{ pi.pi_number }}? This cannot be undone.');">
@@ -133,8 +139,17 @@
             <p>PI: <strong id="payPINumber"></strong> | Total: <strong id="payPITotal"></strong></p>
             <div id="payHistory"></div>
             <hr>
-            <form id="paymentForm" method="post">
-                <div class="mb-3"><label class="form-label">Received Amount (<span id="payCurrency">USD</span>)</label><input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()"></div>
+            <form id="paymentForm" method="post" onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.innerHTML='<span class=\"spinner-border spinner-border-sm me-1\"></span>Processing...';return true;">
+                <div class="mb-3"><label class="form-label">Order Number <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="Order / Reference number"><small class="text-muted">阿里巴巴信保订单号 或 支付宝 或 微信订单号</small></div>
+                <div class="mb-3"><label class="form-label">Received Amount (<span id="payCurrency">USD</span>)</label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(30)" title="30%">30%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(50)" title="50%">50%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(70)" title="70%">70%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(100)" title="100%">100%</button>
+                    </div>
+                </div>
                 <div class="mb-3"><label class="form-label">Handling Fee</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
                 <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">≈ USD (amount only): <strong id="usdEquiv">$0.00</strong></small></div>
                 <button type="submit" class="btn btn-success w-100">Add Payment</button>
@@ -144,12 +159,19 @@
 </div>
 <script>
 var paymentData = {};
+var currentPITotal = 0;
+function setPct(pct) {
+    document.getElementById('payAmount').value = (currentPITotal * pct / 100).toFixed(2);
+    updateUsdEquiv();
+}
 function confirmPayment(id, total, currency) {
     var sym = currency === 'RMB' ? '¥' : '$';
+    currentPITotal = total;
     document.getElementById('payModalTitle').textContent = 'Confirm Payment';
     document.getElementById('payPINumber').textContent = '#' + id;
     document.getElementById('payPITotal').textContent = sym + total.toFixed(2);
     document.getElementById('payCurrency').textContent = currency;
+    document.getElementById('payOrderNo').value = '';
     document.getElementById('payAmount').value = total.toFixed(2);
     document.getElementById('payFee').value = '0';
     document.getElementById('payHistory').innerHTML = '';
@@ -170,11 +192,13 @@ function updateUsdEquiv() {
 function viewPayments(id) {
     fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
         var sym = data.currency === 'RMB' ? '¥' : '$';
+        var grandTotal = data.grand_total || data.total_amount;
+        currentPITotal = grandTotal;
         document.getElementById('payModalTitle').textContent = 'Payment History';
         document.getElementById('payPINumber').textContent = '#' + id;
-        document.getElementById('payPITotal').textContent = sym + data.total_amount.toFixed(2) + ' | Received: ' + sym + data.received.toFixed(2);
+        document.getElementById('payPITotal').textContent = sym + grandTotal.toFixed(2) + ' | Received: ' + sym + data.received.toFixed(2);
         document.getElementById('payCurrency').textContent = data.currency;
-        document.getElementById('payAmount').value = (data.total_amount - data.received).toFixed(2);
+        document.getElementById('payAmount').value = (grandTotal - data.received).toFixed(2);
         if (data.currency === 'RMB') {
             document.getElementById('usdEquivRow').style.display = '';
             updateUsdEquiv();
@@ -186,9 +210,9 @@ function viewPayments(id) {
         var histHtml = '';
         var pmts = data.payments;
         if (pmts.length > 0) {
-            histHtml = '<h6>History</h6><table class=\"table table-sm\"><thead><tr><th>#</th><th>Amount</th><th>Fee</th><th>Date</th></tr></thead><tbody>';
+            histHtml = '<h6>History</h6><table class=\"table table-sm\"><thead><tr><th>#</th><th>Order No</th><th>Amount</th><th>Fee</th><th>Date</th></tr></thead><tbody>';
             for (var i = 0; i < pmts.length; i++) {
-                histHtml += '<tr><td>' + (i+1) + '</td><td>' + sym + pmts[i].amount.toFixed(2) + '</td><td>' + (pmts[i].fee > 0 ? sym + pmts[i].fee.toFixed(2) : '-') + '</td><td><small>' + pmts[i].created_at + '</small></td></tr>';
+                histHtml += '<tr><td>' + (i+1) + '</td><td><small>' + (pmts[i].order_no || '-') + '</small></td><td>' + sym + pmts[i].amount.toFixed(2) + '</td><td>' + (pmts[i].fee > 0 ? sym + pmts[i].fee.toFixed(2) : '-') + '</td><td><small>' + pmts[i].created_at + '</small></td></tr>';
             }
             histHtml += '</tbody></table>';
         }

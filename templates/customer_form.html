@@ -1,6 +1,31 @@
 {% extends "base.html" %}
 {% block title %}{% if editing %}Edit{% else %}Add{% endif %} Customer{% endblock %}
 
+{% block extra_scripts %}
+<script>
+document.addEventListener('paste', function(e) {
+    var items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            var blob = items[i].getAsFile();
+            var dt = new DataTransfer();
+            dt.items.add(blob);
+            document.getElementById('image').files = dt.files;
+            var preview = document.getElementById('img_preview');
+            if (preview) {
+                var reader = new FileReader();
+                reader.onload = function(ev) { preview.src = ev.target.result; preview.style.display = ''; };
+                reader.readAsDataURL(blob);
+            }
+            return;
+        }
+    }
+});
+</script>
+{% endblock %}
+
 {% block content %}
 {% include 'countries.html' %}
 <div class="row mb-3">
@@ -16,7 +41,7 @@
 
 <div class="card">
     <div class="card-body">
-        <form method="post">
+        <form method="post" enctype="multipart/form-data">
             <div class="row g-3">
                 <div class="col-md-6">
                     <label for="name" class="form-label">Customer Name <span class="text-danger">*</span></label>
@@ -44,13 +69,22 @@
                            value="{{ customer.phone if customer else '' }}" placeholder="+1-xxx-xxx-xxxx">
                 </div>
                 <div class="col-md-6">
-                    <label for="salesperson" class="form-label">Salesperson</label>
-                    <select class="form-select" id="salesperson" name="salesperson">
+                    <label for="salesperson" class="form-label">Salesperson <span class="text-danger">*</span></label>
+                    <select class="form-select" id="salesperson" name="salesperson" required>
                         <option value="">— Select —</option>
                         {% for sp in all_salespersons %}
                         <option value="{{ sp.name }}" {% if customer and customer.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                         {% endfor %}
                     </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="image" class="form-label">Customer Logo / Image</label>
+                    <input type="file" class="form-control" id="image" name="image" accept="image/*">
+                    <small class="text-muted">Click to select or <strong>Ctrl+V</strong> to paste from clipboard</small>
+                    <img id="img_preview" src="#" style="display:none;max-height:80px;max-width:200px;margin-top:4px;border-radius:4px;border:1px solid #ddd;">
+                    {% if editing and customer.image %}
+                    <small class="text-muted d-block mt-1">Current: <img src="{{ url_for('uploaded_file', filename=customer.image) }}" style="max-height:40px;vertical-align:middle;"></small>
+                    {% endif %}
                 </div>
                 <div class="col-md-6">
                     <label for="address" class="form-label">Address</label>

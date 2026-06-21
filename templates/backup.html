@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Backup & Restore{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-shield-check me-2"></i>Backup & Restore</h2>
+        <p class="text-muted">Create backups of all data (database + product images) to prevent data loss.</p>
+    </div>
+</div>
+
+<!-- Create Backup -->
+<div class="card mb-4 border-success">
+    <div class="card-body text-center py-4">
+        <h5><i class="bi bi-database-add me-2"></i>Create New Backup</h5>
+        <p class="text-muted">Creates a zip file containing the database and all uploaded images.</p>
+        <form method="post" action="{{ url_for('backup_create') }}" class="d-inline">
+            <button type="submit" class="btn btn-success btn-lg">
+                <i class="bi bi-cloud-download"></i> Create Backup Now
+            </button>
+        </form>
+        <small class="d-block text-muted mt-2">
+            Backup location: <code>{{ app_root }}/backups/</code>
+        </small>
+    </div>
+</div>
+
+<!-- Restore Info -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-arrow-repeat me-2"></i>How to Restore</h5>
+    </div>
+    <div class="card-body">
+        <ol class="mb-0">
+            <li>Download the backup <code>.zip</code> file below.</li>
+            <li>Extract it into the project folder:
+                <ul>
+                    <li><code>instance/pi_manager.db</code> → <code>{{ app_root }}/instance/</code></li>
+                    <li><code>static/uploads/*</code> → <code>{{ app_root }}/static/uploads/</code></li>
+                </ul>
+            </li>
+            <li>Restart the app. All data will be restored.</li>
+        </ol>
+    </div>
+</div>
+
+<!-- Backup List -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-archive me-2"></i>Backup Files</h5>
+        <span class="badge bg-secondary">{{ backups|length }} backup(s)</span>
+    </div>
+    <div class="card-body p-0">
+        {% if backups %}
+        <table class="table table-hover mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>Filename</th>
+                    <th>Size</th>
+                    <th>Date</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in backups %}
+                <tr>
+                    <td><i class="bi bi-file-zip me-1"></i><strong>{{ b.filename }}</strong></td>
+                    <td>{{ b.size_mb }}</td>
+                    <td>{{ b.date }}</td>
+                    <td class="text-end">
+                        <a href="{{ url_for('backup_download', filename=b.filename) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-download"></i> Download
+                        </a>
+                        <form action="{{ url_for('backup_delete', filename=b.filename) }}" method="post" class="d-inline"
+                              onsubmit="return confirm('Delete backup {{ b.filename }}?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+            <i class="bi bi-inbox display-4"></i>
+            <p class="mt-2">No backups yet. Create one above.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

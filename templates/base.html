@@ -52,6 +52,18 @@
                             <i class="bi bi-bar-chart"></i> Sales Stats
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('fees_report') }}">
+                            <i class="bi bi-cash-stack"></i> Fees
+                        </a>
+                    </li>
+                    {% if is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('procurement_select') }}">
+                            <i class="bi bi-cart-check"></i> Procurement
+                        </a>
+                    </li>
+                    {% endif %}
                 </ul>
                 {% if current_user %}
                 <div class="dropdown">
@@ -64,8 +76,12 @@
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> My Profile</a></li>
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('user_list') }}"><i class="bi bi-people-fill"></i> Users</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('settings_page') }}"><i class="bi bi-gear"></i> Settings</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('backup_page') }}"><i class="bi bi-shield-check"></i> Backup</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-bank"></i> Accounts</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('supplier_list') }}"><i class="bi bi-truck"></i> Suppliers</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> Salespersons</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('procurement_select') }}"><i class="bi bi-cart-check"></i> Procurement</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
                     </ul>

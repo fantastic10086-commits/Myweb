@@ -33,7 +33,7 @@
                     <tr><th>Issue Date</th><td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td></tr>
                     <tr><th>Currency</th><td>{{ pi.currency or 'USD' }}</td></tr>
                     <tr><th>Paid</th><td>{% if pi.paid %}<span class="badge bg-success">✓ Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td></tr>
-                    <tr><th>Total Amount</th><td class="fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td></tr>
+
                     <tr><th>Payment Terms</th><td>{{ pi.payment_terms or '-' }}</td></tr>
                     <tr><th>Bank Info</th><td style="white-space:pre-wrap;">{{ pi.bank_info or '-' }}</td></tr>
                     <tr><th>Notes</th><td>{{ pi.notes or '-' }}</td></tr>
@@ -94,9 +94,24 @@
                     </tbody>
                     <tfoot class="table-light">
                         <tr>
-                            <th colspan="5" class="text-end">TOTAL:</th>
-                            <th class="text-end text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</th>
+                            <th colspan="5" class="text-end">Subtotal:</th>
+                            <th class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</th>
                         </tr>
+                        {% if pi.shipping_cost and pi.shipping_cost > 0 %}
+                        <tr>
+                            <th colspan="5" class="text-end">Adj. / Cost:</th>
+                            <th class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.shipping_cost) }}</th>
+                        </tr>
+                        <tr>
+                            <th colspan="5" class="text-end fw-bold text-primary">TOTAL:</th>
+                            <th class="text-end fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount + pi.shipping_cost) }}</th>
+                        </tr>
+                        {% endif %}
+                        {% if pi.shipping_note %}
+                        <tr>
+                            <td colspan="6" class="text-muted small"><i class="bi bi-info-circle me-1"></i>{{ pi.shipping_note }}</td>
+                        </tr>
+                        {% endif %}
                     </tfoot>
                 </table>
                 {% else %}

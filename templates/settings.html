@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-gear me-2"></i>Settings</h2>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-robot me-2"></i>DingTalk Bot (喜报)</h5></div>
+    <div class="card-body">
+        <p class="text-muted">When a payment is confirmed, a 喜报 message will be sent to your DingTalk group via bot.</p>
+        <form method="post">
+            <div class="mb-3">
+                <label for="dingtalk_webhook" class="form-label">Webhook URL</label>
+                <input type="url" class="form-control" id="dingtalk_webhook" name="dingtalk_webhook"
+                       value="{{ dingtalk_webhook }}" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                <small class="text-muted">
+                    Get this from DingTalk group: Group Settings → Robot → Add Webhook Robot → Copy Webhook URL.
+                </small>
+            </div>
+            {% if webhook_ok %}<div class="alert alert-success mt-2 mb-0 py-2 small"><i class="bi bi-check-circle"></i> Webhook configured. Payments trigger 喜报.</div>{% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-check2-square me-2"></i>DingTalk 待办 (Task Creation)</h5></div>
+    <div class="card-body">
+        <p class="text-muted">When a payment is confirmed, automatically create a DingTalk task with the PI PDF attached.</p>
+        <form method="post">
+            <div class="mb-3">
+                <label for="dingtalk_appkey" class="form-label">AppKey</label>
+                <input type="text" class="form-control" id="dingtalk_appkey" name="dingtalk_appkey"
+                       value="{{ dingtalk_appkey }}" placeholder="DingTalk enterprise app AppKey">
+            </div>
+            <div class="mb-3">
+                <label for="dingtalk_appsecret" class="form-label">AppSecret</label>
+                <input type="password" class="form-control" id="dingtalk_appsecret" name="dingtalk_appsecret"
+                       value="{{ dingtalk_appsecret }}" placeholder="DingTalk enterprise app AppSecret">
+            </div>
+            <div class="mb-3">
+                <label for="exchange_rate" class="form-label">USD : RMB Exchange Rate</label>
+                <div class="input-group" style="max-width:300px;">
+                    <span class="input-group-text">1 USD =</span>
+                    <input type="text" class="form-control" id="exchange_rate" name="exchange_rate"
+                           value="{{ exchange_rate }}" placeholder="7.0">
+                    <span class="input-group-text">RMB</span>
+                </div>
+                <small class="text-muted">Used for product list price conversion and procurement profit calculation.</small>
+            </div>
+            <div class="mb-3">
+                <label for="dingtalk_agent_id" class="form-label">AgentId</label>
+                <input type="text" class="form-control" id="dingtalk_agent_id" name="dingtalk_agent_id"
+                       value="{{ dingtalk_agent_id }}" placeholder="DingTalk app AgentId (for work notification)">
+                <small class="text-muted">Find in DingTalk Open Platform → App → App Details → AgentId. Used to send work notification after task creation.</small>
+            </div>
+            <div class="alert alert-warning py-2 mb-2">
+                <strong><i class="bi bi-exclamation-triangle"></i> Required Permissions:</strong>
+                <ol class="mb-0 mt-1 small">
+                    <li><strong>待办任务</strong> → 待办应用中待办写权限</li>
+                    <li><strong>通讯录</strong> → Contact.User.Read (通讯录成员信息读权限)</li>
+                </ol>
+                <span class="small">Go to <a href="https://open-dev.dingtalk.com" target="_blank">DingTalk Open Platform</a> → App → Permission Management → search for both "待办" and "Contact.User.Read" → enable them.</span>
+            </div>
+            <div class="mt-3">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save</button>
+            </div>
+
+            {% if dt_sps %}
+            <div class="mt-3 pt-3 border-top">
+                <label class="form-label fw-bold">Default Task Executors</label>
+                <p class="text-muted small mb-2">These people will always be added as executors on every task (in addition to the PI's salesperson).</p>
+                {% for sp in dt_sps %}
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="default_executors" value="{{ sp.dingtalk_user_id }}"
+                           id="exec_{{ sp.id }}" {% if sp.dingtalk_user_id in default_execs %}checked{% endif %}>
+                    <label class="form-check-label" for="exec_{{ sp.id }}">
+                        {{ sp.name }} <small class="text-muted">({{ sp.dingtalk_user_id }})</small>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </form>
+        {% if task_ok %}<div class="alert alert-success mt-3 mb-0 py-2"><i class="bi bi-check-circle"></i> DingTalk app configured. Tasks will be created with PDF attachment.</div>{% endif %}
+    </div>
+</div>
+{% endblock %}

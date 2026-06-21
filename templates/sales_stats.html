@@ -4,8 +4,8 @@
 {% block content %}
 <div class="row mb-3">
     <div class="col">
-        <h2><i class="bi bi-bar-chart me-2"></i>Salesperson Statistics</h2>
-        <p class="text-muted">PI count and total amount grouped by salesperson</p>
+        <h2><i class="bi bi-cash-stack me-2"></i>Payment Received Report</h2>
+        <p class="text-muted">All received payments (full + partial) by salesperson</p>
     </div>
 </div>
 
@@ -13,6 +13,15 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Salesperson</label>
+                <select class="form-select form-select-sm" name="sp">
+                    <option value="">— All —</option>
+                    {% for sp in all_salespersons %}
+                    <option value="{{ sp.name }}" {% if sp_filter == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
             <div class="col-md-2">
                 <label class="form-label small mb-1">Date From</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
@@ -24,24 +33,25 @@
             <div class="col-md-1">
                 <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel"></i></button>
             </div>
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="btn-group btn-group-sm">
                     <button type="submit" name="preset" value="this_month" class="btn btn-outline-secondary {% if preset=='this_month' %}active{% endif %}">This Month</button>
                     <button type="submit" name="preset" value="last_month" class="btn btn-outline-secondary {% if preset=='last_month' %}active{% endif %}">Last Month</button>
                     <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset=='this_year' %}active{% endif %}">This Year</button>
                 </div>
             </div>
-            <div class="col-md-2">
-                {% if date_from or date_to or preset %}
+            <div class="col-md-1">
+                {% if date_from or date_to or preset or sp_filter %}
                 <a href="{{ url_for('sales_stats') }}" class="btn btn-sm btn-outline-danger w-100">Clear</a>
                 {% endif %}
             </div>
         </form>
     </div>
 </div>
-{% if date_from or date_to or preset %}
+{% if date_from or date_to or preset or sp_filter %}
 <div class="alert alert-info py-1 small mb-3">
-    Showing data from <strong>{{ date_from or '...' }}</strong> to <strong>{{ date_to or '...' }}</strong>
+    {% if sp_filter %}Salesperson: <strong>{{ sp_filter }}</strong>{% endif %}
+    {% if date_from or date_to %} | Showing from <strong>{{ date_from or '...' }}</strong> to <strong>{{ date_to or '...' }}</strong>{% endif %}
     {% if preset %}({{ preset|replace('_',' ')|title }}){% endif %}
 </div>
 {% endif %}
@@ -74,26 +84,35 @@
     </div>
 </div>
 
-<!-- Stats Table -->
+<!-- Ranking -->
 <div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Payment Ranking (Full + Partial)</h5>
+    </div>
     <div class="card-body p-0">
         {% if stats %}
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th>#</th>
+                        <th style="width:50px;">Rank</th>
                         <th>Salesperson</th>
                         <th class="text-end">Customers</th>
-                        <th class="text-end">PI Count</th>
-                        <th class="text-end">Total Amount (USD)</th>
-                        <th class="text-end">% of Total</th>
+                        <th class="text-end">Paid PIs</th>
+                        <th class="text-end">Received (USD)</th>
+                        <th class="text-end" style="width:120px;">Share</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for s in stats %}
-                    <tr>
-                        <td>{{ loop.index }}</td>
+                    {% set rank = loop.index %}
+                    <tr class="{% if rank == 1 %}table-warning{% elif rank == 2 %}table-light{% elif rank == 3 %}table-secondary{% endif %}">
+                        <td class="text-center">
+                            {% if rank == 1 %}<span style="font-size:1.4rem;">🥇</span>
+                            {% elif rank == 2 %}<span style="font-size:1.4rem;">🥈</span>
+                            {% elif rank == 3 %}<span style="font-size:1.4rem;">🥉</span>
+                            {% else %}<span class="text-muted">{{ rank }}</span>{% endif %}
+                        </td>
                         <td>
                             {% if s.salesperson != '(Unassigned)' %}
                             <strong><a href="{{ url_for('pi_list', salesperson=s.salesperson) }}" class="text-decoration-none">{{ s.salesperson }}</a></strong>
@@ -106,13 +125,18 @@
                         <td class="text-end fw-bold">${{ '%.2f'|format(s.total_amount) }}</td>
                         <td class="text-end">
                             {% if grand_total > 0 %}
-                            {{ '%.1f'|format(s.total_amount / grand_total * 100) }}%
+                            <div class="d-flex align-items-center justify-content-end gap-2">
+                                <small>{{ '%.1f'|format(s.total_amount / grand_total * 100) }}%</small>
+                                <div class="progress flex-grow-1" style="height:6px;max-width:80px;">
+                                    <div class="progress-bar {% if rank == 1 %}bg-warning{% elif rank == 2 %}bg-secondary{% elif rank == 3 %}bg-dark{% else %}bg-primary{% endif %}" style="width:{{ '%.0f'|format(s.total_amount / grand_total * 100) }}%;"></div>
+                                </div>
+                            </div>
                             {% else %}0%{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
-                <tfoot class="table-light">
+                <tfoot class="table-dark">
                     <tr>
                         <th colspan="3" class="text-end">TOTAL</th>
                         <th class="text-end">{{ grand_pi_count }}</th>
@@ -124,8 +148,8 @@
         </div>
         {% else %}
         <div class="text-center py-5 text-muted">
-            <i class="bi bi-bar-chart display-3"></i>
-            <p class="mt-2">No PI data yet. Create some PIs to see statistics.</p>
+            <i class="bi bi-trophy display-3"></i>
+            <p class="mt-2">No payments received yet. Confirm payments to see ranking.</p>
         </div>
         {% endif %}
     </div>
@@ -135,22 +159,33 @@
 {% if all_pis %}
 <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">PI Details ({{ all_pis|length }})</h5>
+        <h5 class="mb-0">Received PIs ({{ all_pis|length }})</h5>
         <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#piDetailTable">Show/Hide</button>
     </div>
     <div class="collapse show" id="piDetailTable">
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light"><tr><th>PI Number</th><th>Customer</th><th>Salesperson</th><th>Date</th><th class="text-end">Amount</th><th>Paid</th></tr></thead>
+            <table class="table table-hover mb-0 align-middle small">
+                <thead class="table-light"><tr>
+                    <th>PI Number</th><th>Customer</th><th>Salesperson</th><th>Date</th>
+                    <th class="text-end">Amount</th><th class="text-end">Fee</th>
+                    <th class="text-end">Received</th>
+                    {% if has_rmb %}<th class="text-end">≈ USD</th>{% endif %}
+                    <th>Paid</th>
+                </tr></thead>
                 <tbody>
                     {% for pi in all_pis %}
+                    {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+                    {% set total_fee = pi.payments | sum(attribute='fee') %}
                     <tr>
                         <td><strong>{{ pi.pi_number }}</strong></td>
                         <td>{{ pi.customer.name if pi.customer else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</td>
-                        <td>{% if pi.paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td>
+                        <td class="text-end">{{ sym }}{{ '%.2f'|format(pi.total_amount) }}</td>
+                        <td class="text-end text-muted">{{ sym }}{{ '%.2f'|format(total_fee) }}</td>
+                        <td class="text-end fw-bold text-success">{{ sym }}{{ '%.2f'|format(pi.received_amount or 0) }}</td>
+                        {% if has_rmb %}<td class="text-end text-muted">{% if pi.currency == 'RMB' %}${{ '%.2f'|format((pi.received_amount or 0) / 7) }}{% else %}—{% endif %}</td>{% endif %}
+                        <td>{% if pi.paid %}<span class="badge bg-success">Paid</span>{% elif (pi.received_amount or 0) > 0 %}<span class="badge bg-warning">Partial</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

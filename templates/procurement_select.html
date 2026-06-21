@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Procurement — Select PI{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-cart-check me-2"></i>Procurement <small class="text-success fs-6">(Updated)</small></h2>
+        <p class="text-muted">Select a PI to start procurement. — Items, Country, Payment columns added.</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if pis %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>PI Number</th>
+                        <th>Customer</th>
+                        <th>Country</th>
+                        <th>Date</th>
+                        <th class="text-center">Items</th>
+                        <th>Total</th>
+                        <th class="text-center">Payment</th>
+                        <th>Salesperson</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pis %}
+                    <tr>
+                        <td><strong>{{ p.pi_number }}</strong></td>
+                        <td>{{ p.customer.name if p.customer else '—' }}</td>
+                        <td><small>{{ p.customer.country if p.customer else '-' }}</small></td>
+                        <td>{{ p.issue_date }}</td>
+                        <td>
+                            <strong>{{ p.items|length }} items</strong>
+                            {% set item_names = [] %}
+                            {% for item in p.items %}
+                                {% if item.product %}{% set _ = item_names.append(item.product.name) %}{% endif %}
+                            {% endfor %}
+                            {% set display = item_names|join(', ') %}
+                            {% if display %}<br><small class="text-muted">{{ display[:300] }}{% if display|length > 300 %}...{% endif %}</small>{% endif %}
+                        </td>
+                        <td>{{ p.currency }} {{ '%.2f'|format(p.total_amount) }}</td>
+                        <td class="text-center">
+                            {% if p.paid %}
+                            <span class="badge bg-success" title="Fully Paid">✓</span>
+                            {% else %}
+                            <span class="badge bg-warning text-dark" title="Partial: {{ p.currency }}{{ '%.2f'|format(p.received_amount) }} / {{ p.currency }}{{ '%.2f'|format(p.total_amount) }}">◐</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ p.salesperson }}</td>
+                        <td class="text-end">
+                            {% if p.id in pi_complete %}
+                            <a href="{{ url_for('procurement_page', pi_id=p.id) }}" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-check-lg"></i> Done
+                            </a>
+                            {% else %}
+                            <a href="{{ url_for('procurement_page', pi_id=p.id) }}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-cart-plus"></i> Procure
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-inbox display-3"></i>
+            <p class="mt-2">No PIs yet.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

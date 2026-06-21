@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -f \"flask run\")",
+      "Bash(nohup python3 -m flask run --port=5002)"
+    ]
+  }
+}

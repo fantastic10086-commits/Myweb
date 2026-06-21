@@ -4,63 +4,150 @@
 {% block content %}
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
-        <h2><i class="bi bi-box me-2"></i>Products</h2>
+        <h2><i class="bi bi-box me-2"></i>Products <small class="text-muted fs-6">({{ total }})</small></h2>
     </div>
     <div class="col-md-6 text-md-end">
+        <button id="editModeBtn" class="btn btn-outline-warning me-1" onclick="toggleEditMode()">
+            <i class="bi bi-pencil-square"></i> Edit Mode
+        </button>
+        <a href="{{ url_for('product_import') }}" class="btn btn-outline-success me-1">
+            <i class="bi bi-file-earmark-excel"></i> Import Excel
+        </a>
         <a href="{{ url_for('product_add') }}" class="btn btn-success">
             <i class="bi bi-plus-square"></i> Add Product
         </a>
     </div>
 </div>
 
-<!-- Search -->
+<!-- Search + Filter -->
 <div class="row mb-3">
-    <div class="col">
+    <div class="col-md-8">
         <form method="get" class="d-flex gap-2">
             <input type="text" name="search" class="form-control" placeholder="Search by name, code, specification..." value="{{ search }}">
+            {% if filter %}<input type="hidden" name="filter" value="{{ filter }}">{% endif %}
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
-            {% if search %}
+            {% if search or filter %}
             <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary">Clear</a>
             {% endif %}
         </form>
+    </div>
+    <div class="col-md-4 text-md-end">
+        <div class="btn-group btn-group-sm">
+            <a href="{{ url_for('product_list', search=search) }}" class="btn btn-outline-secondary {% if not filter %}active{% endif %}">All</a>
+            <a href="{{ url_for('product_list', search=search, filter='no_image') }}" class="btn btn-outline-warning {% if filter=='no_image' %}active{% endif %}">
+                <i class="bi bi-image"></i> No Image
+            </a>
+        </div>
+    </div>
+</div>
+
+{% if filter == 'no_image' %}
+<div class="alert alert-warning py-1 small mb-3">Showing <strong>{{ products|length }}</strong> products without images.</div>
+{% endif %}
+
+<!-- Exchange Rate Calculator -->
+<div class="row mb-3">
+    <div class="col-md-4">
+        <div class="input-group input-group-sm">
+            <span class="input-group-text bg-white"><i class="bi bi-currency-exchange"></i></span>
+            <span class="input-group-text">USD : RMB</span>
+            <input type="text" class="form-control" id="rateInput" placeholder="e.g. 6.5" value="{{ '%.2f'|format(exchange_rate) }}" style="max-width:80px;">
+            <span class="input-group-text">1 :</span>
+            <input type="text" class="form-control" id="rateValue" readonly style="background:#e9ecef;max-width:80px;" value="{{ '%.2f'|format(exchange_rate) }}">
+            <button class="btn btn-outline-primary" type="button" onclick="applyRate()" title="Apply exchange rate to all products">
+                <i class="bi bi-calculator"></i> 计算
+            </button>
+        </div>
+        <small class="text-muted">输入汇率后点击计算，自动填充 RMB 价格</small>
+    </div>
+    <div class="col-md-8 text-md-end">
+        <small class="text-muted" id="rateStatus"></small>
     </div>
 </div>
 
 <div class="card">
     <div class="card-body p-0">
         {% if products %}
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:60px;">Image</th>
-                        <th>Product Name</th>
-                        <th>Code</th>
-                        <th>Specification</th>
-                        <th class="text-end">Unit Price (USD)</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for p in products %}
-                    <tr>
-                        <td>{% if p.image %}<img src="{{ url_for('uploaded_file', filename=p.image) }}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                        <td><strong>{{ p.name }}</strong></td>
-                        <td>{{ p.product_code }}</td>
-                        <td>{{ p.specification }}</td>
-                        <td class="text-end">${{ '%.2f'|format(p.unit_price) }}</td>
-                        <td class="text-end">
-                            <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
-                            <form action="{{ url_for('product_delete', id=p.id) }}" method="post" class="d-inline"
-                                  onsubmit="return confirm('Delete product {{ p.name }}?');">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+        <form id="batchForm" method="post" action="{{ url_for('product_batch_delete') }}">
+            <input type="hidden" name="ids" id="batchIds" value="">
+            <!-- Batch actions bar -->
+            <div id="batchBar" class="bg-light border-bottom px-3 py-2 d-none align-items-center gap-2">
+                <span class="small me-2"><strong id="batchCount">0</strong> selected</span>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchDelete()">
+                    <i class="bi bi-trash"></i> Delete Selected
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                    Clear
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 align-middle small">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:36px;"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this)"></th>
+                            <th style="width:60px;">Image</th>
+                            <th>
+                                <a href="{{ url_for('product_list', search=search, filter=filter, sort='name_asc' if sort != 'name_asc' else 'name_desc') }}" class="text-decoration-none text-dark">
+                                    Name{% if sort == 'name_asc' %}<i class="bi bi-caret-up-fill small ms-1"></i>{% elif sort == 'name_desc' %}<i class="bi bi-caret-down-fill small ms-1"></i>{% else %}<i class="bi bi-caret-down small text-muted ms-1"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('product_list', search=search, filter=filter, sort='cn_asc' if sort != 'cn_asc' else 'cn_desc') }}" class="text-decoration-none text-dark">
+                                    中文名称{% if sort == 'cn_asc' %}<i class="bi bi-caret-up-fill small ms-1"></i>{% elif sort == 'cn_desc' %}<i class="bi bi-caret-down-fill small ms-1"></i>{% else %}<i class="bi bi-caret-down small text-muted ms-1"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('product_list', search=search, filter=filter, sort='code_asc' if sort != 'code_asc' else 'code_desc') }}" class="text-decoration-none text-dark">
+                                    Code{% if sort == 'code_asc' %}<i class="bi bi-caret-up-fill small ms-1"></i>{% elif sort == 'code_desc' %}<i class="bi bi-caret-down-fill small ms-1"></i>{% else %}<i class="bi bi-caret-down small text-muted ms-1"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th>
+                                <a href="{{ url_for('product_list', search=search, filter=filter, sort='spec_asc' if sort != 'spec_asc' else 'spec_desc') }}" class="text-decoration-none text-dark">
+                                    Spec{% if sort == 'spec_asc' %}<i class="bi bi-caret-up-fill small ms-1"></i>{% elif sort == 'spec_desc' %}<i class="bi bi-caret-down-fill small ms-1"></i>{% else %}<i class="bi bi-caret-down small text-muted ms-1"></i>{% endif %}
+                                </a>
+                            </th>
+                            <th class="text-end">
+                                Price(USD)
+                            </th>
+                            <th class="text-end">
+                                Price(RMB)
+                            </th>
+                            <th class="text-end" style="width:80px;">
+                                Rate
+                            </th>
+                            <th class="text-end">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productTbody">
+                        {% for p in products %}
+                        <tr id="row-{{ p.id }}">
+                            <td><input type="checkbox" class="form-check-input product-check" value="{{ p.id }}" onchange="updateBatchBar()"></td>
+                            <td>{% if p.image %}<img src="{{ url_for('uploaded_file', filename=p.image) }}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</td>
+                            <td class="editable" data-id="{{ p.id }}" data-field="chinese_name">{{ p.chinese_name }}</td>
+                            <td class="editable" data-id="{{ p.id }}" data-field="product_code">{{ p.product_code }}</td>
+                            <td class="editable" data-id="{{ p.id }}" data-field="specification">{{ p.specification }}</td>
+                            <td class="text-end editable editable-price" data-id="{{ p.id }}" data-field="unit_price" data-value="{{ '%.3f'|format(p.unit_price) }}" onclick="makeEditable(this,true)" style="cursor:pointer;">${{ '%.3f'|format(p.unit_price) }} <i class="bi bi-pencil-square small text-muted"></i></td>
+                            <td class="text-end editable editable-price" data-id="{{ p.id }}" data-field="unit_price_rmb" data-value="{{ '%.2f'|format(p.unit_price_rmb) }}" onclick="makeEditable(this,true)" style="cursor:pointer;">¥{{ '%.2f'|format(p.unit_price_rmb) }} <i class="bi bi-pencil-square small text-muted"></i></td>
+                            <td class="text-end rate-cell" data-id="{{ p.id }}">
+                                {% if p.unit_price_rmb and p.unit_price and p.unit_price > 0 %}
+                                {% set rate = (p.unit_price_rmb / p.unit_price)|round(2) %}
+                                <span class="{% if rate < 6.5 or rate > 7 %}text-danger fw-bold{% endif %}">1:{{ '%.2f'|format(rate) }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-info" title="Copy" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
+                                <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="Full edit (image)"><i class="bi bi-pencil"></i></a>
+                                <button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-box display-3"></i>
@@ -69,4 +156,534 @@
         {% endif %}
     </div>
 </div>
+
+{% if total_pages > 1 %}
+<nav class="mt-3 d-flex justify-content-between align-items-center">
+    <small class="text-muted">Page {{ page }} of {{ total_pages }} ({{ total }} products)</small>
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page-1) }}">&laquo; Prev</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        <li class="page-item {{ 'active' if p == page else '' }}">
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=p) }}">{{ p }}</a>
+        </li>
+        {% elif p == page - 3 or p == page + 3 %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page+1) }}">Next &raquo;</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
+
+<script>
+var editModeActive = false;
+var exchangeRate = parseFloat(document.getElementById('rateValue').value) || 7.0;
+
+// ── Exchange Rate ──
+document.getElementById('rateInput').addEventListener('input', function() {
+    var v = parseFloat(this.value);
+    if (!isNaN(v) && v > 0) {
+        document.getElementById('rateValue').value = v;
+        exchangeRate = v;
+    }
+});
+
+function applyRate() {
+    var rate = parseFloat(document.getElementById('rateInput').value);
+    if (isNaN(rate) || rate <= 0) { alert('Please enter a valid exchange rate (e.g. 6.5)'); return; }
+    exchangeRate = rate;
+    document.getElementById('rateValue').value = rate;
+    if (!confirm('Apply rate 1 USD : ' + rate + ' RMB to ALL products?\n\nProducts with USD > 0 will have RMB auto-calculated.\nThis will save to the database.')) return;
+
+    var rows = document.querySelectorAll('#productTbody tr');
+    var count = 0;
+    var promises = [];
+    for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        var id = row.id.replace('row-', '');
+        if (!id) continue;
+        var usdCell = row.querySelector('.editable-price[data-field="unit_price"]');
+        if (!usdCell) continue;
+        var usd = parseFloat(usdCell.dataset.value) || 0;
+        if (usd <= 0) continue;
+        var rmb = (usd * rate);
+        var rmbRounded = Math.round(rmb * 100) / 100;
+        var usd3 = Math.round(usd * 1000) / 1000;
+        // Update display immediately
+        var rmbCell = row.querySelector('.editable-price[data-field="unit_price_rmb"]');
+        if (rmbCell) {
+            rmbCell.dataset.value = rmbRounded.toFixed(2);
+            rmbCell.textContent = '¥' + rmbRounded.toFixed(2);
+        }
+        // Save to DB
+        promises.push(fetch('/api/products/' + id + '/update', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({unit_price_rmb: rmbRounded})
+        }).then(function(r) { return r.json(); }));
+        count++;
+    }
+    document.getElementById('rateStatus').textContent = 'Calculating ' + count + ' products...';
+    Promise.all(promises).then(function() {
+        document.getElementById('rateStatus').textContent = 'Done! ' + count + ' products updated at rate 1:' + rate;
+        flashToast(count + ' products RMB updated', 'success');
+    }).catch(function() {
+        document.getElementById('rateStatus').textContent = 'Some updates failed.';
+    });
+}
+
+// ── Checkbox / Batch ──
+function toggleAll(el) {
+    var checks = document.querySelectorAll('.product-check');
+    for (var i = 0; i < checks.length; i++) { checks[i].checked = el.checked; }
+    updateBatchBar();
+}
+function updateBatchBar() {
+    var checks = document.querySelectorAll('.product-check:checked');
+    var bar = document.getElementById('batchBar');
+    var count = checks.length;
+    document.getElementById('batchCount').textContent = count;
+    if (count > 0) { bar.classList.remove('d-none'); bar.classList.add('d-flex'); }
+    else { bar.classList.add('d-none'); bar.classList.remove('d-flex'); }
+}
+function batchDelete() {
+    var checks = document.querySelectorAll('.product-check:checked');
+    if (checks.length === 0) return;
+    if (!confirm('Delete ' + checks.length + ' selected products? This cannot be undone.')) return;
+    var ids = [];
+    for (var i = 0; i < checks.length; i++) { ids.push(checks[i].value); }
+    document.getElementById('batchIds').value = ids.join(',');
+    document.getElementById('batchForm').submit();
+}
+function clearSelection() {
+    var checks = document.querySelectorAll('.product-check');
+    for (var i = 0; i < checks.length; i++) { checks[i].checked = false; }
+    document.getElementById('selectAll').checked = false;
+    updateBatchBar();
+}
+
+// ── Edit Mode Toggle ──
+function toggleEditMode() {
+    editModeActive = !editModeActive;
+    var btn = document.getElementById('editModeBtn');
+    if (editModeActive) {
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> Done Editing';
+        btn.className = 'btn btn-warning me-1';
+        enterEditModeAll();
+    } else {
+        btn.innerHTML = '<i class="bi bi-pencil-square"></i> Edit Mode';
+        btn.className = 'btn btn-outline-warning me-1';
+        exitEditModeAll();
+    }
+}
+
+function enterEditModeAll() {
+    var cells = document.querySelectorAll('#productTbody .editable, #productTbody .editable-price');
+    for (var i = 0; i < cells.length; i++) {
+        makeEditable(cells[i], false);
+    }
+}
+
+function exitEditModeAll() {
+    // Collect changes by product row and save each product's changes in one API call
+    var rows = document.querySelectorAll('#productTbody tr');
+    var saved = 0;
+    for (var r = 0; r < rows.length; r++) {
+        var row = rows[r];
+        var id = row.id.replace('row-', '');
+        if (!id) continue;
+        var changes = {};
+        var cells = row.querySelectorAll('.editable.editing, .editable-price.editing');
+        for (var c = 0; c < cells.length; c++) {
+            var cell = cells[c];
+            var input = cell.querySelector('input');
+            if (!input) continue;
+            var field = cell.dataset.field;
+            var newVal = input.value.trim();
+            var oldVal = cell.dataset.oldValue || '';
+            if (newVal !== oldVal) {
+                if (field === 'unit_price_rmb') {
+                    changes['unit_price_rmb'] = newVal;
+                    var rmb = parseFloat(newVal);
+                    if (!isNaN(rmb) && exchangeRate > 0) {
+                        changes['unit_price'] = Math.round(rmb / exchangeRate * 1000) / 1000;
+                    }
+                } else if (field === 'unit_price') {
+                    changes['unit_price'] = newVal;
+                    var usd = parseFloat(newVal);
+                    if (!isNaN(usd) && exchangeRate > 0) {
+                        changes['unit_price_rmb'] = Math.round(usd * exchangeRate * 100) / 100;
+                    }
+                } else {
+                    changes[field] = newVal;
+                }
+            }
+        }
+        if (Object.keys(changes).length > 0) {
+            saveProductChanges(id, changes, row);
+            saved++;
+        } else {
+            // Just restore display
+            restoreRowDisplay(row);
+        }
+    }
+    if (saved === 0) {
+        flashToast('No changes detected', '');
+    }
+}
+
+function saveProductChanges(id, changes, row) {
+    fetch('/api/products/' + id + '/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(changes)
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            updateRowDisplay(row, data.product);
+            flashToast('Saved', 'success');
+        } else {
+            flashToast(data.error || 'Save failed', 'danger');
+            restoreRowDisplay(row);
+        }
+    }).catch(function() {
+        flashToast('Network error', 'danger');
+        restoreRowDisplay(row);
+    });
+}
+
+function updateRowDisplay(row, product) {
+    var cells = row.querySelectorAll('.editable, .editable-price');
+    for (var i = 0; i < cells.length; i++) {
+        var cell = cells[i];
+        var field = cell.dataset.field;
+        cell.classList.remove('editing');
+        if (field === 'name') cell.textContent = product.name || '';
+        else if (field === 'chinese_name') cell.textContent = product.chinese_name || '';
+        else if (field === 'product_code') cell.textContent = product.product_code || '';
+        else if (field === 'specification') cell.textContent = product.specification || '';
+        else if (field === 'unit_price') {
+            cell.dataset.value = (product.unit_price || 0).toFixed(3);
+            cell.textContent = '$' + (product.unit_price || 0).toFixed(3);
+        }
+        else if (field === 'unit_price_rmb') {
+            cell.dataset.value = (product.unit_price_rmb || 0).toFixed(2);
+            cell.textContent = '¥' + (product.unit_price_rmb || 0).toFixed(2);
+        }
+    }
+    // Also update the other price cell and rate
+    var usdCell = row.querySelector('.editable-price[data-field="unit_price"]');
+    if (usdCell && product.unit_price !== undefined) {
+        usdCell.dataset.value = (product.unit_price || 0).toFixed(3);
+        usdCell.textContent = '$' + (product.unit_price || 0).toFixed(3);
+    }
+    var rmbCell = row.querySelector('.editable-price[data-field="unit_price_rmb"]');
+    if (rmbCell && product.unit_price_rmb !== undefined) {
+        rmbCell.dataset.value = (product.unit_price_rmb || 0).toFixed(2);
+        rmbCell.textContent = '¥' + (product.unit_price_rmb || 0).toFixed(2);
+        rmbCell.classList.remove('editing');
+    }
+    updateRateCell(row);
+}
+
+function restoreRowDisplay(row) {
+    var cells = row.querySelectorAll('.editable.editing, .editable-price.editing');
+    for (var i = 0; i < cells.length; i++) {
+        var cell = cells[i];
+        var oldDisplay = cell.dataset.oldDisplay || '';
+        cell.textContent = oldDisplay;
+        cell.classList.remove('editing');
+    }
+}
+
+// ── Rate helper ──
+function updateRateCell(row) {
+    var usdCell = row.querySelector('.editable-price[data-field="unit_price"]');
+    var rmbCell = row.querySelector('.editable-price[data-field="unit_price_rmb"]');
+    var rateCell = row.querySelector('.rate-cell');
+    if (!rateCell) return;
+    var usd = parseFloat(usdCell ? (usdCell.classList.contains('editing') ? usdCell.querySelector('input').value : usdCell.dataset.value) : 0) || 0;
+    var rmb = parseFloat(rmbCell ? (rmbCell.classList.contains('editing') ? rmbCell.querySelector('input').value : rmbCell.dataset.value) : 0) || 0;
+    if (usd > 0 && rmb > 0) {
+        var rate = Math.round(rmb / usd * 100) / 100;
+        var cls = (rate < 6.5 || rate > 7) ? 'text-danger fw-bold' : '';
+        rateCell.innerHTML = '<span class="' + cls + '">1:' + rate.toFixed(2) + '</span>';
+    } else {
+        rateCell.innerHTML = '<span class="text-muted">-</span>';
+    }
+}
+
+// ── Single-cell inline edit (click on a cell) ──
+function makeEditable(cell, shouldFocus) {
+    if (cell.classList.contains('editing')) return;
+    var isPrice = cell.classList.contains('editable-price');
+    var field = cell.dataset.field;
+    var value = isPrice ? (cell.dataset.value || '0.00') : cell.textContent.trim();
+    cell.dataset.oldValue = value;
+    cell.dataset.oldDisplay = cell.textContent.trim();
+    cell.classList.add('editing');
+
+    var input = document.createElement('input');
+    input.type = isPrice ? 'number' : 'text';
+    input.className = 'form-control form-control-sm inline-input';
+    input.value = value;
+    if (isPrice) { input.step = field === 'unit_price' ? '0.001' : '0.01'; input.min = '0'; input.style.width = '100px'; }
+    else { input.style.width = '100%'; }
+    cell.textContent = '';
+    cell.appendChild(input);
+    if (shouldFocus !== false) {
+        input.focus();
+        if (!isPrice) input.select();
+    }
+
+    // Live preview: editing USD updates RMB preview, editing RMB updates USD preview
+    if (field === 'unit_price' || field === 'unit_price_rmb') {
+        var row = cell.closest('tr');
+        input.addEventListener('input', function() {
+            updateRateCell(row);
+            var val = parseFloat(this.value);
+            if (isNaN(val) || val <= 0) return;
+            if (field === 'unit_price') {
+                // Editing USD → preview RMB
+                var rmbCell = row.querySelector('.editable-price[data-field="unit_price_rmb"]');
+                if (rmbCell && !rmbCell.classList.contains('editing')) {
+                    var rmb = Math.round(val * exchangeRate * 100) / 100;
+                    rmbCell.textContent = '¥' + rmb.toFixed(2);
+                }
+            } else {
+                // Editing RMB → preview USD
+                var usdCell = row.querySelector('.editable-price[data-field="unit_price"]');
+                if (usdCell && !usdCell.classList.contains('editing')) {
+                    var usd = Math.round(val / exchangeRate * 1000) / 1000;
+                    usdCell.textContent = '$' + usd.toFixed(3);
+                }
+            }
+        });
+    }
+
+    if (!editModeActive) {
+        // Single-cell mode: save on blur/enter, cancel on escape
+        input.addEventListener('blur', function() { commitCellEdit(cell); });
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); commitCellEdit(cell); }
+            if (e.key === 'Escape') { e.preventDefault(); cancelCellEdit(cell); }
+        });
+    }
+    // In edit mode: no blur/key handlers — all cells stay editable until "Done Editing"
+}
+
+function commitCellEdit(cell) {
+    if (!cell || !cell.classList.contains('editing')) return;
+    var input = cell.querySelector('input');
+    if (!input) { restoreCellDisplay(cell); return; }
+    var id = cell.dataset.id;
+    var field = cell.dataset.field;
+    var newVal = input.value.trim();
+    if (newVal === cell.dataset.oldValue) {
+        restoreCellDisplay(cell);
+        return;
+    }
+    if (field === 'name' && !newVal) {
+        flashToast('Name required', 'danger');
+        restoreCellDisplay(cell);
+        return;
+    }
+    var body = {};
+    if (field === 'unit_price_rmb') {
+        var rmb = parseFloat(newVal);
+        if (isNaN(rmb)) { restoreCellDisplay(cell); return; }
+        var usd = exchangeRate > 0 ? rmb / exchangeRate : 0;
+        usd = Math.round(usd * 1000) / 1000;
+        body['unit_price_rmb'] = rmb;
+        body['unit_price'] = usd;
+    } else if (field === 'unit_price') {
+        var usd = parseFloat(newVal);
+        if (isNaN(usd)) { restoreCellDisplay(cell); return; }
+        var rmb = Math.round(usd * exchangeRate * 100) / 100;
+        body['unit_price'] = usd;
+        body['unit_price_rmb'] = rmb;
+    } else {
+        body[field] = newVal;
+    }
+    fetch('/api/products/' + id + '/update', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+            updateSingleCell(cell, data.product);
+            flashToast('Saved', 'success');
+        } else {
+            flashToast(data.error || 'Save failed', 'danger');
+            restoreCellDisplay(cell);
+        }
+    }).catch(function() {
+        flashToast('Network error', 'danger');
+        restoreCellDisplay(cell);
+    });
+}
+
+function updateSingleCell(cell, product) {
+    var field = cell.dataset.field;
+    cell.classList.remove('editing');
+    var row = cell.closest('tr');
+    if (field === 'unit_price') {
+        cell.dataset.value = (product.unit_price || 0).toFixed(3);
+        cell.textContent = '$' + (product.unit_price || 0).toFixed(3);
+        // Also update RMB cell
+        var rmbCell = row ? row.querySelector('.editable-price[data-field="unit_price_rmb"]') : null;
+        if (rmbCell) {
+            rmbCell.dataset.value = (product.unit_price_rmb || 0).toFixed(2);
+            rmbCell.textContent = '¥' + (product.unit_price_rmb || 0).toFixed(2);
+        }
+    } else if (field === 'unit_price_rmb') {
+        cell.dataset.value = (product.unit_price_rmb || 0).toFixed(2);
+        cell.textContent = '¥' + (product.unit_price_rmb || 0).toFixed(2);
+        // Also update USD cell
+        var usdCell = row ? row.querySelector('.editable-price[data-field="unit_price"]') : null;
+        if (usdCell) {
+            usdCell.dataset.value = (product.unit_price || 0).toFixed(3);
+            usdCell.textContent = '$' + (product.unit_price || 0).toFixed(3);
+        }
+    } else {
+        cell.textContent = product[field] || '';
+    }
+    // Always update rate cell
+    if (row) updateRateCell(row);
+}
+
+function cancelCellEdit(cell) {
+    restoreCellDisplay(cell);
+    var row = cell.closest('tr');
+    if (row) updateRateCell(row);
+}
+
+function restoreCellDisplay(cell) {
+    if (!cell) return;
+    cell.textContent = cell.dataset.oldDisplay || '';
+    cell.classList.remove('editing');
+}
+
+// ── Click handler for single-cell editing (outside edit mode) ──
+document.addEventListener('click', function(e) {
+    if (editModeActive) return; // In edit mode, don't do single-cell editing
+    var cell = e.target.closest('#productTbody .editable, #productTbody .editable-price');
+    if (cell) {
+        makeEditable(cell, true);
+    }
+});
+
+// ── Delete Product (AJAX) ──
+function deleteProduct(id, name) {
+    if (!confirm('Delete product ' + name + '?')) return;
+    fetch('/api/products/' + id + '/delete', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var row = document.getElementById('row-' + id);
+                if (row) { row.style.display = 'none'; }
+                flashToast('Deleted', 'success');
+            } else {
+                flashToast(data.error || 'Delete failed', 'danger');
+            }
+        }).catch(function() { flashToast('Network error', 'danger'); });
+}
+
+// ── Copy Product ──
+function copyProduct(id) {
+    if (!confirm('Copy this product? A new product will be created with same info.')) return;
+    fetch('/api/products/' + id + '/copy', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var p = data.product;
+                var tbody = document.getElementById('productTbody');
+                var tr = document.createElement('tr');
+                tr.id = 'row-' + p.id;
+                tr.innerHTML =
+                    '<td><input type="checkbox" class="form-check-input product-check" value="' + p.id + '" onchange="updateBatchBar()"></td>' +
+                    '<td>' + (p.image ? '<img src="/uploads/' + p.image + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">' : '<span class="text-muted">—</span>') + '</td>' +
+                    '<td class="editable" data-id="' + p.id + '" data-field="name">' + escHtml(p.name) + '</td>' +
+                    '<td class="editable" data-id="' + p.id + '" data-field="chinese_name">' + escHtml(p.chinese_name || '') + '</td>' +
+                    '<td class="editable" data-id="' + p.id + '" data-field="product_code">' + escHtml(p.product_code || '') + '</td>' +
+                    '<td class="editable" data-id="' + p.id + '" data-field="specification">' + escHtml(p.specification || '') + '</td>' +
+                    '<td class="text-end editable editable-price" data-id="' + p.id + '" data-field="unit_price" data-value="' + (p.unit_price || 0).toFixed(3) + '">$' + (p.unit_price || 0).toFixed(3) + '</td>' +
+                    '<td class="text-end editable editable-price" data-id="' + p.id + '" data-field="unit_price_rmb" data-value="' + (p.unit_price_rmb || 0).toFixed(2) + '">¥' + (p.unit_price_rmb || 0).toFixed(2) + '</td>' +
+                    '<td class="text-end rate-cell" data-id="' + p.id + '">' + renderRateCell(p) + '</td>' +
+                    '<td class="text-end text-nowrap">' +
+                        '<button type="button" class="btn btn-sm btn-outline-info" title="Copy" onclick="copyProduct(' + p.id + ')"><i class="bi bi-copy"></i></button> ' +
+                        '<a href="/products/' + p.id + '/edit" class="btn btn-sm btn-outline-warning" title="Full edit (image)"><i class="bi bi-pencil"></i></a> ' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteProduct(' + p.id + ', \'' + escHtml(p.name) + '\')"><i class="bi bi-trash"></i></button>' +
+                    '</td>';
+                tbody.insertBefore(tr, tbody.firstChild);
+                flashToast('Copied! Edit below.', 'success');
+                tr.style.background = '#d1fae5';
+                setTimeout(function() { tr.style.background = ''; }, 3000);
+                // Auto-edit the new row's name
+                var nameCell = tr.querySelector('.editable[data-field="name"]');
+                if (nameCell) { makeEditable(nameCell, true); }
+            } else {
+                flashToast('Copy failed', 'danger');
+            }
+        }).catch(function() { flashToast('Network error', 'danger'); });
+}
+
+function renderRateCell(p) {
+    if (p.unit_price_rmb && p.unit_price && p.unit_price > 0) {
+        var rate = Math.round(p.unit_price_rmb / p.unit_price * 100) / 100;
+        var cls = (rate < 6.5 || rate > 7) ? 'text-danger fw-bold' : '';
+        return '<span class="' + cls + '">1:' + rate.toFixed(2) + '</span>';
+    }
+    return '<span class="text-muted">-</span>';
+}
+function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function flashToast(msg, type) {
+    var el = document.createElement('span');
+    el.textContent = msg;
+    el.style.cssText = 'position:fixed;top:60px;right:20px;padding:6px 14px;border-radius:4px;color:#fff;font-size:13px;z-index:9999;animation:fadeOut 2s forwards;';
+    el.style.background = type === 'success' ? '#198754' : (type === 'danger' ? '#dc3545' : '#6c757d');
+    document.body.appendChild(el);
+    setTimeout(function() { el.remove(); }, 2000);
+}
+</script>
+
+<style>
+.editable, .editable-price {
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.15s;
+}
+.editable:hover, .editable-price:hover {
+    background: #fef9e7;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 3px;
+}
+.editable.editing, .editable-price.editing {
+    background: #fff;
+    outline: 2px solid #0d6efd;
+    padding: 0;
+}
+.inline-input {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    padding: 2px 4px !important;
+    height: auto !important;
+    font-size: inherit !important;
+    font-weight: inherit !important;
+}
+@keyframes fadeOut {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+</style>
 {% endblock %}

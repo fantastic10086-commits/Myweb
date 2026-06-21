@@ -1,0 +1,8 @@
+{
+  "dingtalk_webhook": "https://oapi.dingtalk.com/robot/send?access_token=85478ad9fd7f414957cc296796c366e86d7d5b59d4a1b2bf4c04aa7396bb4145",
+  "dingtalk_appkey": "ding9cbf1tafomzbtd6a",
+  "dingtalk_appsecret": "gSGucRWfkORdLp3YIuoWm1K8yKRXX_BL1XAbMdCh-1jJtp6VLXie-xxo3oaGs3sY",
+  "dingtalk_agent_id": "4670830772",
+  "dingtalk_default_executors": "[\"01075605503423165909\", \"036944123839016306\", \"2248391749772992006\"]",
+  "exchange_rate": "6.7"
+}

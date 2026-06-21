@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Import Products from Excel{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-file-earmark-excel me-2"></i>Import Products from Excel</h2>
+        <a href="{{ url_for('product_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back to Products
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <h5 class="mb-3">Upload Excel File</h5>
+        <p class="text-muted">
+            Supports <strong>.xlsx</strong> files with floating images. The system will:
+        </p>
+        <ul class="text-muted">
+            <li>Read product name, code, specification, and unit price from each row</li>
+            <li>Extract floating images positioned over each row</li>
+            <li>Auto-detect duplicates (same name + code) and update instead of creating duplicates</li>
+        </ul>
+
+        <hr>
+
+        <form method="post" enctype="multipart/form-data">
+            <h6 class="mb-2">Method 1: Upload directly (max 256MB)</h6>
+            <div class="mb-3">
+                <label for="excel_file" class="form-label">Select Excel File (.xlsx)</label>
+                <input type="file" class="form-control" id="excel_file" name="excel_file"
+                       accept=".xlsx,.xlsm">
+                <small class="text-muted">If the file is too large, use Method 2 below.</small>
+            </div>
+
+            <hr>
+            <h6 class="mb-2">Method 2: Server-side file path (for very large files)</h6>
+            <p class="text-muted small">Copy the file to the server first (SCP/USB), then enter the full path:</p>
+            <div class="mb-3">
+                <label for="server_path" class="form-label">File path on server</label>
+                <input type="text" class="form-control" id="server_path" name="server_path"
+                       placeholder="/home/姜姜/okki/产品信息.xlsx">
+                <small class="text-muted">Example: <code>/home/姜姜/okki/产品信息.xlsx</code></small>
+            </div>
+            <hr>
+
+            <div class="card bg-light mb-3">
+                <div class="card-body small">
+                    <strong>Expected Excel layout:</strong>
+                    <table class="table table-sm table-bordered mb-0 mt-2" style="font-size:12px;">
+                        <thead class="table-secondary">
+                            <tr><th>A: No</th><th>B: Name</th><th>C: Code</th><th>D: Specification</th><th>E: Unit Price</th><th>F: Image</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>1</td>
+                                <td>Product Name</td>
+                                <td>SKU-001</td>
+                                <td>10cm x 20cm</td>
+                                <td>12.50</td>
+                                <td><em>floating image</em></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <p class="mt-2 mb-0 text-muted">Row 1 = headers, data starts from row 2. Images in column F are extracted by row position.</p>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-cloud-upload"></i> Import Products
+            </button>
+            <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

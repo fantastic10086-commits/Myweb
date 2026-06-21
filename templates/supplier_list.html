@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Suppliers{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col">
+        <h2><i class="bi bi-truck me-2"></i>Suppliers</h2>
+    </div>
+    <div class="col text-end">
+        <a href="{{ url_for('supplier_add') }}" class="btn btn-success">
+            <i class="bi bi-plus-square"></i> Add Supplier
+        </a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if suppliers %}
+        <div class="table-responsive">
+            <table class="table table-hover table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Name</th>
+                        <th>Contact</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Address</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in suppliers %}
+                    <tr>
+                        <td><a href="{{ url_for('supplier_detail', id=s.id) }}" class="text-decoration-none"><strong>{{ s.name }}</strong></a></td>
+                        <td>{{ s.contact_person or '-' }}</td>
+                        <td>{{ s.phone or '-' }}</td>
+                        <td>{{ s.email or '-' }}</td>
+                        <td><small>{{ s.address or '-' }}</small></td>
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url_for('supplier_edit', id=s.id) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil"></i></a>
+                            <form method="post" action="{{ url_for('supplier_delete', id=s.id) }}" style="display:inline" onsubmit="return confirm('Delete supplier {{ s.name|e }}?')">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="bi bi-truck display-3"></i>
+            <p class="mt-2">No suppliers yet. <a href="{{ url_for('supplier_add') }}">Add your first supplier</a>.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

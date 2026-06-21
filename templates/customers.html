@@ -4,7 +4,7 @@
 {% block content %}
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
-        <h2><i class="bi bi-people me-2"></i>Customers</h2>
+        <h2><i class="bi bi-people me-2"></i>Customers <small class="text-muted fs-6">({{ total }})</small></h2>
     </div>
     <div class="col-md-6 text-md-end">
         <a href="{{ url_for('customer_add') }}" class="btn btn-primary">
@@ -13,62 +13,106 @@
     </div>
 </div>
 
-<!-- Search -->
-<div class="row mb-3">
-    <div class="col">
-        <form method="get" class="d-flex gap-2">
-            <input type="text" name="search" class="form-control" placeholder="Search by name, country, contact, email..." value="{{ search }}">
-            <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
-            {% if search %}
-            <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary">Clear</a>
-            {% endif %}
+<!-- Filter Bar -->
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Search</label>
+                <input type="text" name="search" class="form-control form-control-sm" placeholder="Name, country, contact..." value="{{ search }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Salesperson</label>
+                <select class="form-select form-select-sm" name="sp">
+                    <option value="">— All —</option>
+                    {% for sp in all_salespersons %}
+                    <option value="{{ sp.name }}" {% if sp_filter == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Deal (USD) Min</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" name="deal_min" placeholder="Min" value="{{ deal_min }}">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small mb-1">Max</label>
+                <input type="number" step="0.01" class="form-control form-control-sm" name="deal_max" placeholder="Max" value="{{ deal_max }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">Created From</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1 d-flex justify-content-between">
+                    <span>To</span>
+                    {% if search or sp_filter or deal_min or deal_max or date_from or date_to %}
+                    <a href="{{ url_for('customer_list') }}" class="text-danger small text-decoration-none">Clear</a>
+                    {% endif %}
+                </label>
+                <div class="input-group input-group-sm">
+                    <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i></button>
+                </div>
+            </div>
         </form>
     </div>
+</div>
+
+<!-- Summary -->
+<div class="alert alert-light py-1 small mb-3 d-flex justify-content-between border">
+    <span><strong>{{ total }}</strong> customer(s)</span>
+    <span>Total Deal: <strong class="text-success">${{ '%.2f'|format(filter_total_deal) }}</strong></span>
 </div>
 
 <div class="card">
     <div class="card-body p-0">
         {% if customers %}
-        <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle">
+            <table class="table table-hover table-sm mb-0 align-middle small">
                 <thead class="table-light">
                     <tr>
                         <th>Name</th>
                         <th>Country</th>
                         <th>Contact</th>
                         <th>Salesperson</th>
-                        <th class="text-end">Deal (USD)</th>
+                        <th class="text-end">
+                            <a href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort='deal_desc' if sort != 'deal_desc' else 'deal_asc') }}" class="text-decoration-none text-dark">
+                                Deal(USD)
+                                {% if sort == 'deal_desc' %}<i class="bi bi-caret-down-fill small"></i>
+                                {% elif sort == 'deal_asc' %}<i class="bi bi-caret-up-fill small"></i>
+                                {% else %}<i class="bi bi-caret-down small text-muted"></i>
+                                {% endif %}
+                            </a>
+                        </th>
                         <th>Email</th>
                         <th>Phone</th>
-                        <th>Created</th>
+                        <th>Address</th>
                         <th class="text-end">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for c in customers %}
                     <tr>
-                        <td><strong><a href="{{ url_for('customer_detail', id=c.id) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
+                        <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
                         <td>{{ c.country }}</td>
-                        <td>{{ c.contact_person }}</td>
+                        <td style="max-width:100px;" class="text-truncate">{{ c.contact_person }}</td>
                         <td>{{ c.salesperson }}</td>
                         <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.total_deal_usd or 0) }}</strong></td>
-                        <td>{{ c.email }}</td>
-                        <td>{{ c.phone }}</td>
-                        <td><small class="text-muted">{{ c.created_at.strftime('%Y-%m-%d') if c.created_at else '-' }}</small></td>
-                        <td class="text-end">
-                            <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">New PI</a>
+                        <td style="max-width:160px;" class="text-truncate">{{ c.email }}</td>
+                        <td style="max-width:120px;" class="text-truncate">{{ c.phone }}</td>
+                        <td style="max-width:200px;" class="text-truncate">{% if c.address %}{{ c.address }}{% else %}<span class="text-muted">No</span>{% endif %}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">PI</a>
                             <a href="{{ url_for('customer_edit', id=c.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
-                            {% if is_admin %}<button type="button" class="btn btn-sm btn-outline-primary" onclick="reassignCustomer({{ c.id }}, '{{ c.name|e }}', '{{ c.salesperson|e }}')">Reassign</button>{% endif %}
+                            {% if is_admin %}<button type="button" class="btn btn-sm btn-outline-primary" onclick="reassignCustomer({{ c.id }}, '{{ c.name|e }}', '{{ c.salesperson|e }}')">Re.</button>{% endif %}
                             <form action="{{ url_for('customer_delete', id=c.id) }}" method="post" class="d-inline"
                                   onsubmit="return confirm('Delete customer {{ c.name }}? This will also delete all related PIs.');">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Del</button>
                             </form>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
-        </div>
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-people display-3"></i>
@@ -77,6 +121,29 @@
         {% endif %}
     </div>
 </div>
+
+{% if total_pages > 1 %}
+<nav class="mt-3 d-flex justify-content-between align-items-center">
+    <small class="text-muted">Page {{ page }} of {{ total_pages }}</small>
+    <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page-1) }}">&laquo; Prev</a>
+        </li>
+        {% for p in range(1, total_pages + 1) %}
+        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+        <li class="page-item {{ 'active' if p == page else '' }}">
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=p) }}">{{ p }}</a>
+        </li>
+        {% elif p == page - 3 or p == page + 3 %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+        {% endfor %}
+        <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page+1) }}">Next &raquo;</a>
+        </li>
+    </ul>
+</nav>
+{% endif %}
 
 {% if is_admin %}
 <div class="modal fade" id="reassignModal" tabindex="-1" aria-hidden="true">

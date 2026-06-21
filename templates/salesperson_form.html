@@ -33,6 +33,12 @@
                            value="{{ sp.email if sp else '' }}" placeholder="email@example.com">
                 </div>
                 <div class="col-md-6">
+                    <label for="dingtalk_user_id" class="form-label">DingTalk User ID</label>
+                    <input type="text" class="form-control" id="dingtalk_user_id" name="dingtalk_user_id"
+                           value="{{ sp.dingtalk_user_id if sp else '' }}" placeholder="DingTalk user ID for task assignment">
+                    <small class="text-muted">Find in DingTalk Admin → Members → User ID. Needed for auto task creation.</small>
+                </div>
+                <div class="col-md-6">
                     <label for="notes" class="form-label">Notes</label>
                     <input type="text" class="form-control" id="notes" name="notes"
                            value="{{ sp.notes if sp else '' }}" placeholder="Optional notes">

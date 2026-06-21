@@ -25,6 +25,11 @@
                 <a href="{{ url_for('customer_edit', id=customer.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
             </div>
             <div class="card-body">
+                {% if customer.image %}
+                <div class="text-center mb-3">
+                    <img src="{{ url_for('uploaded_file', filename=customer.image) }}" alt="{{ customer.name }}" style="max-height:150px;max-width:100%;border-radius:4px;border:1px solid #ddd;">
+                </div>
+                {% endif %}
                 <table class="table table-sm mb-0">
                     <tr><th class="ps-0">Name</th><td class="pe-0">{{ customer.name }}</td></tr>
                     <tr><th class="ps-0">Country</th><td class="pe-0">{{ customer.country or '-' }}</td></tr>
@@ -47,6 +52,40 @@
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">PI History ({{ pis|length }})</h5>
+            </div>
+            <!-- Filter Bar -->
+            <div class="card-body py-2 border-bottom">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">PI Number</label>
+                        <input type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number or '' }}" placeholder="Search PI#...">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Date From</label>
+                        <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from or '' }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small mb-1">Date To</label>
+                        <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to or '' }}">
+                    </div>
+                    <div class="col-md-3 position-relative">
+                        <label class="form-label small mb-1">Product</label>
+                        <input type="text" class="form-control form-control-sm" name="product" id="productSearch" value="{{ product or '' }}" placeholder="Type to search..." autocomplete="off">
+                        <div id="productDropdown" class="position-absolute bg-white border rounded shadow-sm" style="display:none;max-height:200px;overflow-y:auto;z-index:1000;left:12px;right:12px;"></div>
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small mb-1">$ Min</label>
+                        <input type="number" step="0.01" class="form-control form-control-sm" name="amount_min" value="{{ amount_min or '' }}" placeholder="0">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small mb-1">$ Max</label>
+                        <input type="number" step="0.01" class="form-control form-control-sm" name="amount_max" value="{{ amount_max or '' }}" placeholder="∞">
+                    </div>
+                <div class="col-12 mt-2">
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Search</button>
+                    <a href="{{ url_for('customer_detail', id=customer.id) }}" class="btn btn-sm btn-outline-secondary ms-2">Clear</a>
+                </div>
+                </form>
             </div>
             <div class="card-body p-0">
                 {% if pis %}
@@ -71,12 +110,17 @@
                                 <td>
                                     <small>
                                     {% for item in pi.items %}
-                                        {{ item.product.name if item.product else '-' }} ×{{ item.quantity }}{% if not loop.last %}, {% endif %}
+                                        {% set pname = item.product.name if item.product else '-' %}
+                                        {{ pname[:500] }}{% if pname|length > 500 %}…{% endif %} ×{{ item.quantity }}{% if not loop.last %}, {% endif %}
                                     {% endfor %}
                                     </small>
                                 </td>
                                 <td class="text-end">${{ '%.2f'|format(pi.total_amount) }}</td>
                                 <td class="text-end">
+                                    <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post" class="d-inline"
+                                          onsubmit="return confirm('Copy PI {{ pi.pi_number }}? All info will be kept, only the date will be updated.');">
+                                        <button type="submit" class="btn btn-sm btn-outline-info" title="Copy"><i class="bi bi-copy"></i></button>
+                                    </form>
                                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
                                     {% if pi.pdf_path %}
                                     <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i> PDF</a>
@@ -108,6 +152,55 @@
     </div></div>
 </div>
 <script>
+// Product autocomplete
+var productInput = document.getElementById('productSearch');
+var productDropdown = document.getElementById('productDropdown');
+var productTimer = null;
+
+productInput.addEventListener('input', function() {
+    clearTimeout(productTimer);
+    var val = this.value.trim();
+    if (val.length < 1) {
+        productDropdown.style.display = 'none';
+        return;
+    }
+    productTimer = setTimeout(function() {
+        fetch('/api/products/search?q=' + encodeURIComponent(val))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data || data.length === 0) {
+                    productDropdown.style.display = 'none';
+                    return;
+                }
+                var html = '';
+                for (var i = 0; i < data.length; i++) {
+                    html += '<div class="dropdown-item small py-1" style="cursor:pointer;" onmousedown="selectProduct(\'' + escAttr(data[i].name) + '\')">';
+                    if (data[i].img) {
+                        html += '<img src="/uploads/' + escAttr(data[i].img) + '" style="width:28px;height:28px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;">';
+                    }
+                    html += escHtml(data[i].name);
+                    if (data[i].chinese_name) html += ' <small class=\"text-muted\">' + escHtml(data[i].chinese_name) + '</small>';
+                    if (data[i].product_code) html += ' <small class=\"text-muted\">[' + escHtml(data[i].product_code) + ']</small>';
+                    html += '</div>';
+                }
+                productDropdown.innerHTML = html;
+                productDropdown.style.display = '';
+            });
+    }, 200);
+});
+
+productInput.addEventListener('blur', function() {
+    setTimeout(function() { productDropdown.style.display = 'none'; }, 200);
+});
+
+function selectProduct(name) {
+    productInput.value = name;
+    productDropdown.style.display = 'none';
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;'); }
+
 function previewPI(id) {
     var modal = new bootstrap.Modal(document.getElementById('piPreviewModal'));
     modal.show();

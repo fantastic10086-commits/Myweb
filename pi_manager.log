@@ -1,60 +1,57 @@
-[2026-06-09 23:06:06 +0800] [2551] [INFO] Starting gunicorn 23.0.0
-[2026-06-09 23:06:06 +0800] [2551] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:06 +0800] [2551] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:07 +0800] [2551] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:07 +0800] [2551] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:08 +0800] [2551] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:08 +0800] [2551] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:09 +0800] [2551] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:09 +0800] [2551] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:10 +0800] [2551] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:10 +0800] [2551] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:11 +0800] [2551] [ERROR] Can't connect to ('0.0.0.0', 5000)
-[2026-06-09 23:06:51 +0800] [2694] [INFO] Starting gunicorn 23.0.0
-[2026-06-09 23:06:51 +0800] [2694] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:51 +0800] [2694] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:52 +0800] [2694] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:52 +0800] [2694] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:53 +0800] [2694] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:53 +0800] [2694] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:54 +0800] [2694] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:54 +0800] [2694] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:55 +0800] [2694] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:06:55 +0800] [2694] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:06:56 +0800] [2694] [ERROR] Can't connect to ('0.0.0.0', 5000)
-[2026-06-09 23:07:43 +0800] [2941] [INFO] Starting gunicorn 23.0.0
-[2026-06-09 23:07:43 +0800] [2941] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:07:43 +0800] [2941] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:07:44 +0800] [2941] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:07:44 +0800] [2941] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:07:45 +0800] [2941] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:07:45 +0800] [2941] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:07:46 +0800] [2941] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:07:46 +0800] [2941] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:07:47 +0800] [2941] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:07:47 +0800] [2941] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:07:48 +0800] [2941] [ERROR] Can't connect to ('0.0.0.0', 5000)
-[2026-06-09 23:10:04 +0800] [3548] [INFO] Starting gunicorn 23.0.0
-[2026-06-09 23:10:04 +0800] [3548] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:10:04 +0800] [3548] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:10:05 +0800] [3548] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:10:05 +0800] [3548] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:10:06 +0800] [3548] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:10:06 +0800] [3548] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:10:07 +0800] [3548] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:10:07 +0800] [3548] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:10:08 +0800] [3548] [ERROR] Connection in use: ('0.0.0.0', 5000)
-[2026-06-09 23:10:08 +0800] [3548] [ERROR] connection to ('0.0.0.0', 5000) failed: [Errno 48] Address already in use
-[2026-06-09 23:10:09 +0800] [3548] [ERROR] Can't connect to ('0.0.0.0', 5000)
-[2026-06-09 23:18:17 +0800] [4722] [INFO] Starting gunicorn 23.0.0
-[2026-06-09 23:18:17 +0800] [4722] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2026-06-09 23:18:17 +0800] [4722] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 48] Address already in use
-[2026-06-09 23:18:18 +0800] [4722] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2026-06-09 23:18:18 +0800] [4722] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 48] Address already in use
-[2026-06-09 23:18:19 +0800] [4722] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2026-06-09 23:18:19 +0800] [4722] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 48] Address already in use
-[2026-06-09 23:18:20 +0800] [4722] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2026-06-09 23:18:20 +0800] [4722] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 48] Address already in use
-[2026-06-09 23:18:21 +0800] [4722] [ERROR] Connection in use: ('0.0.0.0', 5001)
-[2026-06-09 23:18:21 +0800] [4722] [ERROR] connection to ('0.0.0.0', 5001) failed: [Errno 48] Address already in use
-[2026-06-09 23:18:22 +0800] [4722] [ERROR] Can't connect to ('0.0.0.0', 5001)
+ * Debug mode: off
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5002
+ * Running on http://192.168.2.55:5002
+[33mPress CTRL+C to quit[0m
+127.0.0.1 - - [13/Jun/2026 22:30:31] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:31] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:32] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:32] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:32] "[36mGET /static/favicon.svg HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:33] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [13/Jun/2026 22:30:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:33] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:34] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:34] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:38] "GET /settings HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:38] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:38] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:38] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:42] "GET /users HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:42] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:42] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:42] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:46] "GET /users/5/edit HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:46] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:46] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:46] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:50] "[32mPOST /users/5/edit HTTP/1.1[0m" 302 -
+127.0.0.1 - - [13/Jun/2026 22:30:50] "GET /users HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:50] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:50] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:50] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:54] "[32mGET /logout HTTP/1.1[0m" 302 -
+127.0.0.1 - - [13/Jun/2026 22:30:54] "GET /login HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:54] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:30:54] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:54] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:30:59] "[32mPOST /login HTTP/1.1[0m" 302 -
+127.0.0.1 - - [13/Jun/2026 22:30:59] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:30:59] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:31:00] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:31:00] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:33:17] "GET /users HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:33:17] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:33:18] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:33:18] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "GET /users HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[36mGET /static/favicon.svg HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "GET /users HTTP/1.1" 200 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[36mGET /static/style.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[33mPOST /api/ext/activate HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[33mPOST /api/ext/auth-token HTTP/1.1[0m" 404 -
+127.0.0.1 - - [13/Jun/2026 22:34:43] "[36mGET /static/favicon.svg HTTP/1.1[0m" 304 -

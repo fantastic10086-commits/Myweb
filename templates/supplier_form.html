@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit{% else %}Add{% endif %} Supplier{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col">
+        <h2><i class="bi bi-{% if editing %}pencil{% else %}plus-square{% endif %} me-2"></i>
+            {% if editing %}Edit Supplier{% else %}Add Supplier{% endif %}
+        </h2>
+        <a href="{{ url_for('supplier_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Suppliers</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label for="name" class="form-label">Supplier Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="name" name="name" required value="{{ s.name if s else '' }}" placeholder="e.g. 深圳华强电子">
+                </div>
+                <div class="col-md-6">
+                    <label for="contact_person" class="form-label">Contact Person</label>
+                    <input type="text" class="form-control" id="contact_person" name="contact_person" value="{{ s.contact_person if s else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="phone" class="form-label">Phone</label>
+                    <input type="text" class="form-control" id="phone" name="phone" value="{{ s.phone if s else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="text" class="form-control" id="email" name="email" value="{{ s.email if s else '' }}">
+                </div>
+                <div class="col-12">
+                    <label for="address" class="form-label">Address</label>
+                    <textarea class="form-control" id="address" name="address" rows="2">{{ s.address if s else '' }}</textarea>
+                </div>
+                <div class="col-12">
+                    <label for="notes" class="form-label">Notes</label>
+                    <textarea class="form-control" id="notes" name="notes" rows="2">{{ s.notes if s else '' }}</textarea>
+                </div>
+            </div>
+            <div class="mt-4">
+                <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %} Supplier</button>
+                <a href="{{ url_for('supplier_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

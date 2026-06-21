@@ -24,6 +24,9 @@
                         <th>Name</th>
                         <th>Phone</th>
                         <th>Email</th>
+                        <th>DT User ID</th>
+                        <th class="text-end">Customers</th>
+                        <th class="text-end">Paid Orders</th>
                         <th>Notes</th>
                         <th>Created</th>
                         <th class="text-end">Actions</th>
@@ -31,11 +34,21 @@
                 </thead>
                 <tbody>
                     {% for sp in salespersons %}
+                    {% set stats = sp_stats.get(sp.name, {}) %}
                     <tr>
                         <td>{{ loop.index }}</td>
                         <td><strong><a href="{{ url_for('pi_list', salesperson=sp.name) }}" class="text-decoration-none">{{ sp.name }}</a></strong></td>
                         <td>{{ sp.phone or '-' }}</td>
                         <td>{{ sp.email or '-' }}</td>
+                        <td><small>{{ sp.dingtalk_user_id or '-' }}</small></td>
+                        <td class="text-end">
+                            <a href="{{ url_for('customer_list', sp=sp.name) }}" class="text-decoration-none">
+                                <strong>{{ stats.total_customers or 0 }}</strong>
+                            </a>
+                        </td>
+                        <td class="text-end">
+                            <strong class="text-success">{{ stats.paid_customers or 0 }}</strong>
+                        </td>
                         <td>{{ sp.notes or '-' }}</td>
                         <td><small class="text-muted">{{ sp.created_at.strftime('%Y-%m-%d') if sp.created_at else '-' }}</small></td>
                         <td class="text-end">
