@@ -2066,6 +2066,9 @@ def api_supplier_list():
 def pi_create():
     customers = filter_by_user(Customer.query, Customer, 'salesperson').order_by(Customer.name).all()
     products = Product.query.order_by(Product.name).all()
+    all_salespersons = Salesperson.query.order_by(Salesperson.name).all()
+    all_accounts = Account.query.order_by(Account.name).all()
+    admin_flag = is_admin()
 
     if request.method == 'POST':
         customer_id = request.form.get('customer_id', type=int)
@@ -2083,14 +2086,20 @@ def pi_create():
             return render_template('create_pi.html', customers=customers,
                                    products=products, pi=None,
                                    today=date.today().strftime('%Y-%m-%d'),
-                                   selected_customer_id=None)
+                                   selected_customer_id=None,
+                                   all_salespersons=all_salespersons,
+                                   all_accounts=all_accounts,
+                                   is_admin=admin_flag)
 
         if not salesperson:
             flash('Please select a salesperson.', 'danger')
             return render_template('create_pi.html', customers=customers,
                                    products=products, pi=None,
                                    today=date.today().strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id)
+                                   selected_customer_id=customer_id,
+                                   all_salespersons=all_salespersons,
+                                   all_accounts=all_accounts,
+                                   is_admin=admin_flag)
 
         shipping_address = request.form.get('shipping_address', '').strip()
         try:
@@ -2135,7 +2144,10 @@ def pi_create():
             return render_template('create_pi.html', customers=customers,
                                    products=products, pi=None,
                                    today=issue_date.strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id)
+                                   selected_customer_id=customer_id,
+                                   all_salespersons=all_salespersons,
+                                   all_accounts=all_accounts,
+                                   is_admin=admin_flag)
 
         total_amount = round(total_amount, 2)
 
@@ -2198,7 +2210,10 @@ def pi_create():
             return render_template('create_pi.html', customers=customers,
                                    products=products, pi=None,
                                    today=issue_date.strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id)
+                                   selected_customer_id=customer_id,
+                                   all_salespersons=all_salespersons,
+                                   all_accounts=all_accounts,
+                                   is_admin=admin_flag)
 
         db.session.commit()
         flash(f'PI {pi_number} created and PDF generated.', 'success')
@@ -2211,11 +2226,16 @@ def pi_create():
         cust = Customer.query.get(selected_customer_id)
         if cust:
             preselected_salesperson = cust.salesperson
+    all_salespersons = Salesperson.query.order_by(Salesperson.name).all()
+    all_accounts = Account.query.order_by(Account.name).all()
     return render_template('create_pi.html', customers=customers,
                            products=products, pi=None,
                            today=date.today().strftime('%Y-%m-%d'),
                            selected_customer_id=selected_customer_id,
-                           preselected_salesperson=preselected_salesperson)
+                           preselected_salesperson=preselected_salesperson,
+                           all_salespersons=all_salespersons,
+                           all_accounts=all_accounts,
+                           is_admin=is_admin())
 
 
 @app.route('/pi/list')
