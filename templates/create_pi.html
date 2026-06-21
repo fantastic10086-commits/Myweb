@@ -365,7 +365,7 @@ var selectedProducts = {};
                 </div>
             </div>
             <div class="mt-3 text-end">
-                <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-file-earmark-pdf me-1"></i> Generate PI & PDF</button>
+                <button type="submit" class="btn btn-primary btn-lg" onclick="var st=document.getElementById('submit_status');if(st){st.style.display='block';st.textContent='BUTTON CLICKED - submitting form...';st.style.background='#cce5ff';} return true;"><i class="bi bi-file-earmark-pdf me-1"></i> Generate PI & PDF</button>
             </div>
         </div>
     </div>
