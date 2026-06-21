@@ -2,7 +2,12 @@
 {% block title %}Create PI{% endblock %}
 
 {% block extra_scripts %}
+<div id="js_debug" style="background:#ffe0e0;border:2px solid red;padding:8px;margin:8px 0;font-size:14px;display:none;"></div>
 <script>
+(function(){
+    var dbg = document.getElementById('js_debug');
+    function log(msg, isErr){ dbg.style.display='block'; dbg.innerHTML += (isErr?'<span style="color:red">✗</span> ':'<span style="color:green">✓</span> ') + msg + '<br>'; }
+    try {
     var selectedProducts = {};
     var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
@@ -201,8 +206,10 @@
             }
         }
         updateTotal();
+        log('JS loaded OK. Products in form: ' + (Object.keys(selectedProducts).length) + ', customers: ' + (document.querySelectorAll('#customer_id option').length-1) + ', salespersons: ' + (document.querySelectorAll('#pi_salesperson option').length-1));
     });
 
+    } catch(e) { dbg.style.display='block'; dbg.innerHTML='<span style="color:red;font-weight:bold">JS ERROR: ' + e.message + '</span><br><small>' + (e.stack||'').split('\n').slice(0,3).join('<br>') + '</small>'; }
     function escHtml(s) {
         return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
