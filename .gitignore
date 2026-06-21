@@ -6,3 +6,5 @@ pdf/
 *.log
 .DS_Store
 static/uploads/
+*.xlsx
+*.csv

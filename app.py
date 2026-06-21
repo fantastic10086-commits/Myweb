@@ -463,18 +463,21 @@ def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = 'pi-manager-secret-key-change-in-production'
 
-    # Database — stored in instance/ folder under project root
-    db_path = os.path.join(APP_ROOT, 'instance', 'pi_manager.db')
+    # Database — use env var DATABASE_DIR for Vercel, default to instance/
+    db_dir = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
+    db_path = os.path.join(db_dir, 'pi_manager.db')
     app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['TEMPLATES_AUTO_RELOAD'] = True
 
-    # PDF output directory
-    app.config['PDF_DIR'] = os.path.join(APP_ROOT, 'pdf')
-    app.config['UPLOAD_DIR'] = os.path.join(APP_ROOT, 'static', 'uploads')
+    # PDF output directory — use env var PDF_DIR for Vercel
+    pdf_dir = os.environ.get('PDF_DIR', os.path.join(APP_ROOT, 'pdf'))
+    app.config['PDF_DIR'] = pdf_dir
+    upload_dir = os.environ.get('UPLOAD_DIR', os.path.join(APP_ROOT, 'static', 'uploads'))
+    app.config['UPLOAD_DIR'] = upload_dir
     app.config['MAX_CONTENT_LENGTH'] = 256 * 1024 * 1024  # 256 MB max upload
-    os.makedirs(app.config['PDF_DIR'], exist_ok=True)
-    os.makedirs(app.config['UPLOAD_DIR'], exist_ok=True)
+    os.makedirs(pdf_dir, exist_ok=True)
+    os.makedirs(upload_dir, exist_ok=True)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
     db.init_app(app)
@@ -3010,7 +3013,8 @@ def backup_create():
     try:
         with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zf:
             # Add database
-            db_path = os.path.join(APP_ROOT, 'instance', 'pi_manager.db')
+            db_dir = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
+            db_path = os.path.join(db_dir, 'pi_manager.db')
             if os.path.exists(db_path):
                 zf.write(db_path, 'instance/pi_manager.db')
 
@@ -3089,7 +3093,7 @@ def inject_globals():
 
 if __name__ == '__main__':
     print(f"App root: {APP_ROOT}")
-    print(f"Database: {os.path.join(APP_ROOT, 'instance', 'pi_manager.db')}")
+    print(f"Database: {os.path.join(os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance')), 'pi_manager.db')}")
     print(f"PDF directory: {app.config['PDF_DIR']}")
     print("Starting Flask dev server on http://0.0.0.0:5000 ...")
     app.run(host='0.0.0.0', port=5000, debug=True)
