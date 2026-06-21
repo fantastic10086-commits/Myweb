@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap-icons.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <style>.js .js-hide{display:none!important}</style>
     {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -113,10 +112,6 @@
     </footer>
 
     <script src="{{ url_for('static', filename='lib/bootstrap.bundle.min.js') }}"></script>
-    <script>document.documentElement.classList.add('js');</script>
     {% block extra_scripts %}{% endblock %}
-    <noscript>
-        <style>.searchable-input{display:none!important}.d-none.js-hide{display:block!important}.searchable-dropdown{display:none!important}#add_product_btn{display:none!important}</style>
-    </noscript>
 </body>
 </html>
