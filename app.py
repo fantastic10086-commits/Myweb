@@ -488,14 +488,19 @@ def create_app():
 
         # Seed default salespersons
         default_sp = [
-            ('Shu Kei', '+86 17712333882', 'fantastic10086@gmail.com'),
-            ('Limon', '+86 15301506008', 'limon@qisuowelding.com'),
-            ('Kristi', '+86 18112500618', 'kristi@qisuowelding.com'),
-            ('Lu Yan', '+86 18019696608', 'luyan@qisuowelding.com'),
+            ('Shu Kei', '+86 17712333882', 'fantastic10086@gmail.com', '01075605503423165909'),
+            ('Limon', '+86 15301506008', 'limon@qisuowelding.com', '0302320103321509442'),
+            ('Kristi', '+86 18112500618', 'kristi@qisuowelding.com', '03236802374626412929'),
+            ('Lu Yan', '+86 18019696608', 'luyan@qisuowelding.com', '0354364226451227898'),
+            ('Yuna', '', '', ''),
+            ('Delia', '', '', ''),
+            ('Bai.', '', '', ''),
+            ('Ma jilan', '', '', '036944123839016306'),
+            ('QinQin', '18118336008', '', '2248391749772992006'),
         ]
-        for name, phone, email in default_sp:
+        for name, phone, email, dt_uid in default_sp:
             if not Salesperson.query.filter_by(name=name).first():
-                db.session.add(Salesperson(name=name, phone=phone, email=email))
+                db.session.add(Salesperson(name=name, phone=phone, email=email, dingtalk_user_id=dt_uid))
         db.session.commit()
 
         # Seed default accounts (by name, won't overwrite existing)
@@ -504,6 +509,8 @@ def create_app():
             ('QISUO-花旗', 'Changzhou Q1 Suo Welding And Cutting Equipment Co., Ltd.', 'CITIBANK N. A. HONG KONG BRANCH', '39740000004173', 'CITIHKHXXXX', 'qisuo', 'USD'),
             ('姜舒棋的支付宝', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Alipay', '17712333882', '', 'klista', 'RMB'),
             ('姜舒棋的微信', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Wechat', '17712333882', '', 'klista', 'RMB'),
+            ('戚所-阿里链接', 'Changzhou Q1 Suo Welding And Cutting Equipment Co., Ltd.', 'Alibaba', '', '', 'qisuo', 'USD'),
+            ('克利斯达-阿里链接', 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO.LTD', 'Alibaba', '', '', 'klista', 'USD'),
         ]
         for name, co_name, bank_name, acct_no, swift, brand, currency in default_accounts:
             if not Account.query.filter_by(name=name).first():
@@ -518,15 +525,25 @@ def create_app():
         if Product.query.count() == 0:
             _seed_products_from_csv()
 
-        # Seed admin account if not exists
-        if not User.query.filter_by(username='admin').first():
-            db.session.add(User(
-                username='admin',
-                password_hash=generate_password_hash('admin123'),
-                role='admin',
-                salesperson_name='',
-            ))
-            db.session.commit()
+        # Seed default users
+        default_users = [
+            ('admin', 'admin123', 'admin', ''),
+            ('shukei', 'admin123', 'admin', 'Shu Kei'),
+            ('Ma Jilan', 'admin123', 'admin', ''),
+            ('Limon', '123456', 'salesperson', 'Limon'),
+            ('Kristi', '123456', 'salesperson', 'Kristi'),
+            ('Lu Yan', '123456', 'salesperson', 'Lu Yan'),
+            ('QinQin', '123456', 'salesperson', 'QinQin'),
+        ]
+        for uname, pwd, role, sp in default_users:
+            if not User.query.filter_by(username=uname).first():
+                db.session.add(User(
+                    username=uname,
+                    password_hash=generate_password_hash(pwd),
+                    role=role,
+                    salesperson_name=sp,
+                ))
+        db.session.commit()
 
     return app
 
