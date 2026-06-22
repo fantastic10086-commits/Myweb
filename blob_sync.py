@@ -32,13 +32,18 @@ def get_last_error():
     return LAST_ERROR
 
 
-def _store_id():
+def _blob_token():
+    """Read the Blob token at call time so Vercel env changes are picked up."""
+    return os.environ.get('BLOB_READ_WRITE_TOKEN', BLOB_TOKEN).strip()
+
+
+def _store_id(token=None):
     """Return the bare Blob store id used by API headers and private URLs."""
-    configured = BLOB_STORE_ID.strip()
+    configured = os.environ.get('BLOB_STORE_ID', BLOB_STORE_ID).strip()
     if configured:
         return configured[6:] if configured.startswith('store_') else configured
 
-    parts = BLOB_TOKEN.split('_')
+    parts = (token or _blob_token()).split('_')
     if len(parts) >= 5 and parts[3] == 'store':
         return parts[4]
     return parts[3] if len(parts) >= 4 else ''
@@ -46,10 +51,11 @@ def _store_id():
 
 def _api_request(method, path='/', body=None, content_type=None, extra_headers=None):
     """Make a request to the Vercel Blob control API."""
-    store_id = _store_id()
+    token = _blob_token()
+    store_id = _store_id(token)
     url = f'{BLOB_API_URL}{path}'
     headers = {
-        'Authorization': f'Bearer {BLOB_TOKEN}',
+        'Authorization': f'Bearer {token}',
         'x-api-version': BLOB_API_VERSION,
     }
     if store_id:
@@ -87,18 +93,19 @@ def _api_request(method, path='/', body=None, content_type=None, extra_headers=N
 
 def download_db(db_path):
     """Download the SQLite database from Vercel Blob."""
-    if not BLOB_TOKEN:
+    token = _blob_token()
+    if not token:
         _set_error('BLOB_READ_WRITE_TOKEN is not set')
         return False
 
-    store_id = _store_id()
+    store_id = _store_id(token)
     if not store_id:
         _set_error('Cannot determine Blob store id from BLOB_STORE_ID or BLOB_READ_WRITE_TOKEN')
         return False
 
     log.info(f'Downloading {BLOB_KEY} from Blob...')
     url = f'https://{store_id}.private.blob.vercel-storage.com/{quote(BLOB_KEY)}?cache=0'
-    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {BLOB_TOKEN}'}, method='GET')
+    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {token}'}, method='GET')
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = resp.read()
@@ -131,7 +138,8 @@ def download_db(db_path):
 
 def upload_db(db_path):
     """Upload the SQLite database to Vercel Blob."""
-    if not BLOB_TOKEN:
+    token = _blob_token()
+    if not token:
         _set_error('BLOB_READ_WRITE_TOKEN is not set')
         return False
 
@@ -179,13 +187,14 @@ def upload_db(db_path):
 
 def init_db(db_path):
     """Initialize database — download from Blob if available."""
-    if BLOB_TOKEN:
+    if _blob_token():
         download_db(db_path)
 
 
 def sync_db(db_path):
     """Persist the database to Blob before the response finishes."""
-    if not BLOB_TOKEN:
+    if not _blob_token():
+        _set_error('BLOB_READ_WRITE_TOKEN is not set')
         return False
     return upload_db(db_path)
 
@@ -195,7 +204,7 @@ def sync_db_async(db_path):
     Schedule an async database sync to Blob.
     This spawns a background thread to avoid blocking the request.
     """
-    if not BLOB_TOKEN:
+    if not _blob_token():
         return
     import threading
     t = threading.Thread(target=upload_db, args=(db_path,), daemon=True)
