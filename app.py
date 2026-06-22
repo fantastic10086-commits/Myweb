@@ -562,7 +562,9 @@ def create_app():
         if getattr(g, 'db_dirty', False) and 200 <= response.status_code < 400:
             db_path = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
             db_path = os.path.join(db_path, 'pi_manager.db')
-            blob_sync.sync_db(db_path)
+            if not blob_sync.sync_db(db_path):
+                current_app.logger.error('Database changed but Blob sync failed.')
+                flash('Database saved locally, but cloud persistence failed. Please retry before logging out.', 'danger')
         return response
 
     return app
