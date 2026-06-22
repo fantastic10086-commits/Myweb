@@ -1816,6 +1816,8 @@ def user_edit(id):
         return redirect(url_for('index'))
     user = User.query.get_or_404(id)
     default_pw = 'admin123' if user.role == 'admin' else '123456'
+    is_default = check_password_hash(user.password_hash, default_pw)
+    pw_hint = f'Default: {default_pw}' if is_default else 'Custom (changed)'
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
@@ -1823,11 +1825,11 @@ def user_edit(id):
         salesperson_name = request.form.get('salesperson_name', '').strip()
         if not username:
             flash('Username is required.', 'danger')
-            return render_template('user_form.html', u=user, editing=True, default_pw=default_pw)
+            return render_template('user_form.html', u=user, editing=True, pw_hint=pw_hint)
         existing = User.query.filter_by(username=username).first()
         if existing and existing.id != user.id:
             flash('Username already exists.', 'danger')
-            return render_template('user_form.html', u=user, editing=True, default_pw=default_pw)
+            return render_template('user_form.html', u=user, editing=True, pw_hint=pw_hint)
         user.username = username
         if password:
             user.password_hash = generate_password_hash(password)
@@ -1836,7 +1838,7 @@ def user_edit(id):
         db.session.commit()
         flash('User updated.', 'success')
         return redirect(url_for('user_list'))
-    return render_template('user_form.html', u=user, editing=True, default_pw=default_pw)
+    return render_template('user_form.html', u=user, editing=True, pw_hint=pw_hint)
 
 
 @app.route('/users/<int:id>/delete', methods=['POST'])
