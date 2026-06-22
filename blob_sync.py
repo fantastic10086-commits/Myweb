@@ -137,6 +137,13 @@ def init_db(db_path):
         download_db(db_path)
 
 
+def sync_db(db_path):
+    """Persist the database to Blob before the response finishes."""
+    if not BLOB_TOKEN:
+        return False
+    return upload_db(db_path)
+
+
 def sync_db_async(db_path):
     """
     Schedule an async database sync to Blob.

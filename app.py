@@ -16,9 +16,10 @@ from functools import wraps
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    flash, send_file, jsonify, current_app, session, make_response
+    flash, send_file, jsonify, current_app, session, make_response,
+    g, has_request_context
 )
-from sqlalchemy import func
+from sqlalchemy import event, func
 from sqlalchemy.orm import joinedload
 from models import db, Customer, Product, PI, PIItem, Salesperson, User, Account, Payment, Expense, Supplier, Procurement
 from pdf_generator import generate_pi_pdf
@@ -550,14 +551,18 @@ def create_app():
                 ))
         db.session.commit()
 
+    @event.listens_for(db.session, 'after_commit')
+    def _mark_db_dirty_after_commit(session_):
+        if has_request_context():
+            g.db_dirty = True
+
     # Auto-sync database to Vercel Blob after write requests
     @app.after_request
     def _sync_to_blob(response):
-        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
-            if 200 <= response.status_code < 400:
-                db_path = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
-                db_path = os.path.join(db_path, 'pi_manager.db')
-                blob_sync.sync_db_async(db_path)
+        if getattr(g, 'db_dirty', False) and 200 <= response.status_code < 400:
+            db_path = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
+            db_path = os.path.join(db_path, 'pi_manager.db')
+            blob_sync.sync_db(db_path)
         return response
 
     return app
