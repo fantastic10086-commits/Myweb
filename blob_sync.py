@@ -8,24 +8,38 @@ import json
 import time
 import shutil
 import logging
+from urllib.parse import quote, urlencode
 import urllib.request
 import urllib.error
 
 log = logging.getLogger('blob_sync')
 
 BLOB_TOKEN = os.environ.get('BLOB_READ_WRITE_TOKEN', '')
-BLOB_URL = 'https://blob.vercel-storage.com'
+BLOB_API_URL = 'https://vercel.com/api/blob'
+BLOB_API_VERSION = '12'
 BLOB_KEY = 'pi_manager.db'  # blob path name
 
 
-def _blob_request(method, path='/', body=None, content_type=None):
-    """Make a request to the Vercel Blob REST API."""
-    url = f'{BLOB_URL}{path}'
+def _store_id():
+    """Extract the Blob store id from a read-write token."""
+    parts = BLOB_TOKEN.split('_')
+    return parts[3] if len(parts) >= 4 else ''
+
+
+def _api_request(method, path='/', body=None, content_type=None, extra_headers=None):
+    """Make a request to the Vercel Blob control API."""
+    store_id = _store_id()
+    url = f'{BLOB_API_URL}{path}'
     headers = {
         'Authorization': f'Bearer {BLOB_TOKEN}',
+        'x-api-version': BLOB_API_VERSION,
     }
+    if store_id:
+        headers['x-vercel-blob-store-id'] = store_id
     if content_type:
         headers['Content-Type'] = content_type
+    if extra_headers:
+        headers.update(extra_headers)
 
     data = None
     if body is not None:
@@ -43,7 +57,7 @@ def _blob_request(method, path='/', body=None, content_type=None):
         return resp.read()
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')
-        log.error(f'Blob {method} {path} failed: {e.code} {body}')
+        log.error(f'Blob API {method} {path} failed: {e.code} {body}')
         return None
 
 
@@ -53,34 +67,25 @@ def download_db(db_path):
         log.warning('BLOB_READ_WRITE_TOKEN not set, skipping blob download')
         return False
 
-    # List blobs to find our database
-    result = _blob_request('GET', '/')
-    if not result:
-        return False
-
-    try:
-        blobs = json.loads(result)
-    except json.JSONDecodeError:
-        return False
-
-    # Find our database blob
-    db_blob = None
-    if isinstance(blobs, dict) and 'blobs' in blobs:
-        for blob in blobs['blobs']:
-            if blob.get('pathname') == BLOB_KEY:
-                db_blob = blob
-                break
-
-    if not db_blob:
-        log.info(f'No existing {BLOB_KEY} in Blob, starting fresh')
-        return False
-
-    download_url = db_blob.get('url')
-    if not download_url:
+    store_id = _store_id()
+    if not store_id:
+        log.error('Invalid BLOB_READ_WRITE_TOKEN: cannot determine store id')
         return False
 
     log.info(f'Downloading {BLOB_KEY} from Blob...')
-    data = _blob_request('GET', download_url.replace(BLOB_URL, ''))
+    url = f'https://{store_id}.private.blob.vercel-storage.com/{quote(BLOB_KEY)}?cache=0'
+    req = urllib.request.Request(url, headers={'Authorization': f'Bearer {BLOB_TOKEN}'}, method='GET')
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            log.info(f'No existing {BLOB_KEY} in Blob, starting fresh')
+        else:
+            body = e.read().decode('utf-8', errors='replace')
+            log.error(f'Blob download failed: {e.code} {body}')
+        return False
+
     if not data:
         return False
 
@@ -113,10 +118,19 @@ def upload_db(db_path):
 
         log.info(f'Uploading {BLOB_KEY} to Blob ({len(data)} bytes)...')
 
-        # Vercel Blob put API
-        put_path = f'/put/{BLOB_KEY}'
-        result = _blob_request('PUT', put_path, body=data,
-                               content_type='application/octet-stream')
+        params = urlencode({'pathname': BLOB_KEY})
+        result = _api_request(
+            'PUT',
+            f'/?{params}',
+            body=data,
+            content_type='application/octet-stream',
+            extra_headers={
+                'x-vercel-blob-access': 'private',
+                'x-content-type': 'application/octet-stream',
+                'x-add-random-suffix': '0',
+                'x-allow-overwrite': '1',
+            },
+        )
 
         if result:
             log.info('Database uploaded to Blob successfully')
