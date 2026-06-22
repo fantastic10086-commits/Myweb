@@ -563,8 +563,12 @@ def create_app():
             db_path = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
             db_path = os.path.join(db_path, 'pi_manager.db')
             if not blob_sync.sync_db(db_path):
-                current_app.logger.error('Database changed but Blob sync failed.')
-                flash('Database saved locally, but cloud persistence failed. Please retry before logging out.', 'danger')
+                error = blob_sync.get_last_error()
+                current_app.logger.error('Database changed but Blob sync failed: %s', error)
+                message = 'Database saved locally, but cloud persistence failed.'
+                if error:
+                    message = f'{message} {error}'
+                flash(message, 'danger')
         return response
 
     return app

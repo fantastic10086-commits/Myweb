@@ -19,6 +19,17 @@ BLOB_STORE_ID = os.environ.get('BLOB_STORE_ID', '')
 BLOB_API_URL = 'https://vercel.com/api/blob'
 BLOB_API_VERSION = '12'
 BLOB_KEY = 'pi_manager.db'  # blob path name
+LAST_ERROR = ''
+
+
+def _set_error(message):
+    global LAST_ERROR
+    LAST_ERROR = message
+    log.error(message)
+
+
+def get_last_error():
+    return LAST_ERROR
 
 
 def _store_id():
@@ -64,19 +75,25 @@ def _api_request(method, path='/', body=None, content_type=None, extra_headers=N
         return resp.read()
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8', errors='replace')
-        log.error(f'Blob API {method} {path} failed: {e.code} {body}')
+        _set_error(f'Blob API {method} {path} failed: HTTP {e.code} {body}')
+        return None
+    except urllib.error.URLError as e:
+        _set_error(f'Blob API {method} {path} failed: {e.reason}')
+        return None
+    except Exception as e:
+        _set_error(f'Blob API {method} {path} failed: {e}')
         return None
 
 
 def download_db(db_path):
     """Download the SQLite database from Vercel Blob."""
     if not BLOB_TOKEN:
-        log.warning('BLOB_READ_WRITE_TOKEN not set, skipping blob download')
+        _set_error('BLOB_READ_WRITE_TOKEN is not set')
         return False
 
     store_id = _store_id()
     if not store_id:
-        log.error('Cannot determine Blob store id from BLOB_STORE_ID or BLOB_READ_WRITE_TOKEN')
+        _set_error('Cannot determine Blob store id from BLOB_STORE_ID or BLOB_READ_WRITE_TOKEN')
         return False
 
     log.info(f'Downloading {BLOB_KEY} from Blob...')
@@ -90,7 +107,13 @@ def download_db(db_path):
             log.info(f'No existing {BLOB_KEY} in Blob, starting fresh')
         else:
             body = e.read().decode('utf-8', errors='replace')
-            log.error(f'Blob download failed: {e.code} {body}')
+            _set_error(f'Blob download failed: HTTP {e.code} {body}')
+        return False
+    except urllib.error.URLError as e:
+        _set_error(f'Blob download failed: {e.reason}')
+        return False
+    except Exception as e:
+        _set_error(f'Blob download failed: {e}')
         return False
 
     if not data:
@@ -109,10 +132,11 @@ def download_db(db_path):
 def upload_db(db_path):
     """Upload the SQLite database to Vercel Blob."""
     if not BLOB_TOKEN:
+        _set_error('BLOB_READ_WRITE_TOKEN is not set')
         return False
 
     if not os.path.exists(db_path):
-        log.warning(f'{db_path} not found, skipping blob upload')
+        _set_error(f'{db_path} not found, skipping blob upload')
         return False
 
     # Make a backup copy first
@@ -145,10 +169,11 @@ def upload_db(db_path):
             os.remove(backup_path)
             return True
         else:
-            log.error('Failed to upload database to Blob')
+            if not LAST_ERROR:
+                _set_error('Failed to upload database to Blob')
             return False
     except Exception as e:
-        log.error(f'Blob upload error: {e}')
+        _set_error(f'Blob upload error: {e}')
         return False
 
 
