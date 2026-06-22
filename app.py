@@ -29,6 +29,8 @@ from supplier_statement_pdf import generate_supplier_statement
 # Detect the app root directory (where this file lives)
 APP_ROOT = os.path.dirname(os.path.abspath(__file__))
 
+import blob_sync
+
 def _migrate_db():
     """Auto-add missing columns to existing tables without data loss."""
     from sqlalchemy import inspect, text
@@ -480,6 +482,9 @@ def create_app():
     os.makedirs(upload_dir, exist_ok=True)
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
 
+    # Restore database from Vercel Blob if available
+    blob_sync.init_db(db_path)
+
     db.init_app(app)
 
     with app.app_context():
@@ -544,6 +549,16 @@ def create_app():
                     salesperson_name=sp,
                 ))
         db.session.commit()
+
+    # Auto-sync database to Vercel Blob after write requests
+    @app.after_request
+    def _sync_to_blob(response):
+        if request.method in ('POST', 'PUT', 'PATCH', 'DELETE'):
+            if 200 <= response.status_code < 400:
+                db_path = os.environ.get('DATABASE_DIR', os.path.join(APP_ROOT, 'instance'))
+                db_path = os.path.join(db_path, 'pi_manager.db')
+                blob_sync.sync_db_async(db_path)
+        return response
 
     return app
 
