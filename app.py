@@ -1822,7 +1822,7 @@ def user_edit(id):
     user = User.query.get_or_404(id)
     default_pw = 'admin123' if user.role == 'admin' else '123456'
     is_default = check_password_hash(user.password_hash, default_pw)
-    pw_hint = f'Default: {default_pw}' if is_default else 'Custom (changed)'
+    pw_hint = f'Current: default password ({default_pw})' if is_default else 'Current: custom password'
     if request.method == 'POST':
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()

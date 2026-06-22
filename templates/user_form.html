@@ -16,7 +16,7 @@
             </div>
             <div class="col-md-6">
                 <label for="password" class="form-label">Password {% if not editing %}<span class="text-danger">*</span>{% endif %}{% if editing and pw_hint %} <small class="text-muted">({{ pw_hint }})</small>{% endif %}</label>
-                <input type="text" class="form-control" id="password" name="password" {% if not editing %}required{% endif %} placeholder="{% if editing %}Leave blank to change{% else %}Set password{% endif %}">
+                <input type="password" class="form-control" id="password" name="password" value="" {% if not editing %}required{% endif %} autocomplete="new-password" placeholder="{% if editing %}Leave blank to keep current password{% else %}Set password{% endif %}">
             </div>
             <div class="col-md-6">
                 <label for="role" class="form-label">Role</label>
