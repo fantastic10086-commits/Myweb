@@ -15,14 +15,21 @@ import urllib.error
 log = logging.getLogger('blob_sync')
 
 BLOB_TOKEN = os.environ.get('BLOB_READ_WRITE_TOKEN', '')
+BLOB_STORE_ID = os.environ.get('BLOB_STORE_ID', '')
 BLOB_API_URL = 'https://vercel.com/api/blob'
 BLOB_API_VERSION = '12'
 BLOB_KEY = 'pi_manager.db'  # blob path name
 
 
 def _store_id():
-    """Extract the Blob store id from a read-write token."""
+    """Return the bare Blob store id used by API headers and private URLs."""
+    configured = BLOB_STORE_ID.strip()
+    if configured:
+        return configured[6:] if configured.startswith('store_') else configured
+
     parts = BLOB_TOKEN.split('_')
+    if len(parts) >= 5 and parts[3] == 'store':
+        return parts[4]
     return parts[3] if len(parts) >= 4 else ''
 
 
@@ -69,7 +76,7 @@ def download_db(db_path):
 
     store_id = _store_id()
     if not store_id:
-        log.error('Invalid BLOB_READ_WRITE_TOKEN: cannot determine store id')
+        log.error('Cannot determine Blob store id from BLOB_STORE_ID or BLOB_READ_WRITE_TOKEN')
         return False
 
     log.info(f'Downloading {BLOB_KEY} from Blob...')
