@@ -9,26 +9,23 @@
     .packing-progress { height: .55rem; }
     .packing-workspace { align-items: flex-start; }
     .packing-box-card { border-left: 4px solid #0d6efd; overflow: hidden; }
-    .packing-box-card.is-target { box-shadow: 0 0 0 2px rgba(13,110,253,.22); }
     .packing-box-card .form-label { font-size: .8rem; color: #6c757d; margin-bottom: .2rem; }
     .packing-box-toggle { min-width: 0; cursor: pointer; }
     .packing-box-title { min-width: 0; }
     .packing-box-meta { color: #6c757d; font-size: .82rem; }
     .packing-box-body[hidden] { display: none !important; }
-    .packing-unallocated-panel, .packing-boxes-panel { position: sticky; top: 5.25rem; }
-    .packing-pending-list, .packing-boxes-scroll { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
+    .packing-unallocated-panel { position: sticky; top: 5.25rem; }
+    .packing-pending-list { max-height: 58vh; overflow-y: auto; }
     .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .7rem; background: #fff; }
     .packing-pending-item + .packing-pending-item { margin-top: .6rem; }
     .packing-product-name { font-weight: 600; }
     .packing-empty-state { border: 1px dashed #ced4da; border-radius: .55rem; padding: 1.25rem; text-align: center; color: #6c757d; }
     .packing-min-width-0 { min-width: 0; }
-    .packing-box-item { border: 1px solid #dee2e6; border-radius: .5rem; padding: .65rem; background: #fff; }
-    .packing-box-item + .packing-box-item { margin-top: .55rem; }
     .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
     .packing-readonly-table td, .packing-readonly-table th { vertical-align:middle; }
     @media (max-width: 1199.98px) {
-        .packing-unallocated-panel, .packing-boxes-panel { position: static; }
-        .packing-pending-list, .packing-boxes-scroll { max-height: none; }
+        .packing-unallocated-panel { position: static; }
+        .packing-pending-list { max-height: none; }
     }
     @media (max-width: 767.98px) {
         .packing-overview-stat { border-left: 0; padding-left: 0; min-width: 92px; }
@@ -115,7 +112,8 @@
 </div>
 
 <div class="row g-3 packing-workspace">
-    <div class="col-xl-7">
+    <div class="col-xl-9"><div id="packingBoxes"></div></div>
+    <div class="col-xl-3">
         <div class="card packing-unallocated-panel mb-3">
             <div class="card-header d-flex justify-content-between align-items-center gap-2">
                 <strong><i class="bi bi-box-arrow-in-down me-1"></i>待分配产品</strong>
@@ -144,15 +142,6 @@
                 </button>
                 <div class="small text-muted mt-2">仅显示尚未全部装箱的产品；可勾选多项后一次加入目标箱。</div>
             </div>
-        </div>
-    </div>
-    <div class="col-xl-5">
-        <div class="packing-boxes-panel">
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <strong><i class="bi bi-box-seam me-1"></i>箱子与已分配产品</strong>
-                <span class="small text-muted">点击箱子可展开编辑</span>
-            </div>
-            <div id="packingBoxes" class="packing-boxes-scroll"></div>
         </div>
     </div>
 </div>
@@ -253,7 +242,7 @@
 
     function field(label, type, value, key, boxIndex, options={}) {
         const wrap = document.createElement('div');
-        wrap.className = options.className || 'col-6';
+        wrap.className = options.className || 'col-6 col-md-3 col-xl-2';
         const labelEl = document.createElement('label');
         labelEl.className = 'form-label'; labelEl.textContent = label;
         const input = document.createElement('input');
@@ -363,7 +352,7 @@
         container.replaceChildren();
         boxes.forEach((box, boxIndex) => {
             if (!Array.isArray(box.items)) box.items = [];
-            const card = document.createElement('div'); card.className = `card packing-box-card mb-3 ${boxIndex === selectedTargetBox ? 'is-target' : ''}`;
+            const card = document.createElement('div'); card.className = 'card packing-box-card mb-3';
             const header = document.createElement('div'); header.className = 'card-header d-flex justify-content-between align-items-center gap-2';
             const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn btn-link text-decoration-none text-start text-dark p-0 flex-grow-1 packing-box-toggle';
             const toggleContent = document.createElement('div'); toggleContent.className = 'd-flex align-items-center gap-2';
@@ -373,7 +362,6 @@
             const meta = document.createElement('div'); meta.className = 'packing-box-meta text-truncate'; meta.dataset.boxMeta = String(boxIndex);
             titleWrap.append(title, meta); toggleContent.append(icon, titleWrap); toggle.append(toggleContent);
             toggle.addEventListener('click', () => {
-                selectedTargetBox = boxIndex;
                 if (expandedBoxes.has(boxIndex)) expandedBoxes.delete(boxIndex); else expandedBoxes.add(boxIndex);
                 renderBoxes();
             });
@@ -399,28 +387,30 @@
                 field('箱备注','text',box.note,'note',boxIndex,{className:'col-12 col-md-6'})
             );
             const cbm = document.createElement('div'); cbm.className='small text-muted mb-2'; cbm.dataset.cbmBox=String(boxIndex); cbm.textContent=`自动计算体积：${numberValue(box.volume_cbm).toFixed(4)} m³`;
-            const itemList = document.createElement('div'); itemList.className='mb-2';
+            const responsive = document.createElement('div'); responsive.className='table-responsive';
+            const table = document.createElement('table'); table.className='table table-sm align-middle mb-2';
+            table.innerHTML='<thead class="table-light"><tr><th style="min-width:260px">产品 *</th><th style="width:150px">装箱数量 *</th><th style="min-width:220px">产品备注</th><th style="width:60px"></th></tr></thead>';
+            const tbody = document.createElement('tbody');
             box.items.forEach((item, itemIndex) => {
-                const itemCard = document.createElement('div'); itemCard.className='packing-box-item';
-                const topRow = document.createElement('div'); topRow.className='d-flex align-items-start gap-2';
-                const productTd = document.createElement('div'); productTd.className='packing-min-width-0 flex-grow-1';
+                const tr = document.createElement('tr');
+                const productTd = document.createElement('td');
                 const product = products.find(row => Number(row.id) === productId(item.pi_item_id));
                 const productName = document.createElement('div'); productName.className='packing-product-name'; productName.textContent=product ? product.name : '产品已不存在';
                 const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `PI 数量 ${product.quantity}`].filter(Boolean).join(' · ') : '';
                 productTd.append(productName, productMeta);
-                const qtyTd=document.createElement('div'); qtyTd.style.width='105px'; const qtyLabel=document.createElement('label'); qtyLabel.className='form-label small mb-1'; qtyLabel.textContent='装箱数量'; const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
+                const qtyTd=document.createElement('td'); const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
                 qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
-                qty.addEventListener('change',renderPendingProducts); qtyTd.append(qtyLabel,qty);
-                const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger mt-4'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();});
-                topRow.append(productTd,qtyTd,removeItem);
-                const note=document.createElement('input'); note.type='text'; note.maxLength=500; note.className='form-control form-control-sm mt-2'; note.value=item.note || ''; note.placeholder='产品备注（可选）'; note.addEventListener('input',()=>{item.note=note.value;});
-                itemCard.append(topRow,note); itemList.append(itemCard);
+                qty.addEventListener('change',renderPendingProducts); qtyTd.append(qty);
+                const noteTd=document.createElement('td'); const note=document.createElement('input'); note.type='text'; note.maxLength=500; note.className='form-control form-control-sm'; note.value=item.note || ''; note.placeholder='可选'; note.addEventListener('input',()=>{item.note=note.value;}); noteTd.append(note);
+                const actionTd=document.createElement('td'); const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();}); actionTd.append(removeItem);
+                tr.append(productTd,qtyTd,noteTd,actionTd); tbody.append(tr);
             });
             if (!box.items.length) {
-                const empty = document.createElement('div'); empty.className = 'packing-empty-state py-4'; empty.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，请从左侧选择一个或多个产品。'; itemList.append(empty);
+                const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.className = 'text-center text-muted py-4'; td.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，请从右侧选择一个或多个产品。'; tr.append(td); tbody.append(tr);
             }
+            table.append(tbody); responsive.append(table);
             const clearBox=document.createElement('button'); clearBox.type='button'; clearBox.className='btn btn-sm btn-outline-secondary'; clearBox.disabled=!box.items.length; clearBox.innerHTML='<i class="bi bi-arrow-counterclockwise"></i> 清空当前箱产品'; clearBox.addEventListener('click',()=>{if(!confirm(`确认清空第 ${boxIndex + 1} 箱的产品吗？这些产品会回到待分配列表。`))return;box.items=[];renderBoxes();});
-            body.append(fields,cbm,itemList,clearBox); card.append(header,body); container.append(card);
+            body.append(fields,cbm,responsive,clearBox); card.append(header,body); container.append(card);
             updateBoxSummary(boxIndex);
         });
         renderOverview();
