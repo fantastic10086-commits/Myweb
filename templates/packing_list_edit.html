@@ -18,7 +18,6 @@
     .packing-pending-list { max-height: 58vh; overflow-y: auto; }
     .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .7rem; background: #fff; }
     .packing-pending-item + .packing-pending-item { margin-top: .6rem; }
-    .packing-product-name { font-weight: 600; }
     .packing-empty-state { border: 1px dashed #ced4da; border-radius: .55rem; padding: 1.25rem; text-align: center; color: #6c757d; }
     .packing-min-width-0 { min-width: 0; }
     .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
@@ -122,23 +121,9 @@
             <div class="card-body">
                 <label class="form-label small text-muted">批量加入到</label>
                 <select id="packingTargetBox" class="form-select form-select-sm mb-3"></select>
-                <div class="input-group input-group-sm mb-2">
-                    <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input id="packingProductSearch" type="search" class="form-control" placeholder="搜索品名、编码或规格">
-                </div>
-                <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                    <button type="button" id="selectVisibleProducts" class="btn btn-sm btn-link p-0">全选当前结果</button>
-                    <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="showAllPackingProducts">
-                        <label class="form-check-label small" for="showAllPackingProducts">显示全部</label>
-                    </div>
-                </div>
                 <div id="packingPendingProducts" class="packing-pending-list mb-3"></div>
-                <button type="button" id="batchAddProducts" class="btn btn-primary w-100 mb-2">
+                <button type="button" id="batchAddProducts" class="btn btn-outline-primary w-100">
                     <i class="bi bi-plus-lg"></i> 加入所选产品
-                </button>
-                <button type="button" id="addAllRemainingProducts" class="btn btn-outline-primary w-100">
-                    <i class="bi bi-box-arrow-in-down"></i> 全部剩余加入当前箱
                 </button>
                 <div class="small text-muted mt-2">仅显示尚未全部装箱的产品；可勾选多项后一次加入目标箱。</div>
             </div>
@@ -208,8 +193,6 @@
     const targetBoxSelect = document.getElementById('packingTargetBox');
     const pendingProducts = document.getElementById('packingPendingProducts');
     const pendingCount = document.getElementById('packingPendingCount');
-    const productSearch = document.getElementById('packingProductSearch');
-    const showAllProducts = document.getElementById('showAllPackingProducts');
 
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -220,6 +203,7 @@
         while (used.has(String(value))) value += 1;
         return String(value);
     };
+    const newItem = () => ({pi_item_id:'', quantity:1, note:''});
     const emptyBox = () => ({box_no:newBoxNo(), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
     if (!boxes.length) boxes.push(emptyBox());
 
@@ -304,26 +288,18 @@
 
     function renderPendingProducts() {
         const packed = packedQuantities();
-        const query = productSearch.value.trim().toLocaleLowerCase();
-        const allProducts = products.map(product => ({
+        const remainingProducts = products.map(product => ({
             ...product,
             packed: packed[Number(product.id)] || 0,
             remaining: integerValue(product.quantity) - (packed[Number(product.id)] || 0)
-        }));
-        const remainingCount = allProducts.filter(product => product.remaining !== 0).length;
-        const remainingProducts = allProducts.filter(product => {
-            if (!showAllProducts.checked && product.remaining === 0) return false;
-            if (!query) return true;
-            return [product.name, product.product_code, product.specification]
-                .some(value => String(value || '').toLocaleLowerCase().includes(query));
-        });
-        pendingCount.textContent = `${remainingCount} 项`;
-        pendingCount.className = `badge ${allProducts.some(product => product.remaining < 0) ? 'bg-danger' : remainingCount ? 'bg-warning text-dark' : 'bg-success'}`;
+        })).filter(product => product.remaining !== 0);
+        pendingCount.textContent = `${remainingProducts.length} 项`;
+        pendingCount.className = `badge ${remainingProducts.some(product => product.remaining < 0) ? 'bg-danger' : remainingProducts.length ? 'bg-warning text-dark' : 'bg-success'}`;
         pendingProducts.replaceChildren();
         if (!remainingProducts.length) {
             const complete = document.createElement('div');
             complete.className = 'packing-empty-state text-success border-success';
-            complete.innerHTML = query ? '<i class="bi bi-search d-block mb-1"></i>没有匹配的产品' : '<i class="bi bi-check-circle fs-4 d-block mb-1"></i><strong>全部产品已分配</strong>';
+            complete.innerHTML = '<i class="bi bi-check-circle fs-4 d-block mb-1"></i><strong>全部产品已分配</strong>';
             pendingProducts.append(complete);
             return;
         }
@@ -331,10 +307,10 @@
             const card = document.createElement('div');
             card.className = `packing-pending-item ${product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
             const top = document.createElement('div'); top.className = 'd-flex align-items-start gap-2';
-            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining <= 0;
+            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining < 0;
             const content = document.createElement('div'); content.className = 'packing-min-width-0 flex-grow-1';
             const name = document.createElement('div'); name.className = 'fw-bold text-truncate'; name.title = product.name || '未命名产品'; name.textContent = product.name || '未命名产品';
-            const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = [product.product_code, product.specification].filter(Boolean).join(' · ') || '无编码和规格';
+            const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = product.product_code || product.specification || '无产品编码';
             const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
             content.append(name, code, state); top.append(check, content); card.append(top);
             if (product.remaining > 0) {
@@ -393,24 +369,26 @@
             const tbody = document.createElement('tbody');
             box.items.forEach((item, itemIndex) => {
                 const tr = document.createElement('tr');
-                const productTd = document.createElement('td');
-                const product = products.find(row => Number(row.id) === productId(item.pi_item_id));
-                const productName = document.createElement('div'); productName.className='packing-product-name'; productName.textContent=product ? product.name : '产品已不存在';
-                const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `PI 数量 ${product.quantity}`].filter(Boolean).join(' · ') : '';
-                productTd.append(productName, productMeta);
+                const productTd = document.createElement('td'); const select = document.createElement('select'); select.className='form-select form-select-sm';
+                const placeholder = document.createElement('option'); placeholder.value=''; placeholder.textContent='— 选择 PI 产品 —'; select.append(placeholder);
+                const usedInBox = new Set(box.items.filter((_, index) => index !== itemIndex).map(row => productId(row.pi_item_id)));
+                products.forEach(product => {
+                    const option=document.createElement('option'); option.value=product.id; option.textContent=`${product.name} · ${product.product_code || '无编码'} · PI 数量 ${product.quantity}`; option.selected=productId(item.pi_item_id)===Number(product.id); option.disabled = usedInBox.has(Number(product.id)); select.append(option);
+                });
+                select.addEventListener('change',()=>{ item.pi_item_id=productId(select.value); renderOverview(); renderPendingProducts(); }); productTd.append(select);
                 const qtyTd=document.createElement('td'); const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
                 qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
                 qty.addEventListener('change',renderPendingProducts); qtyTd.append(qty);
                 const noteTd=document.createElement('td'); const note=document.createElement('input'); note.type='text'; note.maxLength=500; note.className='form-control form-control-sm'; note.value=item.note || ''; note.placeholder='可选'; note.addEventListener('input',()=>{item.note=note.value;}); noteTd.append(note);
-                const actionTd=document.createElement('td'); const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();}); actionTd.append(removeItem);
+                const actionTd=document.createElement('td'); const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger'; removeItem.title='删除产品行'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();}); actionTd.append(removeItem);
                 tr.append(productTd,qtyTd,noteTd,actionTd); tbody.append(tr);
             });
             if (!box.items.length) {
-                const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.className = 'text-center text-muted py-4'; td.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，请从右侧选择一个或多个产品。'; tr.append(td); tbody.append(tr);
+                const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.className = 'text-center text-muted py-4'; td.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，可从右侧批量加入或手动添加。'; tr.append(td); tbody.append(tr);
             }
             table.append(tbody); responsive.append(table);
-            const clearBox=document.createElement('button'); clearBox.type='button'; clearBox.className='btn btn-sm btn-outline-secondary'; clearBox.disabled=!box.items.length; clearBox.innerHTML='<i class="bi bi-arrow-counterclockwise"></i> 清空当前箱产品'; clearBox.addEventListener('click',()=>{if(!confirm(`确认清空第 ${boxIndex + 1} 箱的产品吗？这些产品会回到待分配列表。`))return;box.items=[];renderBoxes();});
-            body.append(fields,cbm,responsive,clearBox); card.append(header,body); container.append(card);
+            const addItem=document.createElement('button'); addItem.type='button'; addItem.className='btn btn-sm btn-outline-primary'; addItem.innerHTML='<i class="bi bi-plus-lg"></i> 手动添加产品行'; addItem.addEventListener('click',()=>{box.items.push(newItem());expandedBoxes.add(boxIndex);renderBoxes();});
+            body.append(fields,cbm,responsive,addItem); card.append(header,body); container.append(card);
             updateBoxSummary(boxIndex);
         });
         renderOverview();
@@ -435,7 +413,7 @@
             if (boxNumbers.has(normalizedBoxNo)) return `箱号“${box.box_no}”重复，请修改后再保存。`;
             boxNumbers.add(normalizedBoxNo);
             if (numberValue(box.gross_weight) < numberValue(box.net_weight)) return `${boxLabel}的毛重不能小于净重。`;
-            if (action === 'complete' && !box.items.length) return `${boxLabel}还没有产品，请先加入产品或删除空箱。`;
+            if (!box.items.length) return `${boxLabel}还没有产品，请先加入产品或删除空箱。`;
             const usedProducts = new Set();
             for (const item of box.items) {
                 const id = productId(item.pi_item_id);
@@ -475,13 +453,6 @@
     }
 
     targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; });
-    productSearch.addEventListener('input', renderPendingProducts);
-    showAllProducts.addEventListener('change', renderPendingProducts);
-    document.getElementById('selectVisibleProducts').addEventListener('click', () => {
-        const checks = [...document.querySelectorAll('.pending-product-check:not(:disabled)')];
-        const shouldSelect = checks.some(check => !check.checked);
-        checks.forEach(check => { check.checked = shouldSelect; });
-    });
     document.getElementById('batchAddProducts').addEventListener('click', () => {
         const checked = [...document.querySelectorAll('.pending-product-check:checked')];
         if (!checked.length) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
@@ -507,22 +478,6 @@
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
         showAlert(`已将 ${additions.length} 项产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
-    });
-    document.getElementById('addAllRemainingProducts').addEventListener('click', () => {
-        if (!boxes[selectedTargetBox]) return showAlert('请选择要加入的目标箱。', 'warning');
-        const packed = packedQuantities();
-        const additions = products.filter(product => integerValue(product.quantity) > (packed[Number(product.id)] || 0));
-        if (!additions.length) return showAlert('当前没有待分配产品。', 'warning');
-        additions.forEach(product => {
-            const id = Number(product.id);
-            const remaining = integerValue(product.quantity) - (packed[id] || 0);
-            const existing = boxes[selectedTargetBox].items.find(item => productId(item.pi_item_id) === id);
-            if (existing) existing.quantity = integerValue(existing.quantity) + remaining;
-            else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity:remaining, note:''});
-        });
-        expandedBoxes.add(selectedTargetBox);
-        renderBoxes();
-        showAlert(`已将全部 ${additions.length} 项剩余产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
     });
     document.getElementById('addBoxButton').addEventListener('click',()=>{
         boxes.push(emptyBox());
