@@ -2345,9 +2345,19 @@ class SecuritySmokeTests(unittest.TestCase):
 
             index = self.client.get('/packing-lists')
             self.assertIn('PI-TEST-001', index.get_data(as_text=True))
-            self.assertEqual(
-                self.client.get(f'/packing-list/{self.alice_pi}').status_code, 200,
-            )
+            editor = self.client.get(f'/packing-list/{self.alice_pi}')
+            self.assertEqual(editor.status_code, 200)
+            editor_html = editor.get_data(as_text=True)
+            self.assertIn('id="packingProductSearch"', editor_html)
+            self.assertIn('全选当前结果', editor_html)
+            self.assertIn('全部剩余加入当前箱', editor_html)
+            self.assertIn('清空当前箱产品', editor_html)
+            self.assertNotIn('手动添加产品行', editor_html)
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                prefill = application._packing_list_payload(pi, prefill=True)
+                self.assertEqual(len(prefill['boxes']), 1)
+                self.assertEqual(prefill['boxes'][0]['items'], [])
 
             response = self.client.post(
                 f'/api/packing-list/{self.alice_pi}', json=overpacked,
