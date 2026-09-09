@@ -3,6 +3,33 @@
 
 {% block content %}
 {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+<style>
+.pi-workflow-scroll { overflow-x: auto; padding-bottom: .2rem; }
+.pi-workflow { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); min-width: 900px; }
+.pi-workflow-step { position: relative; padding: .25rem .8rem .35rem; min-width: 0; }
+.pi-workflow-step:not(:last-child)::after {
+    content: ''; position: absolute; top: 1.3rem; left: calc(50% + 1.45rem);
+    right: calc(-50% + 1.45rem); border-top: 3px solid #dee2e6; z-index: 0;
+}
+.pi-workflow-step.is-complete:not(:last-child)::after { border-color: #198754; }
+.pi-workflow-head { position: relative; z-index: 1; display: flex; align-items: center; gap: .55rem; }
+.pi-workflow-icon {
+    width: 2.6rem; height: 2.6rem; flex: 0 0 2.6rem; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #e9ecef; color: #6c757d; border: 3px solid #fff;
+    box-shadow: 0 0 0 1px #ced4da; font-size: 1.1rem;
+}
+.pi-workflow-step.is-complete .pi-workflow-icon { background: #198754; color: #fff; box-shadow: 0 0 0 1px #198754; }
+.pi-workflow-step.is-active .pi-workflow-icon { background: #0d6efd; color: #fff; box-shadow: 0 0 0 1px #0d6efd; }
+.pi-workflow-step.is-blocked .pi-workflow-icon { background: #dc3545; color: #fff; box-shadow: 0 0 0 1px #dc3545; }
+.pi-workflow-title { font-weight: 700; white-space: nowrap; }
+.pi-workflow-reason { margin: .65rem 0 0 3.15rem; font-size: .8rem; line-height: 1.35; color: #6c757d; }
+.pi-workflow-step.is-blocked .pi-workflow-reason { color: #b02a37; font-weight: 600; }
+.pi-workflow-reason-label { display: block; font-size: .72rem; font-weight: 700; margin-bottom: .15rem; }
+@media (max-width: 767.98px) {
+    .pi-workflow-step { padding-left: .45rem; padding-right: .45rem; }
+}
+</style>
 <div class="row mb-3 align-items-center">
     <div class="col">
         <h2><i class="bi bi-eye me-2"></i>预览 PI {{ pi.pi_number }}</h2>
@@ -17,6 +44,42 @@
         <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-warning">
             <i class="bi bi-pencil-square me-1"></i> 编辑
         </a>
+    </div>
+</div>
+
+<div class="card mb-4" id="piWorkflowCard">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="bi bi-diagram-3 me-1"></i>订单流程</h5>
+        <div class="d-flex align-items-center gap-2 small">
+            <span class="badge text-bg-success">已完成 {{ workflow_completed_count }}/5</span>
+            {% if workflow_blocked_count %}<span class="badge text-bg-danger">阻塞 {{ workflow_blocked_count }} 项</span>{% endif %}
+        </div>
+    </div>
+    <div class="card-body px-2 px-md-3">
+        <div class="pi-workflow-scroll">
+            <div class="pi-workflow" role="list" aria-label="PI 业务流程">
+                {% for step in workflow_steps %}
+                <div class="pi-workflow-step is-{{ step.state }}" role="listitem" data-workflow-step="{{ step.key }}">
+                    <div class="pi-workflow-head">
+                        <span class="pi-workflow-icon"><i class="bi {{ step.icon }}"></i></span>
+                        <div>
+                            <div class="pi-workflow-title">{{ step.label }}</div>
+                            <span class="badge {% if step.state == 'complete' %}text-bg-success{% elif step.state == 'active' %}text-bg-primary{% elif step.state == 'blocked' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ step.status }}</span>
+                        </div>
+                    </div>
+                    {% if step.reason %}
+                    <div class="pi-workflow-reason">
+                        <span class="pi-workflow-reason-label">{{ step.reason_label }}</span>
+                        {{ step.reason }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="small text-muted mt-3 px-2">
+            <i class="bi bi-info-circle me-1"></i>各环节按现有业务记录独立显示；流程条不会自动修改或清空下游数据。
+        </div>
     </div>
 </div>
 
