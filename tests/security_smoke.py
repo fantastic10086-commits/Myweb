@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from datetime import date
 from io import BytesIO
 from unittest.mock import patch
 
@@ -961,9 +962,18 @@ class SecuritySmokeTests(unittest.TestCase):
         admin_record = self.client.get(f'/api/pi/{self.alice_pi}/shipping-record')
         self.assertEqual(admin_record.status_code, 200)
         self.assertTrue(admin_record.get_json()['shipping_completed'])
-        reverted = self.client.post(
+        confirmation_required = self.client.post(
             f'/api/pi/{self.alice_pi}/shipping-complete',
             json={'completed': False},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(confirmation_required.status_code, 409)
+        self.assertTrue(confirmation_required.get_json()['confirmation_required'])
+        with application.app.app_context():
+            self.assertTrue(db.session.get(PI, self.alice_pi).shipping_completed)
+        reverted = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-complete',
+            json={'completed': False, 'confirm_downstream_reset': True},
             headers={'X-CSRFToken': self.token('/pi/list')},
         )
         self.assertEqual(reverted.status_code, 200)
@@ -983,7 +993,7 @@ class SecuritySmokeTests(unittest.TestCase):
             application._recalculate_pi_payments(pi)
             Supplier.query.filter_by(id=supplier_id).delete()
             db.session.commit()
-            self.assertEqual(pi.effective_procurement_status, '未回款')
+            self.assertEqual(pi.effective_procurement_status, '待采购')
 
     def test_csrf_is_required_and_customer_owner_is_forced(self):
         self.login()
@@ -1649,6 +1659,16 @@ class SecuritySmokeTests(unittest.TestCase):
             payment = Payment(pi_id=self.alice_pi, amount=1, order_no='DELETE-ME',
                               order_no_normalized='delete-me', idempotency_key='c' * 32)
             db.session.add(payment)
+            pi = db.session.get(PI, self.alice_pi)
+            pi.procurement_confirmed = True
+            pi.procurement_status = '发货完成'
+            pi.shipping_completed = True
+            pi.shipping_date = date(2026, 9, 9)
+            pi.shipping_tracking_no = 'KEEP-TRACKING'
+            pi.shipping_record_note = 'KEEP-SHIPPING-NOTE'
+            pi.shipping_recorded_by = 'alice'
+            pi.customs_required = True
+            pi.customs_note = 'KEEP-CUSTOMS-NOTE'
             db.session.commit()
             payment_id = payment.id
         self.client.post(f'/pi/{self.alice_pi}/payment/{payment_id}/delete', data={
@@ -1661,6 +1681,19 @@ class SecuritySmokeTests(unittest.TestCase):
         })
         with application.app.app_context():
             self.assertIsNotNone(db.session.get(Payment, payment_id).deleted_at)
+            application._migrate_db()
+            pi = db.session.get(PI, self.alice_pi)
+            self.assertEqual(pi.received_amount, 0)
+            self.assertFalse(pi.paid)
+            self.assertTrue(pi.procurement_confirmed)
+            self.assertTrue(pi.shipping_completed)
+            self.assertEqual(pi.shipping_date, date(2026, 9, 9))
+            self.assertEqual(pi.shipping_tracking_no, 'KEEP-TRACKING')
+            self.assertEqual(pi.shipping_record_note, 'KEEP-SHIPPING-NOTE')
+            self.assertEqual(pi.shipping_recorded_by, 'alice')
+            self.assertIs(pi.customs_required, True)
+            self.assertEqual(pi.customs_note, 'KEEP-CUSTOMS-NOTE')
+            self.assertEqual(pi.effective_procurement_status, '发货完成')
 
     def test_bank_account_change_requires_current_admin_password(self):
         self.login('admin-test')

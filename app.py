@@ -199,39 +199,17 @@ def _migrate_db():
                AND coalesce(procurement_confirmed, 0) = 1
                AND procurement_status IN ('已发货', '已完成', '发货完成')
         """))
-        if inspector.has_table('pi_items') and inspector.has_table('procurements'):
-            db.session.execute(text("""
-                UPDATE pis
-                   SET procurement_confirmed = 0,
-                       shipping_completed = 0
-                 WHERE coalesce(procurement_confirmed, 0) = 1
-                   AND (
-                       NOT EXISTS (
-                           SELECT 1 FROM pi_items item WHERE item.pi_id = pis.id
-                       )
-                       OR EXISTS (
-                           SELECT 1
-                             FROM pi_items item
-                            WHERE item.pi_id = pis.id
-                              AND coalesce((
-                                  SELECT sum(proc.quantity)
-                                    FROM procurements proc
-                                   WHERE proc.pi_id = pis.id
-                                     AND proc.pi_item_id = item.id
-                              ), 0) < coalesce(item.quantity, 0)
-                       )
-                   )
-            """))
+        # Payment, procurement and shipment records are independent business
+        # facts. Startup migrations must never silently roll back downstream
+        # records because a payment changed or a legacy row is incomplete.
         db.session.execute(text("""
             UPDATE pis
                SET procurement_status = CASE
-                   WHEN coalesce(received_amount, 0) <= 0 THEN '未回款'
                    WHEN coalesce(shipping_completed, 0) = 1 AND coalesce(procurement_confirmed, 0) = 1 THEN '发货完成'
                    WHEN coalesce(procurement_confirmed, 0) = 1 THEN '采购完成'
+                   WHEN procurement_status = '部分采购' THEN '部分采购'
                    ELSE '待采购'
-               END,
-                   procurement_confirmed = CASE WHEN coalesce(received_amount, 0) <= 0 THEN 0 ELSE coalesce(procurement_confirmed, 0) END,
-                   shipping_completed = CASE WHEN coalesce(received_amount, 0) <= 0 THEN 0 ELSE coalesce(shipping_completed, 0) END
+               END
         """))
     db.session.commit()
     # Backfill normalized payment references before enforcing uniqueness.  The
@@ -1319,22 +1297,11 @@ def _active_payments(pi_id):
     return Payment.query.filter_by(pi_id=pi_id).filter(Payment.deleted_at.is_(None)).order_by(Payment.created_at).all()
 
 def _recalculate_pi_payments(pi):
+    """Recalculate payment aggregates without changing downstream records."""
     payments = _active_payments(pi.id)
     total_paid = sum(p.amount + (p.fee or 0) for p in payments)
-    previous_received = round(pi.received_amount or 0, 2)
     pi.received_amount = round(sum(p.amount for p in payments), 2)
     pi.paid = total_paid >= pi.grand_total
-    if pi.received_amount <= 0:
-        pi.procurement_status = '未回款'
-        pi.procurement_confirmed = False
-        pi.shipping_completed = False
-        pi.shipping_date = None
-        pi.shipping_tracking_no = ''
-        pi.shipping_record_note = ''
-        pi.shipping_recorded_at = None
-        pi.shipping_recorded_by = ''
-    elif previous_received <= 0:
-        pi.procurement_status = '待采购'
     pi.version = (pi.version or 1) + 1
     return total_paid
 
@@ -3624,7 +3591,7 @@ def restore_payment(id):
         db.session.rollback()
         flash('无法恢复：该回款与现有记录冲突。', 'danger')
         return redirect(url_for('recycle_bin'))
-    flash('回款已恢复，相关金额已重新计算。', 'success')
+    flash('回款已恢复，相关金额已重新计算；采购、装箱、报关和发货记录均未修改。', 'success')
     return redirect(url_for('recycle_bin'))
 
 
@@ -3983,7 +3950,6 @@ def pi_list():
         'paid': '已付清',
     }
     order_labels = {
-        'unpaid': '未回款',
         'pending': '待采购',
         'partial': '部分采购',
         'purchased': '采购完成',
@@ -4836,7 +4802,7 @@ def payment_delete(id, pid):
                                      'receiving_account_name', 'receiving_account_currency', 'attachment',
                                      'deleted_at']))
     db.session.commit()
-    flash('回款已移入回收站。', 'info')
+    flash('回款已移入回收站；采购、装箱、报关和发货记录均未修改。', 'info')
     return redirect(request.referrer or url_for('pi_list'))
 
 
@@ -6118,6 +6084,11 @@ def api_procurement_save():
         abort(404)
     if (pi.received_amount or 0) <= 0:
         return jsonify({'success': False, 'error': '该 PI 尚未回款，不能开始采购。'}), 400
+    if pi.shipping_completed:
+        return jsonify({
+            'success': False,
+            'error': '该 PI 已登记发货。请先在发货记录中单独撤销发货，再修改采购单。',
+        }), 409
     if pi.procurement_confirmed:
         return jsonify({'success': False, 'error': '采购单已确认。如需修改，请先取消“采购完成”。'}), 409
     try:
@@ -6168,12 +6139,6 @@ def api_procurement_save():
 
     pi.exchange_rate = business_exchange_rate
     pi.supplier_freight_cost = supplier_freight_cost
-    pi.shipping_completed = False
-    pi.shipping_date = None
-    pi.shipping_tracking_no = ''
-    pi.shipping_record_note = ''
-    pi.shipping_recorded_at = None
-    pi.shipping_recorded_by = ''
     pi.procurement_status = '部分采购' if normalized_items else '待采购'
     _audit('update', 'procurement', pi.id, '暂存采购单明细' if draft else '保存采购单明细',
            after={
@@ -6327,12 +6292,28 @@ def api_pi_shipping_complete(pi_id):
     completed = data.get('completed', True)
     if not isinstance(completed, bool):
         return jsonify({'success': False, 'error': '发货确认参数无效。'}), 400
+    if not completed and pi.shipping_completed and data.get('confirm_downstream_reset') is not True:
+        return jsonify({
+            'success': False,
+            'error': '撤销发货需要单独确认。该操作会清空发货日期、物流单号、备注、登记人和登记时间；回款、采购、装箱及报关记录不会改变。',
+            'confirmation_required': True,
+            'affected_fields': [
+                '发货完成状态', '发货日期', '物流单号', '发货备注', '登记人', '登记时间',
+            ],
+            'preserved_records': ['回款', '采购', '装箱', '报关'],
+        }), 409
     if completed:
         if not pi.procurement_confirmed:
             return jsonify({'success': False, 'error': '采购单尚未完整确认，不能标记发货完成。'}), 400
         gaps = _procurement_gaps(pi)
         if gaps:
             return jsonify({'success': False, 'error': '采购单不完整，不能标记发货完成。'}), 400
+    fields = [
+        'shipping_completed', 'shipping_date', 'shipping_tracking_no',
+        'shipping_record_note', 'shipping_recorded_at', 'shipping_recorded_by',
+        'procurement_status',
+    ]
+    before = _snapshot(pi, fields)
     previous = pi.effective_procurement_status
     pi.shipping_completed = completed
     if completed:
@@ -6348,10 +6329,11 @@ def api_pi_shipping_complete(pi_id):
         pi.shipping_recorded_at = None
         pi.shipping_recorded_by = ''
     pi.procurement_status = '发货完成' if completed else ('采购完成' if pi.procurement_confirmed else '待采购')
-    _audit('update', 'pi', pi.id,
-           f'订单进度：{previous} → {pi.procurement_status}',
-           before={'procurement_status': previous},
-           after={'procurement_status': pi.procurement_status})
+    _audit(
+        'update', 'pi', pi.id,
+        f'订单进度：{previous} → {pi.procurement_status}',
+        before=before, after=_snapshot(pi, fields),
+    )
     db.session.commit()
     return jsonify({'success': True, 'procurement_status': pi.effective_procurement_status,
                     'version': pi.version})

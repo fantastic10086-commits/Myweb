@@ -391,11 +391,11 @@ class PI(db.Model):
 
     @property
     def effective_procurement_status(self):
-        """Derive order progress from payment, procurement and shipping records."""
-        if (self.received_amount or 0) <= 0:
-            return '未回款'
+        """Derive order progress independently from payment records."""
+        if self.shipping_completed:
+            return '发货完成'
         if self.procurement_is_complete:
-            return '发货完成' if self.shipping_completed else '采购完成'
+            return '采购完成'
         return '部分采购' if self.procurements else '待采购'
 
     def to_dict(self):

@@ -64,7 +64,6 @@
                 <label class="form-label small mb-1">订单进度</label>
                 <select class="form-select form-select-sm" name="order_status">
                     <option value="">— 全部 —</option>
-                    <option value="unpaid" {% if order_status == 'unpaid' %}selected{% endif %}>未回款</option>
                     <option value="pending" {% if order_status == 'pending' %}selected{% endif %}>待采购</option>
                     <option value="partial" {% if order_status == 'partial' %}selected{% endif %}>部分采购</option>
                     <option value="purchased" {% if order_status == 'purchased' %}selected{% endif %}>采购完成</option>
@@ -326,6 +325,11 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" id="shippingCloseBtn" data-bs-dismiss="modal">取消</button>
+            {% if is_admin %}
+            <button type="button" class="btn btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">
+                <i class="bi bi-arrow-counterclockwise"></i> 撤销发货登记
+            </button>
+            {% endif %}
             <button type="button" class="btn btn-success" id="shippingSaveBtn" disabled onclick="saveShippingRecord()">
                 <i class="bi bi-check-lg"></i> 确认发货完成
             </button>
@@ -502,6 +506,7 @@ var currentShippingPiId = null;
 var expenseAttachmentPreviewUrl = '';
 var paymentAttachmentPreviewUrl = '';
 var canDeleteExpense = {{ is_admin|tojson }};
+var canRevertShipping = {{ is_admin|tojson }};
 function shippingError(message) {
     var box = document.getElementById('shippingModalError');
     box.textContent = message;
@@ -527,6 +532,8 @@ function renderShippingRecord(data) {
     fields.disabled = !canShip;
     saveButton.classList.toggle('d-none', !canShip);
     saveButton.disabled = !canShip;
+    var revertButton = document.getElementById('shippingRevertBtn');
+    if (revertButton) revertButton.classList.toggle('d-none', !(completed && canRevertShipping));
     closeButton.textContent = canShip ? '取消' : '关闭';
     if (completed) {
         document.getElementById('shippingRecordMeta').textContent = data.recorded_at
@@ -547,6 +554,8 @@ function openShippingRecord(piId, piNumber) {
     document.getElementById('shippingFields').disabled = true;
     document.getElementById('shippingSaveBtn').disabled = true;
     document.getElementById('shippingSaveBtn').classList.remove('d-none');
+    var revertButton = document.getElementById('shippingRevertBtn');
+    if (revertButton) revertButton.classList.add('d-none');
     document.getElementById('shippingRecordMeta').textContent = '正在读取记录……';
     document.getElementById('shippingModalError').classList.add('d-none');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('shippingModal')).show();
@@ -601,6 +610,32 @@ function saveShippingRecord() {
         .finally(function() {
             button.disabled = document.getElementById('shippingFields').disabled;
             button.innerHTML = '<i class="bi bi-check-lg"></i> 确认发货完成';
+        });
+}
+function revertShippingRecord() {
+    if (!currentShippingPiId) { shippingError('没有识别到对应的 PI，请关闭后重试。'); return; }
+    var message = '确认撤销发货登记吗？\n\n将清空：发货日期、物流单号、发货备注、登记人和登记时间。\n\n回款、采购、装箱和报关记录都会保留。撤销后如需修改采购，还要在采购页面单独取消“采购完成”。';
+    if (!confirm(message)) return;
+    var button = document.getElementById('shippingRevertBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在撤销……';
+    document.getElementById('shippingModalError').classList.add('d-none');
+    fetch('/api/pi/' + currentShippingPiId + '/shipping-complete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({completed: false, confirm_downstream_reset: true})
+    })
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '撤销发货登记失败。');
+            window.location.reload();
+        })
+        .catch(function(error) {
+            shippingError(error.message || '撤销发货登记失败。');
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> 撤销发货登记';
         });
 }
 function customsError(message) {
