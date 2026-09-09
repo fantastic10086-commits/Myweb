@@ -124,6 +124,46 @@ class SecuritySmokeTests(unittest.TestCase):
     def test_anonymous_business_download_redirects_to_login(self):
         self.assertEqual(self.client.get('/pi/1/download').status_code, 302)
 
+    def test_customer_deal_counts_partial_payments_fees_and_caps_each_pi(self):
+        with application.app.app_context():
+            customer = Customer(name='Deal Formula Customer', salesperson='Alice')
+            usd_pi = PI(
+                pi_number='PI-DEAL-USD', customer=customer, salesperson='Alice',
+                currency='USD', exchange_rate=7.0, total_amount=100,
+            )
+            rmb_pi = PI(
+                pi_number='PI-DEAL-RMB', customer=customer, salesperson='Alice',
+                currency='RMB', exchange_rate=7.0, total_amount=700,
+            )
+            db.session.add_all([customer, usd_pi, rmb_pi])
+            db.session.flush()
+            usd_first = Payment(pi_id=usd_pi.id, amount=40, fee=5, order_no='DEAL-USD-1')
+            usd_second = Payment(pi_id=usd_pi.id, amount=60, fee=5, order_no='DEAL-USD-2')
+            rmb_partial = Payment(pi_id=rmb_pi.id, amount=350, fee=70, order_no='DEAL-RMB-1')
+            db.session.add_all([usd_first, usd_second, rmb_partial])
+            db.session.flush()
+
+            application._recalculate_pi_payments(usd_pi)
+            application._recalculate_pi_payments(rmb_pi)
+            application._recalculate_customer_deal(customer)
+            self.assertTrue(usd_pi.paid)
+            self.assertFalse(rmb_pi.paid)
+            # USD is capped at $100; RMB 420 / 7 contributes another $60.
+            self.assertEqual(customer.total_deal_usd, 160.0)
+
+            usd_second.deleted_at = application.datetime.utcnow()
+            application._recalculate_pi_payments(usd_pi)
+            application._recalculate_customer_deal(customer)
+            self.assertFalse(usd_pi.paid)
+            self.assertEqual(customer.total_deal_usd, 105.0)
+
+            usd_second.deleted_at = None
+            application._recalculate_pi_payments(usd_pi)
+            application._recalculate_customer_deal(customer)
+            self.assertTrue(usd_pi.paid)
+            self.assertEqual(customer.total_deal_usd, 160.0)
+            db.session.rollback()
+
     def test_submitted_pi_items_preserve_explicit_selection_order(self):
         with application.app.app_context():
             first = Product(name='Order First', product_code='ORDER-FIRST', unit_price=11)

@@ -239,6 +239,40 @@ def _migrate_db():
         """))
         db.session.commit()
 
+    # Keep the stored customer total aligned with the current accounting rule:
+    # every active payment contributes amount + fee, RMB is converted at the
+    # fixed performance rate, and each PI contributes no more than its total.
+    # Running this during migration also corrects historical partial payments
+    # immediately after an upgrade without changing any payment or PI record.
+    if all(inspector.has_table(table) for table in ('customers', 'pis', 'payments')):
+        db.session.execute(text("""
+            UPDATE customers
+               SET total_deal_usd = round(coalesce((
+                   SELECT sum(
+                       CASE WHEN upper(coalesce(pi.currency, 'USD')) = 'RMB'
+                            THEN min(
+                                max(coalesce(payment_totals.received_with_fee, 0), 0),
+                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
+                            ) / :performance_rate
+                            ELSE min(
+                                max(coalesce(payment_totals.received_with_fee, 0), 0),
+                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
+                            )
+                       END
+                   )
+                     FROM pis AS pi
+                     JOIN (
+                         SELECT pi_id, sum(coalesce(amount, 0) + coalesce(fee, 0)) AS received_with_fee
+                           FROM payments
+                          WHERE deleted_at IS NULL
+                          GROUP BY pi_id
+                     ) AS payment_totals ON payment_totals.pi_id = pi.id
+                    WHERE pi.customer_id = customers.id
+                      AND pi.deleted_at IS NULL
+               ), 0), 2)
+        """), {'performance_rate': PERFORMANCE_EXCHANGE_RATE})
+        db.session.commit()
+
 
 # Company info — edit these to match your business
 COMPANY_CONFIG = {
@@ -1362,11 +1396,17 @@ def _recalculate_pi_payments(pi):
     return total_paid
 
 def _recalculate_customer_deal(customer):
-    paid_pis = PI.query.filter_by(customer_id=customer.id, paid=True).filter(PI.deleted_at.is_(None)).all()
+    pis = PI.query.filter_by(customer_id=customer.id).filter(PI.deleted_at.is_(None)).all()
     total = 0.0
-    for pi in paid_pis:
-        deal_amount = pi.received_amount if pi.received_amount > 0 else pi.grand_total
-        total += round(deal_amount / PERFORMANCE_EXCHANGE_RATE, 2) if pi.currency == 'RMB' else deal_amount
+    for pi in pis:
+        received_with_fee = sum(
+            (payment.amount or 0) + (payment.fee or 0)
+            for payment in pi.active_payments
+        )
+        # A customer cannot receive more deal credit from one PI than the
+        # amount invoiced, even when an overpayment or fee crosses the total.
+        deal_amount = min(max(received_with_fee, 0), max(pi.grand_total, 0))
+        total += deal_amount / PERFORMANCE_EXCHANGE_RATE if (pi.currency or 'USD').upper() == 'RMB' else deal_amount
     customer.total_deal_usd = round(total, 2)
 
 def _save_upload(file):
@@ -4776,10 +4816,11 @@ def pi_toggle_paid(id):
         return redirect(request.referrer or url_for('pi_list'))
 
     try:
-        # Update PI aggregates (amount + fee counts toward paid, but only amount toward deal)
+        # Amount + fee counts toward both paid status and the capped customer deal total.
         total_paid = _recalculate_pi_payments(pi)
 
-        # Update customer's total_deal_usd (excludes fee)
+        # Partial payments count immediately; RMB payments use the fixed
+        # performance rate and each PI is capped at its invoiced total.
         customer = Customer.query.get(pi.customer_id)
         if customer:
             _recalculate_customer_deal(customer)
