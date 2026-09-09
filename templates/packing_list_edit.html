@@ -46,7 +46,7 @@
     </div>
     {% if packing_list %}
     <div class="d-flex gap-2 flex-wrap justify-content-end">
-        {% if is_admin and pi.paid and packing_list.is_completed and not can_edit %}
+        {% if is_admin and (pi.received_amount or 0) > 0 and packing_list.is_completed and not can_edit %}
         <a href="{{ url_for('packing_list_detail', pi_id=pi.id, edit=1) }}"
            class="btn btn-primary"
            {% if pi.shipping_completed %}onclick="return confirm('该订单已经登记发货，确认仍要编辑装箱单吗？')"{% endif %}>
@@ -67,9 +67,9 @@
     {% endif %}
 </div>
 
-{% if packing_list and not pi.paid %}
+{% if packing_list and (pi.received_amount or 0) <= 0 %}
 <div class="alert alert-warning">
-    <i class="bi bi-lock me-1"></i>PI 当前未付清，这份历史装箱单仅允许查看和导出，暂不能修改。
+    <i class="bi bi-lock me-1"></i>PI 当前没有有效回款，这份历史装箱单仅允许查看和导出，暂不能修改。
 </div>
 {% endif %}
 

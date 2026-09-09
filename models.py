@@ -260,6 +260,7 @@ class Product(db.Model):
     unit_price_rmb = db.Column(db.Float, nullable=False, default=0.0)
     notes = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
+    active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -273,6 +274,7 @@ class Product(db.Model):
             'unit_price_rmb': self.unit_price_rmb,
             'notes': self.notes,
             'image': self.image,
+            'active': self.active,
         }
 
 

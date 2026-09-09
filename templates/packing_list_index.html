@@ -92,10 +92,10 @@
                             {% if not pi.packing_list %}<span class="badge bg-secondary">未创建</span>
                             {% elif pi.packing_list.is_completed %}<span class="badge bg-success">已完成</span>
                             {% else %}<span class="badge bg-warning text-dark">草稿</span>{% endif %}
-                            {% if pi.packing_list and not pi.paid %}<span class="badge bg-secondary">历史记录·未付清</span>{% endif %}
+                            {% if pi.packing_list and (pi.received_amount or 0) <= 0 %}<span class="badge bg-secondary">历史记录·无回款</span>{% endif %}
                         </td>
                         <td class="text-end text-nowrap">
-                            {% if is_admin and pi.paid %}
+                            {% if is_admin and (pi.received_amount or 0) > 0 %}
                             <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="btn btn-sm btn-outline-primary">
                                 {% if pi.packing_list and pi.packing_list.is_completed %}
                                 <i class="bi bi-eye"></i> 预览
@@ -107,8 +107,8 @@
                             </a>
                             {% elif pi.packing_list %}
                             <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> 查看</a>
-                            {% elif not pi.paid %}
-                            <span class="text-muted small">待付清</span>
+                            {% elif (pi.received_amount or 0) <= 0 %}
+                            <span class="text-muted small">待回款</span>
                             {% else %}
                             <span class="text-muted small">等待管理员创建</span>
                             {% endif %}

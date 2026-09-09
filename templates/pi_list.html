@@ -204,14 +204,14 @@
                                     {% endif %}
 
                                     {% if pi.packing_list %}
-                                    {% set packing_can_edit = is_admin and pi.paid %}
+                                    {% set packing_can_edit = is_admin and total_received > 0 %}
                                     <li>
                                         <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
                                             <i class="bi {{ 'bi-check-lg text-success' if pi.packing_list.is_completed else ('bi-pencil-square' if packing_can_edit else 'bi-eye') }}"></i>
                                             {{ '查看装箱单' if pi.packing_list.is_completed else ('编辑装箱单草稿' if packing_can_edit else '查看装箱单草稿') }}
                                         </a>
                                     </li>
-                                    {% elif is_admin and pi.paid %}
+                                    {% elif is_admin and total_received > 0 %}
                                     <li>
                                         <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
                                             <i class="bi bi-box-seam"></i>创建装箱单

@@ -112,7 +112,12 @@ def _migrate_db():
     pi_exchange_rate_was_missing = 'exchange_rate' not in pi_columns_before
     expected = {
         'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
-        'products': {'image': 'VARCHAR(500)', 'chinese_name': 'VARCHAR(200)', 'unit_price_rmb': 'FLOAT'},
+        'products': {
+            'image': 'VARCHAR(500)',
+            'chinese_name': 'VARCHAR(200)',
+            'unit_price_rmb': 'FLOAT',
+            'active': ('BOOLEAN', '1'),
+        },
         'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '7.0'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
@@ -1213,8 +1218,9 @@ def _positive_int(value, field_name):
         raise ValueError(f'{field_name}必须大于 0。')
     return number
 
-def _submitted_pi_items(form):
+def _submitted_pi_items(form, allow_inactive_ids=None):
     """Load selected products in the explicit order maintained by the UI."""
+    allow_inactive_ids = set(allow_inactive_ids or ())
     product_ids = []
     seen = set()
 
@@ -1262,7 +1268,8 @@ def _submitted_pi_items(form):
     for start in range(0, len(product_ids), 500):
         chunk = product_ids[start:start + 500]
         for product in Product.query.filter(Product.id.in_(chunk)).all():
-            products_by_id[product.id] = product
+            if product.active or product.id in allow_inactive_ids:
+                products_by_id[product.id] = product
 
     selected_items = []
     total_amount = 0.0
@@ -1441,6 +1448,65 @@ def _remove_upload(filename):
     path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
     if os.path.isfile(path):
         os.remove(path)
+
+def _copy_product_image(filename):
+    """Copy a product image so the new product owns a separate file."""
+    safe_name = secure_filename(filename or '')
+    if not safe_name or safe_name != filename:
+        return ''
+    source_path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
+    if not os.path.isfile(source_path):
+        return ''
+    extension = os.path.splitext(safe_name)[1].lower()
+    new_name = f'{uuid.uuid4().hex}{extension}'
+    shutil.copy2(source_path, os.path.join(current_app.config['UPLOAD_DIR'], new_name))
+    return new_name
+
+def _remove_product_image_if_unused(filename):
+    """Delete an image only after no product record points to it."""
+    safe_name = secure_filename(filename or '')
+    if not safe_name or safe_name != filename:
+        return
+    if Product.query.filter_by(image=safe_name).first():
+        return
+    try:
+        _remove_upload(safe_name)
+    except OSError:
+        # The database change is already committed. A leftover orphan is safer
+        # than turning a successful product operation into a visible failure.
+        pass
+    thumbnail_path = _product_thumbnail_path(safe_name)
+    try:
+        if os.path.isfile(thumbnail_path):
+            os.remove(thumbnail_path)
+    except OSError:
+        pass
+
+def _product_reference_count(product_id):
+    """Count every historical PI item that references the product."""
+    return PIItem.query.filter_by(product_id=product_id).count()
+
+def _retire_or_delete_product(product):
+    """Disable referenced products; hard-delete only products never used by a PI."""
+    reference_count = _product_reference_count(product.id)
+    before = _snapshot(product, ['name', 'product_code', 'image', 'active'])
+    if reference_count:
+        product.active = False
+        _audit(
+            'disable', 'product', product.id,
+            f'停用产品：{product.name}（关联 {reference_count} 条 PI 明细）',
+            before=before,
+            after=_snapshot(product, ['name', 'product_code', 'image', 'active']),
+        )
+        return 'disabled', reference_count, ''
+
+    image_filename = product.image or ''
+    _audit(
+        'delete', 'product', product.id, f'删除未被引用的产品：{product.name}',
+        before=before,
+    )
+    db.session.delete(product)
+    return 'deleted', 0, image_filename
 
 def _product_thumbnail_path(filename):
     stem = os.path.splitext(filename)[0]
@@ -1794,7 +1860,7 @@ def settings_page():
 def index():
     cust_q = filter_by_user(Customer.query, Customer, 'salesperson')
     customer_count = cust_q.count()
-    product_count = Product.query.count()
+    product_count = Product.query.filter(Product.active.is_(True)).count()
     pi_q = filter_by_user(PI.query, PI, 'salesperson')
     pi_count = pi_q.count()
     recent_pis = pi_q.order_by(PI.created_at.desc()).limit(5).all()
@@ -2567,6 +2633,12 @@ def product_list():
     per_page = 50
 
     query = Product.query
+    if filter_type == 'all':
+        pass
+    elif filter_type == 'inactive':
+        query = query.filter(Product.active.is_(False))
+    else:
+        query = query.filter(Product.active.is_(True))
     if search:
         query = query.filter(
             db.or_(
@@ -2639,6 +2711,8 @@ def product_import():
             file.save(tmp_path)
             own_tmp = True
 
+        created_images = []
+        replaced_images = []
         try:
             wb = load_workbook(tmp_path)
             ws = wb.active
@@ -2708,6 +2782,7 @@ def product_import():
                             with open(img_path, 'wb') as f:
                                 f.write(img_data)
                             image_filename = unique_name
+                            created_images.append(unique_name)
                             with_images += 1
                             break  # take first image per row
                         except Exception:
@@ -2720,11 +2795,8 @@ def product_import():
                     existing.specification = spec or existing.specification
                     existing.unit_price = price if price > 0 else existing.unit_price
                     if image_filename:
-                        # Delete old image
                         if existing.image:
-                            old_path = os.path.join(app.config['UPLOAD_DIR'], existing.image)
-                            if os.path.exists(old_path):
-                                os.remove(old_path)
+                            replaced_images.append(existing.image)
                         existing.image = image_filename
                     imported += 1
                 else:
@@ -2739,10 +2811,14 @@ def product_import():
                     imported += 1
 
             db.session.commit()
+            for old_image in set(replaced_images):
+                _remove_product_image_if_unused(old_image)
             flash(f'已导入 {imported} 个产品（其中 {with_images} 个带图片），跳过 {skipped} 个空行。', 'success')
 
         except Exception as e:
             db.session.rollback()
+            for created_image in set(created_images):
+                _remove_upload(created_image)
             flash(f'读取 Excel 文件失败：{str(e)}', 'danger')
         finally:
             # Clean up temp file (only if we created it)
@@ -2779,16 +2855,22 @@ def product_add():
             image=image_filename,
         )
         if not product.name:
+            _remove_upload(image_filename)
             flash('产品名称不能为空。', 'danger')
             return render_template('product_form.html', product=product, editing=False)
-        db.session.add(product)
-        db.session.flush()
-        _audit('create', 'product', product.id, f'新增产品：{product.name}',
-               after=_snapshot(product, [
-                   'name', 'chinese_name', 'product_code', 'specification',
-                   'unit_price', 'unit_price_rmb', 'notes', 'image',
-               ]))
-        db.session.commit()
+        try:
+            db.session.add(product)
+            db.session.flush()
+            _audit('create', 'product', product.id, f'新增产品：{product.name}',
+                   after=_snapshot(product, [
+                       'name', 'chinese_name', 'product_code', 'specification',
+                       'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+                   ]))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            _remove_upload(image_filename)
+            raise
         flash('产品添加成功。', 'success')
         return redirect(url_for('product_list'))
     return render_template('product_form.html', product=None, editing=False)
@@ -2799,7 +2881,21 @@ def product_add():
 def product_edit(id):
     product = Product.query.get_or_404(id)
     if request.method == 'POST':
-        product.name = request.form.get('name', '').strip()
+        new_name = request.form.get('name', '').strip()
+        if not new_name:
+            flash('产品名称不能为空。', 'danger')
+            return render_template('product_form.html', product=product, editing=True)
+        before = _snapshot(product, [
+            'name', 'chinese_name', 'product_code', 'specification',
+            'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+        ])
+        old_image = product.image or ''
+        new_image = ''
+        image_file = request.files.get('image')
+        if image_file and image_file.filename:
+            new_image = _save_upload(image_file)
+
+        product.name = new_name
         product.product_code = request.form.get('product_code', '').strip()
         product.specification = request.form.get('specification', '').strip()
         product.chinese_name = request.form.get('chinese_name', '').strip()
@@ -2812,19 +2908,21 @@ def product_edit(id):
         except ValueError:
             product.unit_price = 0.0
         product.notes = request.form.get('notes', '').strip()
-        image_file = request.files.get('image')
-        if image_file and image_file.filename:
-            new_img = _save_upload(image_file)
-            if new_img:
-                # Delete old image
-                if product.image:
-                    old_path = os.path.join(current_app.config['UPLOAD_DIR'], product.image)
-                    if os.path.exists(old_path): os.remove(old_path)
-                product.image = new_img
-        if not product.name:
-            flash('产品名称不能为空。', 'danger')
-            return render_template('product_form.html', product=product, editing=True)
-        db.session.commit()
+        if new_image:
+            product.image = new_image
+        try:
+            _audit('update', 'product', product.id, f'更新产品：{product.name}',
+                   before=before, after=_snapshot(product, [
+                       'name', 'chinese_name', 'product_code', 'specification',
+                       'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+                   ]))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            _remove_upload(new_image)
+            raise
+        if new_image and old_image != new_image:
+            _remove_product_image_if_unused(old_image)
         flash('产品更新成功。', 'success')
         return redirect(url_for('product_list'))
     return render_template('product_form.html', product=product, editing=True)
@@ -2834,13 +2932,13 @@ def product_edit(id):
 @admin_required
 def product_delete(id):
     product = Product.query.get_or_404(id)
-    if product.image:
-        old_path = os.path.join(app.config['UPLOAD_DIR'], product.image)
-        if os.path.exists(old_path):
-            os.remove(old_path)
-    db.session.delete(product)
+    action, reference_count, image_filename = _retire_or_delete_product(product)
     db.session.commit()
-    flash('产品已删除。', 'success')
+    if action == 'disabled':
+        flash(f'产品已有 {reference_count} 条 PI 明细引用，已停用并保留历史数据。', 'warning')
+    else:
+        _remove_product_image_if_unused(image_filename)
+        flash('产品未被业务引用，已删除。', 'success')
     return redirect(url_for('product_list'))
 
 
@@ -2852,20 +2950,28 @@ def product_batch_delete():
     if not ids_str:
         flash('未选择产品。', 'danger')
         return redirect(url_for('product_list'))
-    ids = [int(i) for i in ids_str.split(',') if i.strip().isdigit()]
+    ids = list(dict.fromkeys(
+        int(i) for i in ids_str.split(',') if i.strip().isdigit()
+    ))
     if not ids:
         flash('没有有效的产品编号。', 'danger')
         return redirect(url_for('product_list'))
+    disabled_count = 0
+    deleted_count = 0
+    deleted_images = []
     for pid in ids:
         product = Product.query.get(pid)
         if product:
-            if product.image:
-                old_path = os.path.join(app.config['UPLOAD_DIR'], product.image)
-                if os.path.exists(old_path):
-                    os.remove(old_path)
-            db.session.delete(product)
+            action, _reference_count, image_filename = _retire_or_delete_product(product)
+            if action == 'disabled':
+                disabled_count += 1
+            else:
+                deleted_count += 1
+                deleted_images.append(image_filename)
     db.session.commit()
-    flash(f'{len(ids)} products deleted.', 'success')
+    for image_filename in set(deleted_images):
+        _remove_product_image_if_unused(image_filename)
+    flash(f'处理完成：停用 {disabled_count} 个有业务引用的产品，删除 {deleted_count} 个未引用产品。', 'success')
     return redirect(url_for('product_list'))
 
 
@@ -2894,16 +3000,22 @@ def api_product_add():
         image=_save_upload(image_file) if image_file else '',
     )
     if not product.name:
+        _remove_upload(product.image)
         return jsonify({'success': False, 'error': '产品名称不能为空。'}), 400
 
-    db.session.add(product)
-    db.session.flush()
-    _audit('create', 'product', product.id, f'快速新增产品：{product.name}',
-           after=_snapshot(product, [
-               'name', 'chinese_name', 'product_code', 'specification',
-               'unit_price', 'unit_price_rmb', 'notes', 'image',
-           ]))
-    db.session.commit()
+    try:
+        db.session.add(product)
+        db.session.flush()
+        _audit('create', 'product', product.id, f'快速新增产品：{product.name}',
+               after=_snapshot(product, [
+                   'name', 'chinese_name', 'product_code', 'specification',
+                   'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+               ]))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        _remove_upload(product.image)
+        raise
 
     return jsonify({
         'success': True,
@@ -2932,7 +3044,7 @@ def api_product_search():
             'img': product.image or '',
         }
 
-    query = Product.query
+    query = Product.query.filter(Product.active.is_(True))
     if q:
         pattern = f'%{q}%'
         query = query.filter(db.or_(
@@ -3007,6 +3119,7 @@ def api_product_copy(id):
     # Generate unique name and code to avoid conflicts
     new_name = original.name + ' (Copy)'
     new_code = original.product_code + '_copy' if original.product_code else 'copy'
+    new_image = _copy_product_image(original.image)
     new_product = Product(
         name=new_name,
         product_code=new_code,
@@ -3015,10 +3128,22 @@ def api_product_copy(id):
         unit_price=original.unit_price,
         unit_price_rmb=original.unit_price_rmb,
         notes=original.notes,
-        image=original.image,  # share the same image file
+        image=new_image,
     )
-    db.session.add(new_product)
-    db.session.commit()
+    try:
+        db.session.add(new_product)
+        db.session.flush()
+        _audit('copy', 'product', new_product.id,
+               f'复制产品：{original.name} → {new_product.name}',
+               after=_snapshot(new_product, [
+                   'name', 'chinese_name', 'product_code', 'specification',
+                   'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+               ]))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        _remove_upload(new_image)
+        raise
     return jsonify({
         'success': True,
         'product': new_product.to_dict(),
@@ -3028,15 +3153,33 @@ def api_product_copy(id):
 @app.route('/api/products/<int:id>/delete', methods=['POST'])
 @admin_required
 def api_product_delete(id):
-    """AJAX delete product."""
+    """Disable referenced products; delete only products without PI history."""
     product = Product.query.get_or_404(id)
-    if product.image:
-        old_path = os.path.join(app.config['UPLOAD_DIR'], product.image)
-        if os.path.exists(old_path):
-            os.remove(old_path)
-    db.session.delete(product)
+    action, reference_count, image_filename = _retire_or_delete_product(product)
     db.session.commit()
-    return jsonify({'success': True})
+    if action == 'deleted':
+        _remove_product_image_if_unused(image_filename)
+        message = '产品未被业务引用，已删除。'
+    else:
+        message = f'产品已有 {reference_count} 条 PI 明细引用，已停用。'
+    return jsonify({
+        'success': True,
+        'action': action,
+        'reference_count': reference_count,
+        'message': message,
+    })
+
+
+@app.route('/api/products/<int:id>/enable', methods=['POST'])
+@admin_required
+def api_product_enable(id):
+    product = Product.query.get_or_404(id)
+    before = _snapshot(product, ['name', 'product_code', 'active'])
+    product.active = True
+    _audit('enable', 'product', product.id, f'重新启用产品：{product.name}',
+           before=before, after=_snapshot(product, ['name', 'product_code', 'active']))
+    db.session.commit()
+    return jsonify({'success': True, 'message': '产品已重新启用。'})
 
 
 @app.route('/api/translate', methods=['POST'])
@@ -4373,10 +4516,10 @@ def packing_list_index():
         'salesperson',
     )
     query = _apply_report_filters(query, salesperson_filter, date_from, date_to)
-    # Unpaid PIs do not need a new packing list.  Keep an already-created
-    # historical packing list visible so it can still be reviewed/exported.
+    # A first payment opens packing work. Keep an already-created historical
+    # packing list visible so it can still be reviewed/exported after reversal.
     query = query.outerjoin(PackingList).filter(
-        (PI.paid.is_(True)) | (PackingList.id.isnot(None))
+        (func.coalesce(PI.received_amount, 0) > 0) | (PackingList.id.isnot(None))
     )
     if status_filter == 'unsaved':
         query = query.filter(PackingList.id.is_(None))
@@ -4401,15 +4544,16 @@ def packing_list_detail(pi_id):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    if packing_list is None and not pi.paid:
-        flash('PI 尚未付清，不需要创建装箱单。', 'warning')
+    has_payment = (pi.received_amount or 0) > 0
+    if packing_list is None and not has_payment:
+        flash('PI 尚未回款，不能创建装箱单。', 'warning')
         return redirect(url_for('packing_list_index'))
     data = _packing_list_payload(
         pi, packing_list,
-        prefill=is_admin() and pi.paid and packing_list is None,
+        prefill=is_admin() and has_payment and packing_list is None,
     )
     edit_mode = bool(
-        is_admin() and pi.paid and (
+        is_admin() and has_payment and (
             packing_list is None
             or not packing_list.is_completed
             or request.args.get('edit') == '1'
@@ -4425,10 +4569,10 @@ def packing_list_detail(pi_id):
 @admin_required
 def packing_list_save(pi_id):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
-    if not pi.paid:
+    if (pi.received_amount or 0) <= 0:
         return jsonify({
             'success': False,
-            'error': 'PI 尚未付清，不能创建或修改装箱单。',
+            'error': 'PI 尚未回款，不能创建或修改装箱单。',
         }), 409
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -5253,7 +5397,10 @@ def pi_edit(id):
         except ValueError:
             issue_date = pi.issue_date
 
-        selected_items, total_amount = _submitted_pi_items(request.form)
+        selected_items, total_amount = _submitted_pi_items(
+            request.form,
+            allow_inactive_ids={item.product_id for item in existing_items},
+        )
 
         if not selected_items:
             flash('请至少选择一个产品。', 'danger')

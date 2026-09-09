@@ -456,6 +456,140 @@ class SecuritySmokeTests(unittest.TestCase):
         legacy_product = next(item for item in legacy if item['name'] == 'Original Product')
         self.assertEqual(legacy_product['code'], 'ORIG')
 
+    def test_referenced_product_is_disabled_and_can_be_enabled(self):
+        self.login('admin-test')
+        image_name = 'referenced-product.png'
+        image_path = os.path.join(application.app.config['UPLOAD_DIR'], image_name)
+        with open(image_path, 'wb') as image_file:
+            image_file.write(b'product-image')
+
+        with application.app.app_context():
+            customer = Customer(name='Product Retire Customer', salesperson='Alice')
+            product = Product(
+                name='Referenced Product To Retire',
+                product_code='REF-RETIRE',
+                unit_price=3,
+                image=image_name,
+            )
+            pi = PI(
+                pi_number='PI-PRODUCT-RETIRE', customer=customer,
+                salesperson='Alice', currency='USD', exchange_rate=7,
+                total_amount=3,
+            )
+            db.session.add_all([customer, product, pi])
+            db.session.flush()
+            db.session.add(PIItem(
+                pi_id=pi.id, product_id=product.id,
+                quantity=1, unit_price=3, amount=3,
+            ))
+            db.session.commit()
+            product_id = product.id
+            pi_id = pi.id
+
+        response = self.client.post(
+            f'/api/products/{product_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['action'], 'disabled')
+        self.assertEqual(response.get_json()['reference_count'], 1)
+        self.assertTrue(os.path.isfile(image_path))
+
+        with application.app.app_context():
+            product = db.session.get(Product, product_id)
+            self.assertIsNotNone(product)
+            self.assertFalse(product.active)
+            self.assertEqual(PIItem.query.filter_by(product_id=product_id).count(), 1)
+
+        search = self.client.get('/api/products/search?q=REF-RETIRE').get_json()
+        self.assertEqual(search, [])
+
+        enabled = self.client.post(
+            f'/api/products/{product_id}/enable',
+            headers={'X-CSRFToken': self.token('/products?filter=inactive')},
+        )
+        self.assertEqual(enabled.status_code, 200)
+        self.assertTrue(enabled.get_json()['success'])
+        self.assertEqual(
+            [item['product_code'] for item in self.client.get(
+                '/api/products/search?q=REF-RETIRE'
+            ).get_json()],
+            ['REF-RETIRE'],
+        )
+
+        with application.app.app_context():
+            PIItem.query.filter_by(product_id=product_id).delete()
+            db.session.delete(db.session.get(PI, pi_id))
+            db.session.delete(db.session.get(Product, product_id))
+            db.session.commit()
+        os.remove(image_path)
+
+    def test_unreferenced_shared_product_image_is_removed_only_after_last_product(self):
+        self.login('admin-test')
+        image_name = 'legacy-shared-product.png'
+        image_path = os.path.join(application.app.config['UPLOAD_DIR'], image_name)
+        with open(image_path, 'wb') as image_file:
+            image_file.write(b'legacy-shared-image')
+
+        with application.app.app_context():
+            first = Product(name='Legacy Shared First', product_code='SHARED-1', image=image_name)
+            second = Product(name='Legacy Shared Second', product_code='SHARED-2', image=image_name)
+            db.session.add_all([first, second])
+            db.session.commit()
+            first_id, second_id = first.id, second.id
+
+        first_delete = self.client.post(
+            f'/api/products/{first_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(first_delete.get_json()['action'], 'deleted')
+        self.assertTrue(os.path.isfile(image_path))
+
+        second_delete = self.client.post(
+            f'/api/products/{second_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(second_delete.get_json()['action'], 'deleted')
+        self.assertFalse(os.path.exists(image_path))
+
+    def test_product_copy_owns_an_independent_image_file(self):
+        self.login('admin-test')
+        image_name = 'copy-source-product.png'
+        image_path = os.path.join(application.app.config['UPLOAD_DIR'], image_name)
+        with open(image_path, 'wb') as image_file:
+            image_file.write(b'copy-source-image')
+
+        with application.app.app_context():
+            source = Product(name='Copy Image Source', product_code='COPY-IMAGE', image=image_name)
+            db.session.add(source)
+            db.session.commit()
+            source_id = source.id
+
+        copied = self.client.post(
+            f'/api/products/{source_id}/copy',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(copied.status_code, 200)
+        copied_product = copied.get_json()['product']
+        self.assertNotEqual(copied_product['image'], image_name)
+        copied_path = os.path.join(application.app.config['UPLOAD_DIR'], copied_product['image'])
+        self.assertTrue(os.path.isfile(copied_path))
+        self.assertTrue(os.path.isfile(image_path))
+
+        deleted_copy = self.client.post(
+            f"/api/products/{copied_product['id']}/delete",
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(deleted_copy.get_json()['action'], 'deleted')
+        self.assertFalse(os.path.exists(copied_path))
+        self.assertTrue(os.path.isfile(image_path))
+
+        self.client.post(
+            f'/api/products/{source_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertFalse(os.path.exists(image_path))
+
     def test_pi_rate_defaults_from_settings_but_existing_pi_keeps_its_rate(self):
         with application.app.app_context():
             original_settings = application._load_settings().copy()
@@ -2116,6 +2250,7 @@ class SecuritySmokeTests(unittest.TestCase):
         second_admin_id = None
         packing_list_id = None
         original_paid = None
+        original_received_amount = None
 
         def client_token(client, path):
             html = client.get(path).get_data(as_text=True)
@@ -2137,7 +2272,9 @@ class SecuritySmokeTests(unittest.TestCase):
             with application.app.app_context():
                 pi = db.session.get(PI, self.alice_pi)
                 original_paid = bool(pi.paid)
+                original_received_amount = float(pi.received_amount or 0)
                 pi.paid = False
+                pi.received_amount = 0
                 second_product = Product(
                     name='Packing Product', product_code='PACK',
                     specification='Packing spec', unit_price=4,
@@ -2198,10 +2335,12 @@ class SecuritySmokeTests(unittest.TestCase):
                 headers={'X-CSRFToken': self.token('/packing-lists')},
             )
             self.assertEqual(response.status_code, 409)
-            self.assertIn('尚未付清', response.get_json()['error'])
+            self.assertIn('尚未回款', response.get_json()['error'])
 
             with application.app.app_context():
-                db.session.get(PI, self.alice_pi).paid = True
+                pi = db.session.get(PI, self.alice_pi)
+                pi.paid = False
+                pi.received_amount = 1
                 db.session.commit()
 
             index = self.client.get('/packing-lists')
@@ -2408,10 +2547,12 @@ class SecuritySmokeTests(unittest.TestCase):
             )
             self.assertEqual(stale.status_code, 409)
 
-            # If a previously-paid PI is later marked unpaid, retain its
+            # If all payments are later removed, retain its
             # historical packing list for read/export but lock all changes.
             with application.app.app_context():
-                db.session.get(PI, self.alice_pi).paid = False
+                pi = db.session.get(PI, self.alice_pi)
+                pi.paid = False
+                pi.received_amount = 0
                 db.session.commit()
             history_detail = self.client.get(f'/packing-list/{self.alice_pi}')
             self.assertEqual(history_detail.status_code, 200)
@@ -2424,9 +2565,11 @@ class SecuritySmokeTests(unittest.TestCase):
                 headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
             )
             self.assertEqual(locked.status_code, 409)
-            self.assertIn('尚未付清', locked.get_json()['error'])
+            self.assertIn('尚未回款', locked.get_json()['error'])
             with application.app.app_context():
-                db.session.get(PI, self.alice_pi).paid = True
+                pi = db.session.get(PI, self.alice_pi)
+                pi.paid = True
+                pi.received_amount = pi.grand_total
                 db.session.commit()
 
             bob = login_client('bob-login', 'StrongPass123!')
@@ -2498,6 +2641,7 @@ class SecuritySmokeTests(unittest.TestCase):
                     pi = db.session.get(PI, self.alice_pi)
                     if pi:
                         pi.paid = original_paid
+                        pi.received_amount = original_received_amount
                 db.session.commit()
 
     @unittest.skipUnless(find_soffice(), 'LibreOffice is only required on the production server')

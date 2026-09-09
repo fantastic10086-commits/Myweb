@@ -35,7 +35,9 @@
     </div>
     <div class="col-md-4 text-md-end">
         <div class="btn-group btn-group-sm">
-            <a href="{{ url_for('product_list', search=search) }}" class="btn btn-outline-secondary {% if not filter %}active{% endif %}">全部</a>
+            <a href="{{ url_for('product_list', search=search) }}" class="btn btn-outline-success {% if not filter %}active{% endif %}">启用中</a>
+            <a href="{{ url_for('product_list', search=search, filter='inactive') }}" class="btn btn-outline-secondary {% if filter=='inactive' %}active{% endif %}">已停用</a>
+            <a href="{{ url_for('product_list', search=search, filter='all') }}" class="btn btn-outline-secondary {% if filter=='all' %}active{% endif %}">全部</a>
             <a href="{{ url_for('product_list', search=search, filter='no_image') }}" class="btn btn-outline-warning {% if filter=='no_image' %}active{% endif %}">
                 <i class="bi bi-image"></i> 无图片
             </a>
@@ -76,7 +78,7 @@
             <div id="batchBar" class="bg-light border-bottom px-3 py-2 d-none align-items-center gap-2">
                 <span class="small me-2"><strong id="batchCount">0</strong> 个已选择</span>
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchDelete()">
-                    <i class="bi bi-trash"></i> 删除所选
+                    <i class="bi bi-trash"></i> 删除/停用所选
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
                     清除
@@ -122,10 +124,10 @@
                     </thead>
                     <tbody id="productTbody">
                         {% for p in products %}
-                        <tr id="row-{{ p.id }}">
+                        <tr id="row-{{ p.id }}" class="{% if not p.active %}table-secondary{% endif %}">
                             <td><input type="checkbox" class="form-check-input product-check" value="{{ p.id }}" onchange="updateBatchBar()"></td>
                             <td>{% if p.image %}<img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                            <td class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</td>
+                            <td><span class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</span>{% if not p.active %} <span class="badge text-bg-secondary">已停用</span>{% endif %}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="chinese_name">{{ p.chinese_name }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="product_code">{{ p.product_code }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="specification">{{ p.specification }}</td>
@@ -143,7 +145,8 @@
                                 {% if is_admin %}
                                 <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
                                 <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
-                                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
+                                {% if not p.active %}<button type="button" class="btn btn-sm btn-outline-success" title="重新启用" onclick="enableProduct({{ p.id }})"><i class="bi bi-arrow-counterclockwise"></i></button>{% endif %}
+                                <button type="button" class="btn btn-sm btn-outline-danger" title="删除或停用" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
                                 {% else %}<span class="text-muted">仅查看</span>{% endif %}
                             </td>
                         </tr>
@@ -258,7 +261,7 @@ function updateBatchBar() {
 function batchDelete() {
     var checks = document.querySelectorAll('.product-check:checked');
     if (checks.length === 0) return;
-    if (!confirm('删除 ' + checks.length + ' 个已选择 products? This cannot be undone.')) return;
+    if (!confirm('处理 ' + checks.length + ' 个已选择产品？\n\n有 PI 业务引用的产品会停用并保留历史数据；没有任何业务引用的产品才会彻底删除。')) return;
     var ids = [];
     for (var i = 0; i < checks.length; i++) { ids.push(checks[i].value); }
     document.getElementById('batchIds').value = ids.join(',');
@@ -583,16 +586,30 @@ document.addEventListener('click', function(e) {
 
 // ── 删除 Product (AJAX) ──
 function deleteProduct(id, name) {
-    if (!confirm('删除 product ' + name + '?')) return;
+    if (!confirm('处理产品“' + name + '”？\n\n有 PI 业务引用时只会停用；没有任何业务引用时会彻底删除。')) return;
     fetch('/api/products/' + id + '/delete', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
                 var row = document.getElementById('row-' + id);
                 if (row) { row.style.display = 'none'; }
-                flashToast('已删除', 'success');
+                flashToast(data.message || (data.action === 'disabled' ? '已停用' : '已删除'), 'success');
             } else {
                 flashToast(data.error || '删除失败。', 'danger');
+            }
+        }).catch(function() { flashToast('网络错误。', 'danger'); });
+}
+
+function enableProduct(id) {
+    fetch('/api/products/' + id + '/enable', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var row = document.getElementById('row-' + id);
+                if (row) { row.style.display = 'none'; }
+                flashToast(data.message || '产品已重新启用。', 'success');
+            } else {
+                flashToast(data.error || '启用失败。', 'danger');
             }
         }).catch(function() { flashToast('网络错误。', 'danger'); });
 }
