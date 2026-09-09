@@ -2359,6 +2359,7 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('将全部剩余数量放入当前箱', editor_html)
             self.assertIn('id="packingTargetLabel"', editor_html)
             self.assertIn('packing-inline-quantity', editor_html)
+            self.assertNotIn('产品备注（可选）', editor_html)
             self.assertIn('清空当前箱产品', editor_html)
             self.assertIn('class="col-xl-7"', editor_html)
             self.assertIn('class="col-xl-1"', editor_html)

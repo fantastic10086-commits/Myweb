@@ -206,8 +206,8 @@
             </div>
             <div class="table-responsive">
                 <table class="table table-sm packing-readonly-table mb-0">
-                    <thead class="table-light"><tr><th>产品</th><th>产品编码</th><th>规格</th><th class="text-end">装箱数量</th><th>产品备注</th></tr></thead>
-                    <tbody>{% for item in box.items %}<tr><td class="fw-bold">{{ item.product_name }}</td><td>{{ item.product_code or '-' }}</td><td>{{ item.specification or '-' }}</td><td class="text-end">{{ item.quantity }}</td><td>{{ item.note or '-' }}</td></tr>{% endfor %}</tbody>
+                    <thead class="table-light"><tr><th>产品</th><th>产品编码</th><th>规格</th><th class="text-end">装箱数量</th></tr></thead>
+                    <tbody>{% for item in box.items %}<tr><td class="fw-bold">{{ item.product_name }}</td><td>{{ item.product_code or '-' }}</td><td>{{ item.specification or '-' }}</td><td class="text-end">{{ item.quantity }}</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
         </div>
@@ -435,8 +435,7 @@
                 qty.addEventListener('change',renderPendingProducts); qtyTd.append(qtyLabel,qty);
                 const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger mt-4'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();});
                 topRow.append(productTd,qtyTd,removeItem);
-                const note=document.createElement('input'); note.type='text'; note.maxLength=500; note.className='form-control form-control-sm mt-2'; note.value=item.note || ''; note.placeholder='产品备注（可选）'; note.addEventListener('input',()=>{item.note=note.value;});
-                itemCard.append(topRow,note); itemList.append(itemCard);
+                itemCard.append(topRow); itemList.append(itemCard);
             });
             if (!box.items.length) {
                 const empty = document.createElement('div'); empty.className = 'packing-empty-state py-4'; empty.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，请从左侧选择一个或多个产品。'; itemList.append(empty);
