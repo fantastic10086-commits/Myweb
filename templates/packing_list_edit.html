@@ -28,14 +28,22 @@
     .packing-min-width-0 { min-width: 0; }
     .packing-box-item { border: 1px solid #dee2e6; border-radius: .5rem; padding: .65rem; background: #fff; }
     .packing-box-item + .packing-box-item { margin-top: .55rem; }
+    .packing-transfer-panel { position:sticky; top:8rem; display:flex; flex-direction:column; align-items:stretch; gap:.65rem; }
+    .packing-transfer-arrow { font-size:1.1rem; }
+    .packing-inline-quantity { width:135px; flex:0 0 135px; }
     .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
     .packing-readonly-table td, .packing-readonly-table th { vertical-align:middle; }
     @media (max-width: 1199.98px) {
         .packing-unallocated-panel, .packing-boxes-panel { position: static; }
         .packing-pending-list, .packing-boxes-scroll { max-height: none; }
+        .packing-transfer-panel { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; }
+        .packing-transfer-panel .btn { flex:1 1 180px; }
+        .packing-transfer-arrow { transform:rotate(90deg); display:inline-block; }
     }
     @media (max-width: 767.98px) {
         .packing-overview-stat { border-left: 0; padding-left: 0; min-width: 92px; }
+        .packing-pending-item .d-flex { flex-wrap:wrap; }
+        .packing-inline-quantity { width:100%; flex-basis:100%; margin-left:4.4rem; }
     }
 </style>
 {% endblock %}
@@ -126,8 +134,6 @@
                 <span id="packingPendingCount" class="badge bg-secondary">0 项</span>
             </div>
             <div class="card-body">
-                <label class="form-label small text-muted">批量加入到</label>
-                <select id="packingTargetBox" class="form-select form-select-sm mb-3"></select>
                 <div class="input-group input-group-sm mb-2">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input id="packingProductSearch" type="search" class="form-control" placeholder="搜索品名、编码或规格">
@@ -137,17 +143,23 @@
                     <span class="small text-muted">完整 PI，不显示价格</span>
                 </div>
                 <div id="packingPendingProducts" class="packing-pending-list mb-3"></div>
-                <button type="button" id="batchAddProducts" class="btn btn-primary w-100 mb-2">
-                    <i class="bi bi-plus-lg"></i> 加入所选产品
-                </button>
-                <button type="button" id="addAllRemainingProducts" class="btn btn-outline-primary w-100">
-                    <i class="bi bi-box-arrow-in-down"></i> 全部剩余加入当前箱
-                </button>
                 <div class="small text-muted mt-2">全部产品始终保留；数量已全部分配的产品会变灰并禁止继续选择。</div>
             </div>
         </div>
     </div>
-    <div class="col-xl-5">
+    <div class="col-xl-1">
+        <div class="packing-transfer-panel mb-3">
+            <select id="packingTargetBox" class="d-none" aria-hidden="true"></select>
+            <div id="packingTargetLabel" class="small text-center text-muted">目标：第 1 箱</div>
+            <button type="button" id="batchAddProducts" class="btn btn-primary px-2">
+                放入<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>
+            </button>
+            <button type="button" id="addAllRemainingProducts" class="btn btn-sm btn-outline-primary px-1" title="将全部剩余数量放入当前箱">
+                全部<br>放入
+            </button>
+        </div>
+    </div>
+    <div class="col-xl-4">
         <div class="packing-boxes-panel">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <strong><i class="bi bi-box-seam me-1"></i>箱子与已分配产品</strong>
@@ -221,6 +233,7 @@
     const pendingProducts = document.getElementById('packingPendingProducts');
     const pendingCount = document.getElementById('packingPendingCount');
     const productSearch = document.getElementById('packingProductSearch');
+    const targetLabel = document.getElementById('packingTargetLabel');
 
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -312,7 +325,10 @@
             targetBoxSelect.append(option);
         });
         const batchButton = document.getElementById('batchAddProducts');
-        if (batchButton && boxes[selectedTargetBox]) batchButton.innerHTML = `<i class="bi bi-arrow-right-circle"></i> 加入第 ${selectedTargetBox + 1} 箱`;
+        if (boxes[selectedTargetBox]) {
+            targetLabel.textContent = `目标：第 ${selectedTargetBox + 1} 箱`;
+            if (batchButton) batchButton.innerHTML = `放入第 ${selectedTargetBox + 1} 箱<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>`;
+        }
     }
 
     function renderPendingProducts() {
@@ -352,14 +368,15 @@
             const name = document.createElement('div'); name.className = 'fw-bold text-truncate'; name.title = product.name || '未命名产品'; name.textContent = product.name || '未命名产品';
             const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = [product.product_code, product.specification].filter(Boolean).join(' · ') || '无编码和规格';
             const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : product.remaining === 0 ? `PI ${product.quantity} · 已全部分配` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
-            content.append(name, code, state); top.append(check, sequence, thumb, content); card.append(top);
+            content.append(name, code, state); top.append(check, sequence, thumb, content);
             if (product.remaining > 0) {
-                const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm mt-2';
-                const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '加入';
+                const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm packing-inline-quantity';
+                const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '数量';
                 const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(product.remaining); qty.step = '1'; qty.value = String(product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id);
                 const unit = document.createElement('span'); unit.className = 'input-group-text'; unit.textContent = '件';
-                qtyWrap.append(label, qty, unit); card.append(qtyWrap);
+                qtyWrap.append(label, qty, unit); top.append(qtyWrap);
             }
+            card.append(top);
             pendingProducts.append(card);
         });
     }
