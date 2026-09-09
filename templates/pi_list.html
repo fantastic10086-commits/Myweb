@@ -1,80 +1,135 @@
 {% extends "base.html" %}
-{% block title %}PI List{% endblock %}
+{% block title %}PI 列表{% endblock %}
+
+{% block extra_head %}
+<style>
+    .pi-list-table-wrap { overflow: visible; }
+    .pi-list-actions { white-space: nowrap; }
+    .pi-list-actions .dropdown-menu { min-width: 13rem; }
+    .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
+    @media (max-width: 991.98px) {
+        .pi-list-table-wrap { overflow-x: auto; overflow-y: visible; }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
-        <h2><i class="bi bi-files me-2"></i>Proforma Invoices</h2>
+        <h2><i class="bi bi-files me-2"></i>形式发票</h2>
     </div>
     <div class="col-md-6 text-md-end">
         <a href="{{ url_for('pi_create') }}" class="btn btn-info">
-            <i class="bi bi-file-earmark-plus"></i> Create New PI
+            <i class="bi bi-file-earmark-plus"></i> 新建 PI
         </a>
     </div>
 </div>
 
-<!-- Filter Bar -->
+<div id="expensePageAlert" class="alert alert-success alert-dismissible fade show d-none" role="alert">
+    <span id="expensePageAlertText"></span>
+    <button type="button" class="btn-close" aria-label="关闭" onclick="this.parentElement.classList.add('d-none')"></button>
+</div>
+
+<!-- 筛选 Bar -->
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-3">
-                <label class="form-label small mb-1">Salesperson</label>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">业务员</label>
                 <select class="form-select form-select-sm" name="salesperson">
-                    <option value="">— All —</option>
+                    <option value="">— 全部 —</option>
                     {% for sp in all_salespersons %}
                     <option value="{{ sp.name }}" {% if salesperson_filter == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-1">Date From</label>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-1">Date To</label>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel"></i> Filter</button>
-                {% if salesperson_filter or date_from or date_to %}
-                <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary w-100 mt-1">Clear</a>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">回款状态</label>
+                <select class="form-select form-select-sm" name="payment_status">
+                    <option value="">— 全部 —</option>
+                    <option value="unpaid" {% if payment_status == 'unpaid' %}selected{% endif %}>未回款</option>
+                    <option value="partial" {% if payment_status == 'partial' %}selected{% endif %}>部分回款</option>
+                    <option value="paid" {% if payment_status == 'paid' %}selected{% endif %}>已付清</option>
+                </select>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">订单进度</label>
+                <select class="form-select form-select-sm" name="order_status">
+                    <option value="">— 全部 —</option>
+                    <option value="unpaid" {% if order_status == 'unpaid' %}selected{% endif %}>未回款</option>
+                    <option value="pending" {% if order_status == 'pending' %}selected{% endif %}>待采购</option>
+                    <option value="partial" {% if order_status == 'partial' %}selected{% endif %}>部分采购</option>
+                    <option value="purchased" {% if order_status == 'purchased' %}selected{% endif %}>采购完成</option>
+                    <option value="shipped" {% if order_status == 'shipped' %}selected{% endif %}>发货完成</option>
+                </select>
+            </div>
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label small mb-1">报关登记情况</label>
+                <select class="form-select form-select-sm" name="customs_status">
+                    <option value="">— 全部 —</option>
+                    <option value="unregistered" {% if customs_status == 'unregistered' %}selected{% endif %}>未登记</option>
+                    <option value="required" {% if customs_status == 'required' %}selected{% endif %}>需要报关</option>
+                    <option value="not_required" {% if customs_status == 'not_required' %}selected{% endif %}>无需报关</option>
+                </select>
+            </div>
+            <div class="col-12 d-flex justify-content-end gap-2">
+                {% if salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+                <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">清除筛选</a>
                 {% endif %}
+                <button type="submit" class="btn btn-sm btn-primary px-4"><i class="bi bi-funnel"></i> 筛选</button>
             </div>
         </form>
     </div>
 </div>
 
-{% if salesperson_filter or date_from or date_to %}
+{% if salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
 <div class="alert alert-info py-2 small">
-    <strong>{{ pis|length }}</strong> PI(s) found
-    {% if salesperson_filter %}for <strong>{{ salesperson_filter }}</strong>{% endif %}
-    {% if date_from %}from <strong>{{ date_from }}</strong>{% endif %}
-    {% if date_to %}to <strong>{{ date_to }}</strong>{% endif %}
-    &nbsp;|&nbsp; Total: <strong>${{ '%.2f'|format(filtered_total) }}</strong>
+    共找到 <strong>{{ pis|length }}</strong> 份 PI
+    {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
+    {% if date_from %}，开始日期：<strong>{{ date_from }}</strong>{% endif %}
+    {% if date_to %}，结束日期：<strong>{{ date_to }}</strong>{% endif %}
+    {% if payment_status %}，回款状态：<strong>{{ payment_status_label }}</strong>{% endif %}
+    {% if order_status %}，订单进度：<strong>{{ order_status_label }}</strong>{% endif %}
+    {% if customs_status %}，报关登记：<strong>{{ customs_status_label }}</strong>{% endif %}
+    &nbsp;|&nbsp; 订单总金额：
+    {% if filtered_totals.USD %}<strong>${{ '%.2f'|format(filtered_totals.USD) }}</strong>{% endif %}
+    {% if filtered_totals.USD and filtered_totals.RMB %} + {% endif %}
+    {% if filtered_totals.RMB %}<strong>¥{{ '%.2f'|format(filtered_totals.RMB) }}</strong>{% endif %}
 </div>
 {% endif %}
 
 <div class="card">
     <div class="card-body p-0">
         {% if pis %}
-        <div class="table-responsive">
+        <div class="table-responsive pi-list-table-wrap">
             <table class="table table-hover mb-0 align-middle">
                 <thead class="table-light">
                     <tr>
-                        <th>PI Number</th>
-                        <th>Customer</th>
-                        <th>Salesperson</th>
-                        <th>Date</th>
-                        <th class="text-end">Total</th>
-                        <th>Paid</th>
-                        <th>Files</th>
-                        <th class="text-end">Actions</th>
+                        <th>PI 编号</th>
+                        <th>客户</th>
+                        <th>业务员</th>
+                        <th>日期</th>
+                        <th class="text-end">订单总金额</th>
+                        <th>回款状态</th>
+                        <th>订单进度</th>
+                        <th class="text-end">操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for pi in pis %}
                     <tr>
-                        <td><strong>{{ pi.pi_number }}</strong></td>
+                        <td>
+                            <a href="{{ url_for('pi_detail', id=pi.id) }}" class="text-decoration-none fw-bold"
+                               title="预览 {{ pi.pi_number }}">{{ pi.pi_number }}</a>
+                        </td>
                         <td>
                             {% if pi.customer %}
                             <a href="{{ url_for('customer_detail', id=pi.customer.id) }}" class="text-decoration-none fw-bold">{{ pi.customer.name }}</a>
@@ -84,30 +139,137 @@
                         </td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount + (pi.shipping_cost or 0)) }}</td>
+                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</td>
                         <td class="text-center">
                             {% set total_received = pi.received_amount or 0 %}
                             {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
                             {% if pi.paid %}
-                            <button type="button" class="btn btn-sm btn-success" onclick="viewPayments({{ pi.id }})" title="Fully Paid: {{ sym }}{{ '%.2f'|format(total_received) }} of {{ sym }}{{ '%.2f'|format(pi.total_amount) }}">✓</button>
+                            <span class="badge bg-success" title="已全额回款：{{ sym }}{{ '%.2f'|format(total_received) }} / {{ sym }}{{ '%.2f'|format(pi.grand_total) }}">已付清</span>
                             {% elif total_received > 0 %}
-                            <button type="button" class="btn btn-sm btn-warning" onclick="viewPayments({{ pi.id }})" title="Partial: {{ sym }}{{ '%.2f'|format(total_received) }} of {{ sym }}{{ '%.2f'|format(pi.total_amount) }}">◐</button>
+                            <span class="badge bg-warning text-dark" title="部分回款：{{ sym }}{{ '%.2f'|format(total_received) }} / {{ sym }}{{ '%.2f'|format(pi.grand_total) }}">部分回款</span>
                             {% else %}
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="confirmPayment({{ pi.id }}, {{ pi.total_amount + (pi.shipping_cost or 0) }}, '{{ pi.currency or 'USD' }}')">Confirm</button>
+                            <span class="badge bg-secondary">未回款</span>
                             {% endif %}
                         </td>
                         <td>
-                            {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-danger me-1" title="PDF"><i class="bi bi-file-pdf"></i></a>{% endif %}
-                            {% if not pi.pdf_path %}<span class="badge bg-secondary">—</span>{% endif %}
+                            {% set procurement_status = pi.effective_procurement_status %}
+                            {% if procurement_status == '发货完成' %}
+                            <span id="orderStatus-{{ pi.id }}" class="badge bg-success">发货完成</span>
+                            {% elif procurement_status == '采购完成' %}
+                            <span id="orderStatus-{{ pi.id }}" class="badge bg-primary">采购完成</span>
+                            {% elif procurement_status == '部分采购' %}
+                            <span id="orderStatus-{{ pi.id }}" class="badge bg-info text-dark">部分采购</span>
+                            {% elif procurement_status == '待采购' %}
+                            <span id="orderStatus-{{ pi.id }}" class="badge bg-warning text-dark">待采购</span>
+                            {% else %}
+                            <span id="orderStatus-{{ pi.id }}" class="badge bg-secondary">{{ procurement_status }}</span>
+                            {% endif %}
                         </td>
-                        <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
-                            <a href="{{ url_for('pi_live_edit', id=pi.id) }}" class="btn btn-sm btn-outline-success">Live Edit</a>
-                            <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
-                            <form action="{{ url_for('pi_delete', id=pi.id) }}" method="post" class="d-inline"
-                                  onsubmit="return confirm('Delete PI {{ pi.pi_number }}? This cannot be undone.');">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                            </form>
+                        <td class="text-end pi-list-actions">
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                        data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
+                                    业务处理
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end text-start">
+                                    {% if pi.paid or total_received > 0 %}
+                                    <li>
+                                        <button type="button" class="dropdown-item" onclick="viewPayments({{ pi.id }})">
+                                            <i class="bi bi-cash-coin text-success"></i>查看回款记录
+                                        </button>
+                                    </li>
+                                    {% else %}
+                                    <li>
+                                        <button type="button" class="dropdown-item" onclick="confirmPayment({{ pi.id }}, {{ pi.grand_total }}, '{{ pi.currency or 'USD' }}', {{ payment_account_ids.get(pi.id)|tojson }})">
+                                            <i class="bi bi-cash-coin"></i>登记回款
+                                        </button>
+                                    </li>
+                                    {% endif %}
+
+                                    {% if procurement_status == '采购完成' %}
+                                    <li>
+                                        <button type="button" id="shippingBtn-{{ pi.id }}" class="dropdown-item"
+                                                onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                                title="采购已完成，点击登记发货">
+                                            <i class="bi bi-truck"></i>登记发货
+                                        </button>
+                                    </li>
+                                    {% elif procurement_status == '发货完成' %}
+                                    <li>
+                                        <button type="button" id="shippingBtn-{{ pi.id }}" class="dropdown-item"
+                                                onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                                title="点击查看发货记录">
+                                            <i class="bi bi-truck text-success"></i>查看发货记录
+                                        </button>
+                                    </li>
+                                    {% endif %}
+
+                                    {% if pi.packing_list %}
+                                    {% set packing_can_edit = is_admin and pi.paid %}
+                                    <li>
+                                        <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
+                                            <i class="bi {{ 'bi-check-lg text-success' if pi.packing_list.is_completed else ('bi-pencil-square' if packing_can_edit else 'bi-eye') }}"></i>
+                                            {{ '查看装箱单' if pi.packing_list.is_completed else ('编辑装箱单草稿' if packing_can_edit else '查看装箱单草稿') }}
+                                        </a>
+                                    </li>
+                                    {% elif is_admin and pi.paid %}
+                                    <li>
+                                        <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
+                                            <i class="bi bi-box-seam"></i>创建装箱单
+                                        </a>
+                                    </li>
+                                    {% endif %}
+
+                                    <li>
+                                        <button type="button" id="customsBtn-{{ pi.id }}" class="dropdown-item"
+                                                onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                                title="点击查看或修改是否需要报关">
+                                            {% if pi.customs_required is sameas true %}
+                                            <i class="bi bi-exclamation-circle text-warning"></i>报关：需报关
+                                            {% elif pi.customs_required is sameas false %}
+                                            <i class="bi bi-check-lg text-success"></i>报关：无需报关
+                                            {% else %}
+                                            <i class="bi bi-clipboard-check"></i>登记报关
+                                            {% endif %}
+                                        </button>
+                                    </li>
+
+                                    {% set expense_count = pi.expenses|length %}
+                                    <li>
+                                        <button type="button" id="expenseBtn-{{ pi.id }}" class="dropdown-item"
+                                                onclick='openExpense({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                                title="{{ ('已登记 ' ~ expense_count ~ ' 笔真实成本，点击查看记录') if expense_count else '点击新增订单真实成本' }}">
+                                            {% if expense_count %}<i class="bi bi-check-lg text-danger"></i>已登记（{{ expense_count }}笔）{% else %}<i class="bi bi-cash-stack"></i>新增真实成本{% endif %}
+                                        </button>
+                                    </li>
+                                </ul>
+                            </div>
+                            <a href="{{ url_for('pi_detail', id=pi.id) }}" class="btn btn-sm btn-outline-warning">
+                                <i class="bi bi-eye"></i> 预览
+                            </a>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                        data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
+                                    更多
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end text-start">
+                                    <li>
+                                        <a href="{{ url_for('pi_export', id=pi.id) }}" class="dropdown-item">
+                                            <i class="bi bi-box-arrow-up-right text-primary"></i>导出
+                                        </a>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <form action="{{ url_for('pi_delete', id=pi.id) }}" method="post"
+                                              onsubmit='return typedPIConfirm(this, {{ pi.pi_number|tojson }});'>
+                                            <input type="hidden" name="confirm_value">
+                                            <button type="submit" class="dropdown-item text-danger">
+                                                <i class="bi bi-trash"></i>删除 PI
+                                            </button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -117,9 +279,9 @@
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-inbox display-3"></i>
-            <p class="mt-2">No PIs generated yet.</p>
+            <p class="mt-2">暂无 PI。</p>
             <a href="{{ url_for('pi_create') }}" class="btn btn-primary">
-                <i class="bi bi-plus-circle"></i> Create Your First PI
+                <i class="bi bi-plus-circle"></i> 创建第一份 PI
             </a>
         </div>
         {% endif %}
@@ -128,20 +290,119 @@
 
 <div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">PI Preview</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title">PI 预览</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
+    </div></div>
+</div>
+<div class="modal fade" id="shippingModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="shippingModalTitle"><i class="bi bi-truck me-1"></i>登记发货</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info py-2 mb-3">
+                PI：<strong id="shippingPINumber"></strong><br>
+                <small>采购完成后才能登记发货。发货记录不会修改采购数据。</small>
+            </div>
+            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <fieldset id="shippingFields" disabled>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" id="shippingDate" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingTrackingNo">物流单号</label>
+                    <input type="text" class="form-control" id="shippingTrackingNo" maxlength="200"
+                           placeholder="选填，例如快递单号、提单号">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingRecordNote">备注</label>
+                    <textarea class="form-control" id="shippingRecordNote" rows="3" maxlength="1000"
+                              placeholder="选填，例如物流公司、发货说明"></textarea>
+                </div>
+            </fieldset>
+            <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" id="shippingCloseBtn" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-success" id="shippingSaveBtn" disabled onclick="saveShippingRecord()">
+                <i class="bi bi-check-lg"></i> 确认发货完成
+            </button>
+        </div>
+    </div></div>
+</div>
+<div class="modal fade" id="customsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关记录</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info py-2">
+                PI：<strong id="customsPINumber"></strong><br>
+                <small>此处只记录该订单是否需要报关，不会改变订单进度或金额。</small>
+            </div>
+            <div id="customsModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <fieldset id="customsFields" disabled>
+                <legend class="form-label fs-6 mb-2">是否需要报关 <span class="text-danger">*</span></legend>
+                <div class="d-flex gap-4 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredYes" value="true">
+                        <label class="form-check-label" for="customsRequiredYes">需要报关</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredNo" value="false">
+                        <label class="form-check-label" for="customsRequiredNo">无需报关</label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="customsNote">备注</label>
+                    <textarea class="form-control" id="customsNote" rows="3" maxlength="500"
+                              placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
+                </div>
+            </fieldset>
+            <small class="text-muted" id="customsRecordMeta">正在读取记录……</small>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-primary" id="customsSaveBtn" disabled onclick="saveCustomsRecord()">
+                <i class="bi bi-check-lg"></i> 保存报关记录
+            </button>
+        </div>
     </div></div>
 </div>
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title" id="payModalTitle">Confirm Payment</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title" id="payModalTitle">登记回款</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
-            <p>PI: <strong id="payPINumber"></strong> | Total: <strong id="payPITotal"></strong></p>
+            <p>PI：<strong id="payPINumber"></strong>｜总额：<strong id="payPITotal"></strong></p>
             <div id="payHistory"></div>
             <hr>
-            <form id="paymentForm" method="post" onsubmit="var b=this.querySelector('button[type=submit]');b.disabled=true;b.innerHTML='<span class=\"spinner-border spinner-border-sm me-1\"></span>Processing...';return true;">
-                <div class="mb-3"><label class="form-label">Order Number <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="Order / Reference number"><small class="text-muted">阿里巴巴信保订单号 或 支付宝 或 微信订单号</small></div>
-                <div class="mb-3"><label class="form-label">Received Amount (<span id="payCurrency">USD</span>)</label>
+            <form id="paymentForm" method="post" enctype="multipart/form-data" onsubmit="return preparePaymentSubmit(this);">
+                <input type="hidden" name="idempotency_key" value="{{ payment_token }}">
+                <div class="mb-3">
+                    <label class="form-label" for="payAccount">到账账户（确认） <span class="text-danger">*</span></label>
+                    <select class="form-select" name="receiving_account_id" id="payAccount" required>
+                        <option value="">— 请选择并确认实际到账账户 —</option>
+                    </select>
+                    <small class="text-muted" id="payAccountHelp">仅显示与 PI 币种一致的账户。</small>
+                </div>
+                <div class="mb-3"><label class="form-label">回款流水号 <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="订单号 / 银行流水号"><small class="text-muted">阿里巴巴信保订单号、支付宝订单号、微信订单号或银行流水号</small></div>
+                <div class="mb-3">
+                    <label class="form-label" for="payAttachment">回款凭证图片 <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" name="attachment" id="payAttachment" required
+                           accept="image/jpeg,image/png,image/webp,image/gif"
+                           onchange="previewPaymentAttachment(this)">
+                    <small class="text-muted">请上传到账截图或银行回单；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                    <div id="payAttachmentPreviewWrap" class="d-none mt-2">
+                        <img id="payAttachmentPreview" class="img-thumbnail" alt="回款凭证预览"
+                             style="max-height:180px;max-width:100%;object-fit:contain;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                                onclick="clearPaymentAttachment()">重新选择</button>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label">实收金额 (<span id="payCurrency">USD</span>)</label>
                     <div class="input-group">
                         <input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()">
                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(30)" title="30%">30%</button>
@@ -150,31 +411,579 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(100)" title="100%">100%</button>
                     </div>
                 </div>
-                <div class="mb-3"><label class="form-label">Handling Fee</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
-                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">≈ USD (amount only): <strong id="usdEquiv">$0.00</strong></small></div>
-                <button type="submit" class="btn btn-success w-100">Add Payment</button>
+                <div class="mb-3"><label class="form-label">手续费</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
+                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">按业绩固定汇率（1 USD = 7 RMB）折合：<strong id="usdEquiv">$0.00</strong></small></div>
+                <button type="submit" class="btn btn-success w-100">登记回款</button>
             </form>
+        </div>
+    </div></div>
+</div>
+<div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-cash-stack me-1"></i>订单真实成本记录</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+            <div class="alert alert-info py-2 mb-3">
+                真实成本将记入 PI：<strong id="expensePINumber"></strong><br>
+                <small>用于报关费、实际运费等订单后续支出；不改变客户订单总金额，只在利润核算中扣除。</small>
+            </div>
+            <div id="expenseModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <div id="expenseModalSuccess" class="alert alert-success py-2 d-none" role="alert"></div>
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">已登记记录</h6>
+                    <small class="text-muted" id="expenseHistorySummary"></small>
+                </div>
+                <div id="expenseHistory" class="border rounded p-3 text-center text-muted">
+                    <span class="spinner-border spinner-border-sm me-1"></span>正在读取记录……
+                </div>
+            </div>
+            <hr>
+            <h6 class="mb-3"><i class="bi bi-plus-circle me-1"></i>继续新增真实成本</h6>
+            <div class="mb-3">
+                <label class="form-label" for="exp_category">真实成本类别 <span class="text-danger">*</span></label>
+                <select class="form-select" id="exp_category">
+                    <option value="">— 请选择 —</option>
+                    {% for option in expense_category_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
+                </select>
+                <small class="text-muted">类别由管理员在“字段管理”中统一维护。</small>
+            </div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-7">
+                    <label class="form-label" for="exp_amount">真实成本金额 <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0.01" class="form-control" id="exp_amount" placeholder="0.00">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">币种</label>
+                    <input type="text" class="form-control" value="人民币（¥）" readonly>
+                    <input type="hidden" id="exp_currency" value="RMB">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="exp_note">备注</label>
+                <input type="text" class="form-control" id="exp_note" maxlength="500" placeholder="选填">
+            </div>
+            <div class="mb-1">
+                <label class="form-label" for="exp_attachment">附件图片（选填）</label>
+                <input type="file" class="form-control" id="exp_attachment"
+                       accept="image/jpeg,image/png,image/webp,image/gif"
+                       onchange="previewExpenseAttachment(this)">
+                <small class="text-muted">可上传发票、报关单、运费单或付款凭证；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                <div id="exp_attachment_preview_wrap" class="d-none mt-2">
+                    <img id="exp_attachment_preview" class="img-thumbnail" alt="真实成本凭证预览"
+                         style="max-height:180px;max-width:100%;object-fit:contain;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                            onclick="clearExpenseAttachment()">移除图片</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <button type="button" class="btn btn-danger" id="expSubmitBtn" onclick="addExpenseFromPIList()">
+                <i class="bi bi-check-lg"></i> 保存真实成本
+            </button>
         </div>
     </div></div>
 </div>
 <script>
 var paymentData = {};
 var currentPITotal = 0;
+var paymentAccounts = [
+    {% for account in all_accounts %}
+    {id: {{ account.id }}, name: {{ account.name|tojson }}, currency: {{ (account.currency or 'USD')|upper|tojson }}},
+    {% endfor %}
+];
+var currentExpensePiId = null;
+var currentExpensePiNumber = '';
+var currentCustomsPiId = null;
+var currentShippingPiId = null;
+var expenseAttachmentPreviewUrl = '';
+var paymentAttachmentPreviewUrl = '';
+var canDeleteExpense = {{ is_admin|tojson }};
+function shippingError(message) {
+    var box = document.getElementById('shippingModalError');
+    box.textContent = message;
+    box.classList.remove('d-none');
+}
+function localToday() {
+    var now = new Date();
+    var offset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offset).toISOString().slice(0, 10);
+}
+function renderShippingRecord(data) {
+    var completed = data.shipping_completed === true;
+    var canShip = data.can_ship === true;
+    var fields = document.getElementById('shippingFields');
+    var saveButton = document.getElementById('shippingSaveBtn');
+    var closeButton = document.getElementById('shippingCloseBtn');
+    document.getElementById('shippingModalTitle').innerHTML = completed
+        ? '<i class="bi bi-truck me-1"></i>发货记录'
+        : '<i class="bi bi-truck me-1"></i>登记发货';
+    document.getElementById('shippingDate').value = data.shipping_date || (canShip ? localToday() : '');
+    document.getElementById('shippingTrackingNo').value = data.tracking_no || '';
+    document.getElementById('shippingRecordNote').value = data.note || '';
+    fields.disabled = !canShip;
+    saveButton.classList.toggle('d-none', !canShip);
+    saveButton.disabled = !canShip;
+    closeButton.textContent = canShip ? '取消' : '关闭';
+    if (completed) {
+        document.getElementById('shippingRecordMeta').textContent = data.recorded_at
+            ? '登记人：' + (data.recorded_by || '未知用户') + ' · 登记时间：' + data.recorded_at
+            : '已登记发货完成。';
+    } else if (canShip) {
+        document.getElementById('shippingRecordMeta').textContent = '采购已完成，请填写发货日期。';
+    } else {
+        document.getElementById('shippingRecordMeta').textContent = data.unavailable_reason || '当前不能登记发货。';
+    }
+}
+function openShippingRecord(piId, piNumber) {
+    currentShippingPiId = piId;
+    document.getElementById('shippingPINumber').textContent = piNumber;
+    document.getElementById('shippingDate').value = '';
+    document.getElementById('shippingTrackingNo').value = '';
+    document.getElementById('shippingRecordNote').value = '';
+    document.getElementById('shippingFields').disabled = true;
+    document.getElementById('shippingSaveBtn').disabled = true;
+    document.getElementById('shippingSaveBtn').classList.remove('d-none');
+    document.getElementById('shippingRecordMeta').textContent = '正在读取记录……';
+    document.getElementById('shippingModalError').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('shippingModal')).show();
+    fetch('/api/pi/' + piId + '/shipping-record')
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '读取发货记录失败。');
+            renderShippingRecord(result.data);
+        })
+        .catch(function(error) { shippingError(error.message || '读取发货记录失败。'); });
+}
+function updateShippingButton(piId) {
+    var button = document.getElementById('shippingBtn-' + piId);
+    if (!button) return;
+    button.className = 'dropdown-item';
+    button.title = '点击查看发货记录';
+    button.innerHTML = '<i class="bi bi-truck text-success"></i>查看发货记录';
+    var status = document.getElementById('orderStatus-' + piId);
+    if (status) {
+        status.className = 'badge bg-success';
+        status.textContent = '发货完成';
+    }
+}
+function saveShippingRecord() {
+    if (!currentShippingPiId) { shippingError('没有识别到对应的 PI，请关闭后重试。'); return; }
+    var shippingDate = document.getElementById('shippingDate').value;
+    if (!shippingDate) { shippingError('请选择发货日期。'); return; }
+    var button = document.getElementById('shippingSaveBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
+    document.getElementById('shippingModalError').classList.add('d-none');
+    fetch('/api/pi/' + currentShippingPiId + '/shipping-record', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            shipping_date: shippingDate,
+            tracking_no: document.getElementById('shippingTrackingNo').value.trim(),
+            note: document.getElementById('shippingRecordNote').value.trim()
+        })
+    })
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存发货记录失败。');
+            updateShippingButton(currentShippingPiId);
+            renderShippingRecord(result.data);
+        })
+        .catch(function(error) { shippingError(error.message || '保存发货记录失败。'); })
+        .finally(function() {
+            button.disabled = document.getElementById('shippingFields').disabled;
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 确认发货完成';
+        });
+}
+function customsError(message) {
+    var box = document.getElementById('customsModalError');
+    box.textContent = message;
+    box.classList.remove('d-none');
+}
+function openCustomsRecord(piId, piNumber) {
+    currentCustomsPiId = piId;
+    document.getElementById('customsPINumber').textContent = piNumber;
+    document.getElementById('customsRequiredYes').checked = false;
+    document.getElementById('customsRequiredNo').checked = false;
+    document.getElementById('customsNote').value = '';
+    document.getElementById('customsFields').disabled = true;
+    document.getElementById('customsSaveBtn').disabled = true;
+    document.getElementById('customsRecordMeta').textContent = '正在读取记录……';
+    document.getElementById('customsModalError').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customsModal')).show();
+    fetch('/api/pi/' + piId + '/customs-declaration')
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '读取报关记录失败。');
+            document.getElementById('customsRequiredYes').checked = result.data.customs_required === true;
+            document.getElementById('customsRequiredNo').checked = result.data.customs_required === false;
+            document.getElementById('customsNote').value = result.data.note || '';
+            document.getElementById('customsRecordMeta').textContent = result.data.recorded_at
+                ? '最近登记：' + (result.data.recorded_by || '未知用户') + ' · ' + result.data.recorded_at
+                : '尚未登记。';
+            document.getElementById('customsFields').disabled = false;
+            document.getElementById('customsSaveBtn').disabled = false;
+        })
+        .catch(function(error) { customsError(error.message || '读取报关记录失败。'); });
+}
+function updateCustomsButton(piId, required) {
+    var button = document.getElementById('customsBtn-' + piId);
+    if (!button) return;
+    button.replaceChildren();
+    var icon = document.createElement('i');
+    icon.className = required ? 'bi bi-exclamation-circle text-warning' : 'bi bi-check-lg text-success';
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(required ? '报关：需报关' : '报关：无需报关'));
+    button.className = 'dropdown-item';
+}
+function saveCustomsRecord() {
+    var selected = document.querySelector('input[name="customs_required"]:checked');
+    if (!selected) { customsError('请选择需要报关或无需报关。'); return; }
+    var button = document.getElementById('customsSaveBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
+    document.getElementById('customsModalError').classList.add('d-none');
+    fetch('/api/pi/' + currentCustomsPiId + '/customs-declaration', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            customs_required: selected.value === 'true',
+            note: document.getElementById('customsNote').value.trim()
+        })
+    })
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存报关记录失败。');
+            updateCustomsButton(currentCustomsPiId, result.data.customs_required);
+            document.getElementById('customsRecordMeta').textContent =
+                '最近登记：' + result.data.recorded_by + ' · ' + result.data.recorded_at;
+            bootstrap.Modal.getInstance(document.getElementById('customsModal')).hide();
+        })
+        .catch(function(error) { customsError(error.message || '保存报关记录失败。'); })
+        .finally(function() {
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 保存报关记录';
+        });
+}
+function clearExpenseAttachment() {
+    var input = document.getElementById('exp_attachment');
+    if (input) input.value = '';
+    if (expenseAttachmentPreviewUrl) URL.revokeObjectURL(expenseAttachmentPreviewUrl);
+    expenseAttachmentPreviewUrl = '';
+    document.getElementById('exp_attachment_preview').removeAttribute('src');
+    document.getElementById('exp_attachment_preview_wrap').classList.add('d-none');
+}
+function previewExpenseAttachment(input) {
+    if (!input.files || !input.files[0]) { clearExpenseAttachment(); return; }
+    var file = input.files[0];
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+        clearExpenseAttachment();
+        expenseError('附件必须是 JPG、PNG、WebP 或 GIF 图片。');
+        return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+        clearExpenseAttachment();
+        expenseError('凭证图片不能超过 12 MB。');
+        return;
+    }
+    if (expenseAttachmentPreviewUrl) URL.revokeObjectURL(expenseAttachmentPreviewUrl);
+    expenseAttachmentPreviewUrl = URL.createObjectURL(file);
+    document.getElementById('exp_attachment_preview').src = expenseAttachmentPreviewUrl;
+    document.getElementById('exp_attachment_preview_wrap').classList.remove('d-none');
+    document.getElementById('expenseModalError').classList.add('d-none');
+}
+function openExpense(piId, piNumber) {
+    currentExpensePiId = piId;
+    currentExpensePiNumber = piNumber;
+    document.getElementById('expensePINumber').textContent = piNumber;
+    document.getElementById('exp_category').value = '';
+    document.getElementById('exp_amount').value = '';
+    document.getElementById('exp_note').value = '';
+    clearExpenseAttachment();
+    document.getElementById('expenseModalError').classList.add('d-none');
+    document.getElementById('expenseModalSuccess').classList.add('d-none');
+    var button = document.getElementById('expSubmitBtn');
+    button.disabled = false;
+    button.innerHTML = '<i class="bi bi-check-lg"></i> 保存真实成本';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('expenseModal')).show();
+    loadExpenseHistory(piId);
+    document.getElementById('expenseModal').addEventListener('shown.bs.modal', function focusAmount() {
+        document.getElementById('exp_category').focus();
+    }, {once: true});
+}
+function updateExpenseButton(piId, count) {
+    var button = document.getElementById('expenseBtn-' + piId);
+    if (!button) return;
+    button.replaceChildren();
+    var icon = document.createElement('i');
+    icon.className = count ? 'bi bi-check-lg text-danger' : 'bi bi-cash-stack';
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(count ? '已登记（' + count + '笔）' : '新增真实成本'));
+    button.className = 'dropdown-item';
+    button.title = count ? '已登记 ' + count + ' 笔真实成本，点击查看记录' : '点击新增订单真实成本';
+}
+function loadExpenseHistory(piId) {
+    var history = document.getElementById('expenseHistory');
+    var summary = document.getElementById('expenseHistorySummary');
+    history.className = 'border rounded p-3 text-center text-muted';
+    history.replaceChildren();
+    var spinner = document.createElement('span');
+    spinner.className = 'spinner-border spinner-border-sm me-1';
+    history.appendChild(spinner);
+    history.appendChild(document.createTextNode('正在读取记录……'));
+    summary.textContent = '';
+    fetch('/api/expenses?pi_id=' + encodeURIComponent(piId))
+        .then(function(response) {
+            if (!response.ok) throw new Error('读取真实成本记录失败。');
+            return response.json();
+        })
+        .then(function(records) {
+            updateExpenseButton(piId, records.length);
+            history.replaceChildren();
+            if (!records.length) {
+                history.className = 'border rounded p-3 text-center text-muted';
+                history.textContent = '尚未登记真实成本。';
+                summary.textContent = '共 0 笔';
+                return;
+            }
+            var rmbTotal = 0;
+            var usdTotal = 0;
+            records.forEach(function(record) {
+                if (record.currency === 'USD') usdTotal += Number(record.amount || 0);
+                else rmbTotal += Number(record.amount || 0);
+            });
+            summary.textContent = '共 ' + records.length + ' 笔 · ¥' + rmbTotal.toFixed(2) +
+                (usdTotal ? ' + $' + usdTotal.toFixed(2) : '');
+            history.className = 'table-responsive border rounded';
+            var table = document.createElement('table');
+            table.className = 'table table-sm align-middle mb-0';
+            var header = table.createTHead().insertRow();
+            ['类别', '备注', '金额', '日期', '凭证', '操作'].forEach(function(label) {
+                var th = document.createElement('th');
+                th.textContent = label;
+                header.appendChild(th);
+            });
+            var body = table.createTBody();
+            records.forEach(function(record) {
+                var row = body.insertRow();
+                [record.category || '-', record.note || '-',
+                 (record.currency === 'USD' ? '$' : '¥') + Number(record.amount || 0).toFixed(2),
+                 record.created_at || '-'].forEach(function(value) {
+                    var cell = row.insertCell();
+                    cell.textContent = value;
+                });
+                var attachmentCell = row.insertCell();
+                if (record.has_attachment) {
+                    var link = document.createElement('a');
+                    link.href = '/expenses/' + record.id + '/attachment';
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    link.className = 'btn btn-sm btn-outline-primary';
+                    link.textContent = '查看图片';
+                    attachmentCell.appendChild(link);
+                } else {
+                    attachmentCell.textContent = '—';
+                }
+                var actionCell = row.insertCell();
+                if (canDeleteExpense) {
+                    var remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'btn btn-sm btn-outline-danger';
+                    remove.textContent = '删除';
+                    remove.onclick = function() { deleteExpenseFromPIList(record.id); };
+                    actionCell.appendChild(remove);
+                } else {
+                    actionCell.textContent = '—';
+                }
+            });
+            history.appendChild(table);
+        })
+        .catch(function(error) {
+            history.className = 'alert alert-danger mb-0';
+            history.textContent = error.message || '读取真实成本记录失败。';
+        });
+}
+function deleteExpenseFromPIList(expenseId) {
+    if (!confirm('确定删除这条真实成本记录吗？')) return;
+    fetch('/api/expenses/' + expenseId, {method: 'DELETE'})
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '删除失败。');
+            document.getElementById('expenseModalSuccess').textContent = '真实成本记录已删除。';
+            document.getElementById('expenseModalSuccess').classList.remove('d-none');
+            loadExpenseHistory(currentExpensePiId);
+        })
+        .catch(function(error) { expenseError(error.message || '删除失败。'); });
+}
+function expenseError(message) {
+    var box = document.getElementById('expenseModalError');
+    box.textContent = message;
+    box.classList.remove('d-none');
+}
+function addExpenseFromPIList() {
+    var category = document.getElementById('exp_category').value;
+    var amount = document.getElementById('exp_amount').value.trim();
+    var note = document.getElementById('exp_note').value.trim();
+    if (!currentExpensePiId) { expenseError('没有识别到对应的 PI，请关闭后重试。'); return; }
+    if (!category) { expenseError('请选择真实成本类别。'); return; }
+    if (!amount || parseFloat(amount) <= 0) { expenseError('真实成本金额必须大于 0。'); return; }
+    document.getElementById('expenseModalError').classList.add('d-none');
+    var button = document.getElementById('expSubmitBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
+    var formData = new FormData();
+    formData.append('pi_id', currentExpensePiId);
+    formData.append('category', category);
+    formData.append('amount', amount);
+    formData.append('currency', document.getElementById('exp_currency').value);
+    formData.append('note', note);
+    var attachment = document.getElementById('exp_attachment').files[0];
+    if (attachment) formData.append('attachment', attachment);
+    fetch('/api/expenses', {method: 'POST', body: formData})
+        .then(function(response) {
+            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
+        })
+        .then(function(result) {
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存失败。');
+            document.getElementById('expenseModalSuccess').textContent =
+                '已添加真实成本：' + category + ' ¥' + parseFloat(amount).toFixed(2) +
+                (attachment ? '，凭证图片已保存。' : '。');
+            document.getElementById('expenseModalSuccess').classList.remove('d-none');
+            document.getElementById('exp_category').value = '';
+            document.getElementById('exp_amount').value = '';
+            document.getElementById('exp_note').value = '';
+            clearExpenseAttachment();
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 保存真实成本';
+            loadExpenseHistory(currentExpensePiId);
+        })
+        .catch(function(error) {
+            expenseError(error.message || '网络错误，请稍后重试。');
+            button.disabled = false;
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 保存真实成本';
+        });
+}
+function typedPIConfirm(form, piNumber) {
+    var value = prompt('请输入 PI 编号，将其移入回收站：\n\n' + piNumber);
+    if (value === null) return false;
+    form.querySelector('[name="confirm_value"]').value = value;
+    return true;
+}
 function setPct(pct) {
     document.getElementById('payAmount').value = (currentPITotal * pct / 100).toFixed(2);
     updateUsdEquiv();
 }
-function confirmPayment(id, total, currency) {
+function populatePaymentAccounts(currency, preferredAccountId) {
+    var select = document.getElementById('payAccount');
+    var help = document.getElementById('payAccountHelp');
+    select.replaceChildren();
+    var placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '— 请选择并确认实际到账账户 —';
+    select.appendChild(placeholder);
+    var eligible = paymentAccounts.filter(function(account) {
+        return account.currency === currency;
+    });
+    eligible.forEach(function(account) {
+        var option = document.createElement('option');
+        option.value = String(account.id);
+        option.textContent = account.name + '（' + account.currency + '）';
+        select.appendChild(option);
+    });
+    var preferred = preferredAccountId === null || preferredAccountId === undefined ? '' : String(preferredAccountId);
+    if (preferred && eligible.some(function(account) { return String(account.id) === preferred; })) {
+        select.value = preferred;
+    } else if (eligible.length === 1) {
+        select.value = String(eligible[0].id);
+    }
+    select.disabled = eligible.length === 0;
+    help.textContent = eligible.length
+        ? '仅显示 ' + currency + ' 账户；同币种账户可以切换，请确认实际到账账户。'
+        : '尚未配置 ' + currency + ' 收款账户，请先让管理员在“字段管理”中添加。';
+    help.className = eligible.length ? 'text-muted' : 'text-danger';
+}
+function preparePaymentSubmit(form) {
+    var select = document.getElementById('payAccount');
+    if (!select.value) {
+        alert('请选择并确认实际到账账户。');
+        select.focus();
+        return false;
+    }
+    var attachment = document.getElementById('payAttachment');
+    if (!attachment.files || !attachment.files[0]) {
+        alert('请上传回款凭证图片。');
+        attachment.focus();
+        return false;
+    }
+    var file = attachment.files[0];
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+        alert('回款凭证必须是 JPG、PNG、WebP 或 GIF 图片。');
+        attachment.focus();
+        return false;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+        alert('回款凭证图片不能超过 12 MB。');
+        attachment.focus();
+        return false;
+    }
+    var button = form.querySelector('button[type=submit]');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在登记……';
+    return true;
+}
+function clearPaymentAttachment() {
+    var input = document.getElementById('payAttachment');
+    if (input) input.value = '';
+    if (paymentAttachmentPreviewUrl) URL.revokeObjectURL(paymentAttachmentPreviewUrl);
+    paymentAttachmentPreviewUrl = '';
+    document.getElementById('payAttachmentPreview').removeAttribute('src');
+    document.getElementById('payAttachmentPreviewWrap').classList.add('d-none');
+}
+function previewPaymentAttachment(input) {
+    if (!input.files || !input.files[0]) { clearPaymentAttachment(); return; }
+    var file = input.files[0];
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+        clearPaymentAttachment();
+        alert('回款凭证必须是 JPG、PNG、WebP 或 GIF 图片。');
+        return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+        clearPaymentAttachment();
+        alert('回款凭证图片不能超过 12 MB。');
+        return;
+    }
+    if (paymentAttachmentPreviewUrl) URL.revokeObjectURL(paymentAttachmentPreviewUrl);
+    paymentAttachmentPreviewUrl = URL.createObjectURL(file);
+    document.getElementById('payAttachmentPreview').src = paymentAttachmentPreviewUrl;
+    document.getElementById('payAttachmentPreviewWrap').classList.remove('d-none');
+}
+function confirmPayment(id, total, currency, preferredAccountId) {
     var sym = currency === 'RMB' ? '¥' : '$';
     currentPITotal = total;
-    document.getElementById('payModalTitle').textContent = 'Confirm Payment';
+    document.getElementById('payModalTitle').textContent = '登记回款';
     document.getElementById('payPINumber').textContent = '#' + id;
     document.getElementById('payPITotal').textContent = sym + total.toFixed(2);
     document.getElementById('payCurrency').textContent = currency;
     document.getElementById('payOrderNo').value = '';
     document.getElementById('payAmount').value = total.toFixed(2);
     document.getElementById('payFee').value = '0';
+    clearPaymentAttachment();
     document.getElementById('payHistory').innerHTML = '';
+    populatePaymentAccounts(currency, preferredAccountId);
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
     var usdRow = document.getElementById('usdEquivRow');
     if (currency === 'RMB') {
@@ -187,17 +996,21 @@ function confirmPayment(id, total, currency) {
 }
 function updateUsdEquiv() {
     var amt = parseFloat(document.getElementById('payAmount').value) || 0;
-    document.getElementById('usdEquiv').textContent = '$' + (amt / 7).toFixed(2);
+    document.getElementById('usdEquiv').textContent = '$' + (amt / {{ performance_exchange_rate }}).toFixed(2);
 }
 function viewPayments(id) {
     fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
         var sym = data.currency === 'RMB' ? '¥' : '$';
         var grandTotal = data.grand_total || data.total_amount;
         currentPITotal = grandTotal;
-        document.getElementById('payModalTitle').textContent = 'Payment History';
+        document.getElementById('payModalTitle').textContent = '回款记录';
         document.getElementById('payPINumber').textContent = '#' + id;
-        document.getElementById('payPITotal').textContent = sym + grandTotal.toFixed(2) + ' | Received: ' + sym + data.received.toFixed(2);
+        document.getElementById('payPITotal').textContent = sym + grandTotal.toFixed(2) + '｜已收：' + sym + data.received.toFixed(2);
         document.getElementById('payCurrency').textContent = data.currency;
+        document.getElementById('payOrderNo').value = '';
+        document.getElementById('payFee').value = '0';
+        clearPaymentAttachment();
+        populatePaymentAccounts(data.currency, data.default_account_id);
         document.getElementById('payAmount').value = (grandTotal - data.received).toFixed(2);
         if (data.currency === 'RMB') {
             document.getElementById('usdEquivRow').style.display = '';
@@ -206,17 +1019,74 @@ function viewPayments(id) {
             document.getElementById('usdEquivRow').style.display = 'none';
         }
         document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
-        // Build history
-        var histHtml = '';
+        // Build history with DOM nodes.  Payment references are user input and
+        // must never be concatenated into HTML.
+        var history = document.getElementById('payHistory');
+        history.replaceChildren();
         var pmts = data.payments;
         if (pmts.length > 0) {
-            histHtml = '<h6>History</h6><table class=\"table table-sm\"><thead><tr><th>#</th><th>Order No</th><th>Amount</th><th>Fee</th><th>Date</th></tr></thead><tbody>';
+            var title = document.createElement('h6');
+            title.textContent = '历史记录';
+            history.appendChild(title);
+            var table = document.createElement('table');
+            table.className = 'table table-sm';
+            var thead = table.createTHead();
+            var header = thead.insertRow();
+            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '日期', '操作'].forEach(function(label) {
+                var th = document.createElement('th');
+                th.textContent = label;
+                header.appendChild(th);
+            });
+            var tbody = table.createTBody();
             for (var i = 0; i < pmts.length; i++) {
-                histHtml += '<tr><td>' + (i+1) + '</td><td><small>' + (pmts[i].order_no || '-') + '</small></td><td>' + sym + pmts[i].amount.toFixed(2) + '</td><td>' + (pmts[i].fee > 0 ? sym + pmts[i].fee.toFixed(2) : '-') + '</td><td><small>' + pmts[i].created_at + '</small></td></tr>';
+                var row = tbody.insertRow();
+                [
+                    String(i + 1),
+                    pmts[i].order_no || '-',
+                    sym + pmts[i].amount.toFixed(2),
+                    pmts[i].fee > 0 ? sym + pmts[i].fee.toFixed(2) : '-',
+                    pmts[i].receiving_account_name || '历史记录未填写'
+                ].forEach(function(value) {
+                    var cell = row.insertCell();
+                    cell.textContent = value;
+                });
+                var attachmentCell = row.insertCell();
+                if (pmts[i].has_attachment) {
+                    var attachmentLink = document.createElement('a');
+                    attachmentLink.href = '/payments/' + pmts[i].id + '/attachment';
+                    attachmentLink.target = '_blank';
+                    attachmentLink.rel = 'noopener';
+                    attachmentLink.className = 'btn btn-sm btn-outline-primary';
+                    attachmentLink.textContent = '查看图片';
+                    attachmentCell.appendChild(attachmentLink);
+                } else {
+                    attachmentCell.textContent = '—';
+                }
+                var dateCell = row.insertCell();
+                dateCell.textContent = pmts[i].created_at || '-';
+                var actionCell = row.insertCell();
+                var deleteButton = document.createElement('button');
+                deleteButton.type = 'button';
+                deleteButton.className = 'btn btn-sm btn-outline-danger';
+                deleteButton.textContent = '移入回收站';
+                (function(payment) {
+                    deleteButton.onclick = function() {
+                        var value = prompt('请输入回款流水号，将其移入回收站：\n\n' + payment.order_no);
+                        if (value === null) return;
+                        var form = document.createElement('form');
+                        form.method = 'post';
+                        form.action = '/pi/' + id + '/payment/' + payment.id + '/delete';
+                        var csrf = document.createElement('input');
+                        csrf.type = 'hidden'; csrf.name = 'csrf_token'; csrf.value = document.querySelector('meta[name="csrf-token"]').content;
+                        var confirmInput = document.createElement('input');
+                        confirmInput.type = 'hidden'; confirmInput.name = 'confirm_value'; confirmInput.value = value;
+                        form.appendChild(csrf); form.appendChild(confirmInput); document.body.appendChild(form); form.submit();
+                    };
+                })(pmts[i]);
+                actionCell.appendChild(deleteButton);
             }
-            histHtml += '</tbody></table>';
+            history.appendChild(table);
         }
-        document.getElementById('payHistory').innerHTML = histHtml;
         new bootstrap.Modal(document.getElementById('paymentModal')).show();
     });
 }

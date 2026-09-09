@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}装箱单{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+        <h2 class="mb-1"><i class="bi bi-box-seam me-2"></i>装箱单</h2>
+        <div class="text-muted">
+            {% if is_admin %}仅已付清 PI 可创建和编辑装箱单；管理员可管理和导出全部装箱单。{% else %}可查看并导出自己负责、已付清 PI 的装箱单。{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" class="row g-2 align-items-end">
+            {% if is_admin %}
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">业务员</label>
+                <select class="form-select form-select-sm" name="salesperson">
+                    <option value="">— 全部 —</option>
+                    {% for name in salespeople %}
+                    <option value="{{ name }}" {% if salesperson_filter == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">开始日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">结束日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+            </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">装箱单状态</label>
+                <select class="form-select form-select-sm" name="status">
+                    <option value="" {% if not status_filter %}selected{% endif %}>— 全部 —</option>
+                    <option value="unsaved" {% if status_filter == 'unsaved' %}selected{% endif %}>未创建</option>
+                    <option value="draft" {% if status_filter == 'draft' %}selected{% endif %}>草稿</option>
+                    <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>已完成</option>
+                </select>
+            </div>
+            <div class="col-md-2 col-xl-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="应用筛选"><i class="bi bi-funnel"></i></button>
+            </div>
+            <div class="col-md-auto">
+                <div class="btn-group btn-group-sm" role="group" aria-label="快捷日期筛选">
+                    <button type="submit" name="preset" value="this_month" class="btn btn-outline-secondary {% if preset == 'this_month' %}active{% endif %}">本月</button>
+                    <button type="submit" name="preset" value="last_month" class="btn btn-outline-secondary {% if preset == 'last_month' %}active{% endif %}">上月</button>
+                    <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
+                </div>
+            </div>
+            {% if salesperson_filter or date_from or date_to or preset or status_filter %}
+            <div class="col-md-auto"><a href="{{ url_for('packing_list_index') }}" class="btn btn-sm btn-outline-danger">清除</a></div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body p-0">
+        {% if pis %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>PI 编号</th><th>客户</th><th>业务员</th><th>开单日期</th>
+                        <th class="text-end">PI 数量</th><th class="text-end">已装数量</th>
+                        <th class="text-end">箱数</th><th>状态</th><th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for pi in pis %}
+                    {% set ns = namespace(pi_qty=0, packed_qty=0) %}
+                    {% for item in pi.items %}{% set ns.pi_qty = ns.pi_qty + (item.quantity or 0) %}{% endfor %}
+                    {% if pi.packing_list %}
+                        {% for box in pi.packing_list.boxes %}
+                            {% for item in box.items %}{% set ns.packed_qty = ns.packed_qty + (item.quantity or 0) %}{% endfor %}
+                        {% endfor %}
+                    {% endif %}
+                    <tr>
+                        <td class="fw-bold">{{ pi.pi_number }}</td>
+                        <td>{{ pi.customer.name if pi.customer else '-' }}</td>
+                        <td>{{ pi.salesperson or '-' }}</td>
+                        <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                        <td class="text-end">{{ ns.pi_qty }}</td>
+                        <td class="text-end">{{ ns.packed_qty if pi.packing_list else '-' }}</td>
+                        <td class="text-end">{{ pi.packing_list.boxes|length if pi.packing_list else '-' }}</td>
+                        <td>
+                            {% if not pi.packing_list %}<span class="badge bg-secondary">未创建</span>
+                            {% elif pi.packing_list.is_completed %}<span class="badge bg-success">已完成</span>
+                            {% else %}<span class="badge bg-warning text-dark">草稿</span>{% endif %}
+                            {% if pi.packing_list and not pi.paid %}<span class="badge bg-secondary">历史记录·未付清</span>{% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            {% if is_admin and pi.paid %}
+                            <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="btn btn-sm btn-outline-primary">
+                                {% if pi.packing_list and pi.packing_list.is_completed %}
+                                <i class="bi bi-eye"></i> 预览
+                                {% elif pi.packing_list %}
+                                <i class="bi bi-pencil-square"></i> 编辑
+                                {% else %}
+                                <i class="bi bi-plus-lg"></i> 创建
+                                {% endif %}
+                            </a>
+                            {% elif pi.packing_list %}
+                            <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> 查看</a>
+                            {% elif not pi.paid %}
+                            <span class="text-muted small">待付清</span>
+                            {% else %}
+                            <span class="text-muted small">等待管理员创建</span>
+                            {% endif %}
+                            {% if pi.packing_list %}
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
+                                    <i class="bi bi-file-earmark-excel"></i> Excel
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">选择 Excel 模板</h6></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_export_excel', pi_id=pi.id) }}">完整 A4</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id) }}">精简 100×150（每箱一页）</a></li>
+                                </ul>
+                            </div>
+                            <div class="btn-group">
+                                <button type="button" class="btn btn-sm btn-outline-danger dropdown-toggle" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
+                                    <i class="bi bi-file-earmark-pdf"></i> PDF
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    <li><h6 class="dropdown-header">选择 PDF 模板</h6></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_export_pdf', pi_id=pi.id) }}">完整 A4</a></li>
+                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id) }}">精简 100×150（每箱一页）</a></li>
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted"><i class="bi bi-inbox display-4"></i><p class="mt-2 mb-0">没有符合条件的 PI。</p></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}回收站{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3"><h2><i class="bi bi-trash3 me-2"></i>回收站</h2><a class="btn btn-outline-secondary" href="{{ url_for('audit_logs') }}">操作审计</a></div>
+<div class="alert alert-info">删除的业务记录会保留在这里，可以随时恢复；已生成的 PDF/Excel 文件不会被删除。</div>
+{% macro restore_table(title, records, kind) %}
+<div class="card mb-4"><div class="card-header"><strong>{{ title }}</strong> <span class="badge bg-secondary">{{ records|length }}</span></div><div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead class="table-light"><tr><th>记录</th><th>负责人 / 所属</th><th>删除时间</th><th class="text-end">操作</th></tr></thead><tbody>
+{% for item in records %}<tr><td>{% if kind == 'customer' %}{{ item.name }}{% elif kind == 'pi' %}{{ item.pi_number }}{% else %}{{ item.order_no }} — {{ '%.2f'|format(item.amount) }}{% endif %}</td><td>{% if kind == 'customer' %}{{ item.salesperson }}{% elif kind == 'pi' %}{{ item.customer.name if item.customer else '-' }}{% else %}PI #{{ item.pi_id }}{% endif %}</td><td>{{ item.deleted_at.strftime('%Y-%m-%d %H:%M:%S') if item.deleted_at else '' }}</td><td class="text-end"><form method="post" action="{{ url_for('restore_' ~ kind, id=item.id) }}"><button class="btn btn-sm btn-success"><i class="bi bi-arrow-counterclockwise"></i> 恢复</button></form></td></tr>
+{% else %}<tr><td colspan="4" class="text-center text-muted py-3">暂无记录</td></tr>{% endfor %}</tbody></table></div></div>
+{% endmacro %}
+{{ restore_table('客户', customers, 'customer') }}
+{{ restore_table('PI', pis, 'pi') }}
+{{ restore_table('回款', payments, 'payment') }}
+{% endblock %}

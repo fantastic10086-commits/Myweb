@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{% if editing %}Edit{% else %}Add{% endif %} Customer{% endblock %}
+{% block title %}{% if editing %}编辑{% else %}新增{% endif %}客户{% endblock %}
 
 {% block extra_scripts %}
 <script>
@@ -31,10 +31,10 @@ document.addEventListener('paste', function(e) {
 <div class="row mb-3">
     <div class="col">
         <h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>
-            {% if editing %}Edit Customer{% else %}Add New Customer{% endif %}
+            {% if editing %}编辑客户{% else %}新增客户{% endif %}
         </h2>
         <a href="{{ url_for('customer_list') }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to Customers
+            <i class="bi bi-arrow-left"></i> 返回客户列表
         </a>
     </div>
 </div>
@@ -42,75 +42,76 @@ document.addEventListener('paste', function(e) {
 <div class="card">
     <div class="card-body">
         <form method="post" enctype="multipart/form-data">
+            {% if editing %}<input type="hidden" name="version" value="{{ customer.version or 1 }}">{% endif %}
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label for="name" class="form-label">Customer Name <span class="text-danger">*</span></label>
+                    <label for="name" class="form-label">客户名称 <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="name" name="name" required
-                           value="{{ customer.name if customer else '' }}" placeholder="Company / Customer Name">
+                           value="{{ customer.name if customer else '' }}" placeholder="公司或客户名称">
                 </div>
                 <div class="col-md-6">
-                    <label for="country" class="form-label">Country</label>
+                    <label for="country" class="form-label">国家 / 地区</label>
                     <input type="text" class="form-control" id="country" name="country" list="country_list" autocomplete="off"
-                           value="{{ customer.country if customer else '' }}" placeholder="Type Chinese or English...">
+                           value="{{ customer.country if customer else '' }}" placeholder="可输入中文或英文……">
                 </div>
                 <div class="col-md-6">
-                    <label for="contact_person" class="form-label">Contact Person</label>
+                    <label for="contact_person" class="form-label">联系人</label>
                     <input type="text" class="form-control" id="contact_person" name="contact_person"
-                           value="{{ customer.contact_person if customer else '' }}" placeholder="Contact name">
+                           value="{{ customer.contact_person if customer else '' }}" placeholder="联系人姓名">
                 </div>
                 <div class="col-md-6">
-                    <label for="email" class="form-label">Email</label>
+                    <label for="email" class="form-label">邮箱</label>
                     <input type="email" class="form-control" id="email" name="email"
                            value="{{ customer.email if customer else '' }}" placeholder="email@example.com">
                 </div>
                 <div class="col-md-6">
-                    <label for="phone" class="form-label">Phone</label>
+                    <label for="phone" class="form-label">电话</label>
                     <input type="text" class="form-control" id="phone" name="phone"
                            value="{{ customer.phone if customer else '' }}" placeholder="+1-xxx-xxx-xxxx">
                 </div>
                 <div class="col-md-6">
-                    <label for="salesperson" class="form-label">Salesperson <span class="text-danger">*</span></label>
+                    <label for="salesperson" class="form-label">业务员 <span class="text-danger">*</span></label>
                     <select class="form-select" id="salesperson" name="salesperson" required>
-                        <option value="">— Select —</option>
+                        <option value="">— 请选择 —</option>
                         {% for sp in all_salespersons %}
                         <option value="{{ sp.name }}" {% if customer and customer.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-6">
-                    <label for="image" class="form-label">Customer Logo / Image</label>
+                    <label for="image" class="form-label">客户标志 / 图片</label>
                     <input type="file" class="form-control" id="image" name="image" accept="image/*">
-                    <small class="text-muted">Click to select or <strong>Ctrl+V</strong> to paste from clipboard</small>
+                    <small class="text-muted">点击选择，或使用 <strong>Ctrl+V</strong> 从剪贴板粘贴</small>
                     <img id="img_preview" src="#" style="display:none;max-height:80px;max-width:200px;margin-top:4px;border-radius:4px;border:1px solid #ddd;">
                     {% if editing and customer.image %}
-                    <small class="text-muted d-block mt-1">Current: <img src="{{ url_for('uploaded_file', filename=customer.image) }}" style="max-height:40px;vertical-align:middle;"></small>
+                    <small class="text-muted d-block mt-1">当前： <img src="{{ url_for('uploaded_file', filename=customer.image) }}" style="max-height:40px;vertical-align:middle;"></small>
                     {% endif %}
                 </div>
                 <div class="col-md-6">
-                    <label for="address" class="form-label">Address</label>
+                    <label for="address" class="form-label">地址</label>
                     <textarea class="form-control" id="address" name="address" rows="2"
-                              placeholder="Full address">{{ customer.address if customer else '' }}</textarea>
+                              placeholder="完整地址">{{ customer.address if customer else '' }}</textarea>
                 </div>
                 <div class="col-12">
-                    <label for="notes" class="form-label">Notes</label>
+                    <label for="notes" class="form-label">备注</label>
                     <textarea class="form-control" id="notes" name="notes" rows="2"
-                              placeholder="Any additional notes...">{{ customer.notes if customer else '' }}</textarea>
+                              placeholder="其他备注……">{{ customer.notes if customer else '' }}</textarea>
                 </div>
             </div>
             {% if editing and customer and customer.created_at %}
             <div class="row mt-3">
                 <div class="col-12">
                     <small class="text-muted">
-                        <i class="bi bi-clock"></i> Customer created: {{ customer.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        <i class="bi bi-clock"></i> 客户创建时间： {{ customer.created_at.strftime('%Y-%m-%d %H:%M') }}
                     </small>
                 </div>
             </div>
             {% endif %}
             <div class="mt-4">
                 <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %} Customer
+                    <i class="bi bi-check-lg"></i> {% if editing %}更新{% else %}保存{% endif %}客户
                 </button>
-                <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary ms-2">取消</a>
             </div>
         </form>
     </div>

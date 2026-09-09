@@ -2,6 +2,8 @@
 
 基于 Python Flask + SQLite 的简易外贸 PI（Proforma Invoice）管理系统。
 
+> 生产环境部署请使用 [DEPLOYMENT.md](DEPLOYMENT.md)。下面的 NAS 章节仅供局域网旧环境参考，不能直接用于公网服务器。
+
 ## 功能
 
 - **客户管理**：增删改查，支持搜索

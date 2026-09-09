@@ -1,20 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Products{% endblock %}
+{% block title %}产品{% endblock %}
 
 {% block content %}
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
-        <h2><i class="bi bi-box me-2"></i>Products <small class="text-muted fs-6">({{ total }})</small></h2>
+        <h2><i class="bi bi-box me-2"></i>产品 <small class="text-muted fs-6">({{ total }})</small></h2>
     </div>
     <div class="col-md-6 text-md-end">
+        {% if is_admin %}
         <button id="editModeBtn" class="btn btn-outline-warning me-1" onclick="toggleEditMode()">
-            <i class="bi bi-pencil-square"></i> Edit Mode
+            <i class="bi bi-pencil-square"></i> 批量编辑
         </button>
         <a href="{{ url_for('product_import') }}" class="btn btn-outline-success me-1">
-            <i class="bi bi-file-earmark-excel"></i> Import Excel
+            <i class="bi bi-file-earmark-excel"></i> 导入 Excel
         </a>
+        {% endif %}
         <a href="{{ url_for('product_add') }}" class="btn btn-success">
-            <i class="bi bi-plus-square"></i> Add Product
+            <i class="bi bi-plus-square"></i> 添加产品
         </a>
     </div>
 </div>
@@ -23,26 +25,26 @@
 <div class="row mb-3">
     <div class="col-md-8">
         <form method="get" class="d-flex gap-2">
-            <input type="text" name="search" class="form-control" placeholder="Search by name, code, specification..." value="{{ search }}">
+            <input type="text" name="search" class="form-control" placeholder="按名称、编码或规格搜索……" value="{{ search }}">
             {% if filter %}<input type="hidden" name="filter" value="{{ filter }}">{% endif %}
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
             {% if search or filter %}
-            <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary">Clear</a>
+            <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary">清除</a>
             {% endif %}
         </form>
     </div>
     <div class="col-md-4 text-md-end">
         <div class="btn-group btn-group-sm">
-            <a href="{{ url_for('product_list', search=search) }}" class="btn btn-outline-secondary {% if not filter %}active{% endif %}">All</a>
+            <a href="{{ url_for('product_list', search=search) }}" class="btn btn-outline-secondary {% if not filter %}active{% endif %}">全部</a>
             <a href="{{ url_for('product_list', search=search, filter='no_image') }}" class="btn btn-outline-warning {% if filter=='no_image' %}active{% endif %}">
-                <i class="bi bi-image"></i> No Image
+                <i class="bi bi-image"></i> 无图片
             </a>
         </div>
     </div>
 </div>
 
 {% if filter == 'no_image' %}
-<div class="alert alert-warning py-1 small mb-3">Showing <strong>{{ products|length }}</strong> products without images.</div>
+<div class="alert alert-warning py-1 small mb-3">当前显示 <strong>{{ products|length }}</strong> 个没有图片的产品。</div>
 {% endif %}
 
 <!-- Exchange Rate Calculator -->
@@ -51,10 +53,10 @@
         <div class="input-group input-group-sm">
             <span class="input-group-text bg-white"><i class="bi bi-currency-exchange"></i></span>
             <span class="input-group-text">USD : RMB</span>
-            <input type="text" class="form-control" id="rateInput" placeholder="e.g. 6.5" value="{{ '%.2f'|format(exchange_rate) }}" style="max-width:80px;">
+            <input type="text" class="form-control" id="rateInput" placeholder="例如 6.5" value="{{ '%.2f'|format(exchange_rate) }}" style="max-width:80px;">
             <span class="input-group-text">1 :</span>
             <input type="text" class="form-control" id="rateValue" readonly style="background:#e9ecef;max-width:80px;" value="{{ '%.2f'|format(exchange_rate) }}">
-            <button class="btn btn-outline-primary" type="button" onclick="applyRate()" title="Apply exchange rate to all products">
+            <button class="btn btn-outline-primary" type="button" onclick="applyRate()" title="将汇率应用到全部产品">
                 <i class="bi bi-calculator"></i> 计算
             </button>
         </div>
@@ -72,12 +74,12 @@
             <input type="hidden" name="ids" id="batchIds" value="">
             <!-- Batch actions bar -->
             <div id="batchBar" class="bg-light border-bottom px-3 py-2 d-none align-items-center gap-2">
-                <span class="small me-2"><strong id="batchCount">0</strong> selected</span>
+                <span class="small me-2"><strong id="batchCount">0</strong> 个已选择</span>
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="batchDelete()">
-                    <i class="bi bi-trash"></i> Delete Selected
+                    <i class="bi bi-trash"></i> 删除所选
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
-                    Clear
+                    清除
                 </button>
             </div>
             <div class="table-responsive">
@@ -85,7 +87,7 @@
                     <thead class="table-light">
                         <tr>
                             <th style="width:36px;"><input type="checkbox" class="form-check-input" id="selectAll" onchange="toggleAll(this)"></th>
-                            <th style="width:60px;">Image</th>
+                            <th style="width:60px;">图片</th>
                             <th>
                                 <a href="{{ url_for('product_list', search=search, filter=filter, sort='name_asc' if sort != 'name_asc' else 'name_desc') }}" class="text-decoration-none text-dark">
                                     Name{% if sort == 'name_asc' %}<i class="bi bi-caret-up-fill small ms-1"></i>{% elif sort == 'name_desc' %}<i class="bi bi-caret-down-fill small ms-1"></i>{% else %}<i class="bi bi-caret-down small text-muted ms-1"></i>{% endif %}
@@ -115,14 +117,14 @@
                             <th class="text-end" style="width:80px;">
                                 Rate
                             </th>
-                            <th class="text-end">Actions</th>
+                            <th class="text-end">操作</th>
                         </tr>
                     </thead>
                     <tbody id="productTbody">
                         {% for p in products %}
                         <tr id="row-{{ p.id }}">
                             <td><input type="checkbox" class="form-check-input product-check" value="{{ p.id }}" onchange="updateBatchBar()"></td>
-                            <td>{% if p.image %}<img src="{{ url_for('uploaded_file', filename=p.image) }}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td>{% if p.image %}<img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="chinese_name">{{ p.chinese_name }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="product_code">{{ p.product_code }}</td>
@@ -138,9 +140,11 @@
                                 {% endif %}
                             </td>
                             <td class="text-end text-nowrap">
-                                <button type="button" class="btn btn-sm btn-outline-info" title="Copy" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
-                                <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="Full edit (image)"><i class="bi bi-pencil"></i></a>
-                                <button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
+                                {% if is_admin %}
+                                <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
+                                <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
+                                <button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
+                                {% else %}<span class="text-muted">仅查看</span>{% endif %}
                             </td>
                         </tr>
                         {% endfor %}
@@ -151,7 +155,7 @@
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-box display-3"></i>
-            <p class="mt-2">No products found. <a href="{{ url_for('product_add') }}">Add your first product</a>.</p>
+            <p class="mt-2">未找到产品。<a href="{{ url_for('product_add') }}">添加第一个产品</a>。</p>
         </div>
         {% endif %}
     </div>
@@ -159,10 +163,10 @@
 
 {% if total_pages > 1 %}
 <nav class="mt-3 d-flex justify-content-between align-items-center">
-    <small class="text-muted">Page {{ page }} of {{ total_pages }} ({{ total }} products)</small>
+    <small class="text-muted">第 {{ page }} 页，共 {{ total_pages }} 页（{{ total }} 个产品）</small>
     <ul class="pagination pagination-sm mb-0">
         <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
-            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page-1) }}">&laquo; Prev</a>
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page-1) }}">&laquo; 上一页</a>
         </li>
         {% for p in range(1, total_pages + 1) %}
         {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
@@ -174,7 +178,7 @@
         {% endif %}
         {% endfor %}
         <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
-            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page+1) }}">Next &raquo;</a>
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page+1) }}">下一页 &raquo;</a>
         </li>
     </ul>
 </nav>
@@ -195,10 +199,10 @@ document.getElementById('rateInput').addEventListener('input', function() {
 
 function applyRate() {
     var rate = parseFloat(document.getElementById('rateInput').value);
-    if (isNaN(rate) || rate <= 0) { alert('Please enter a valid exchange rate (e.g. 6.5)'); return; }
+    if (isNaN(rate) || rate <= 0) { alert('请输入有效汇率，例如 6.5。'); return; }
     exchangeRate = rate;
     document.getElementById('rateValue').value = rate;
-    if (!confirm('Apply rate 1 USD : ' + rate + ' RMB to ALL products?\n\nProducts with USD > 0 will have RMB auto-calculated.\nThis will save to the database.')) return;
+    if (!confirm('确定将汇率 1 美元 = ' + rate + ' 人民币应用到全部产品吗？\n\n美元价格大于 0 的产品会自动计算人民币价格。\n此操作会保存到数据库。')) return;
 
     var rows = document.querySelectorAll('#productTbody tr');
     var count = 0;
@@ -228,12 +232,12 @@ function applyRate() {
         }).then(function(r) { return r.json(); }));
         count++;
     }
-    document.getElementById('rateStatus').textContent = 'Calculating ' + count + ' products...';
+    document.getElementById('rateStatus').textContent = '正在计算 ' + count + ' 个产品……';
     Promise.all(promises).then(function() {
-        document.getElementById('rateStatus').textContent = 'Done! ' + count + ' products updated at rate 1:' + rate;
-        flashToast(count + ' products RMB updated', 'success');
+        document.getElementById('rateStatus').textContent = '完成！' + count + ' 个产品已按汇率 1:' + rate;
+        flashToast(count + ' 个产品的人民币价格已更新', 'success');
     }).catch(function() {
-        document.getElementById('rateStatus').textContent = 'Some updates failed.';
+        document.getElementById('rateStatus').textContent = '部分产品更新失败，请重试。';
     });
 }
 
@@ -254,7 +258,7 @@ function updateBatchBar() {
 function batchDelete() {
     var checks = document.querySelectorAll('.product-check:checked');
     if (checks.length === 0) return;
-    if (!confirm('Delete ' + checks.length + ' selected products? This cannot be undone.')) return;
+    if (!confirm('删除 ' + checks.length + ' 个已选择 products? This cannot be undone.')) return;
     var ids = [];
     for (var i = 0; i < checks.length; i++) { ids.push(checks[i].value); }
     document.getElementById('batchIds').value = ids.join(',');
@@ -267,16 +271,16 @@ function clearSelection() {
     updateBatchBar();
 }
 
-// ── Edit Mode Toggle ──
+// ── 批量编辑 Toggle ──
 function toggleEditMode() {
     editModeActive = !editModeActive;
     var btn = document.getElementById('editModeBtn');
     if (editModeActive) {
-        btn.innerHTML = '<i class="bi bi-check-lg"></i> Done Editing';
+        btn.innerHTML = '<i class="bi bi-check-lg"></i> 完成编辑';
         btn.className = 'btn btn-warning me-1';
         enterEditModeAll();
     } else {
-        btn.innerHTML = '<i class="bi bi-pencil-square"></i> Edit Mode';
+        btn.innerHTML = '<i class="bi bi-pencil-square"></i> 批量编辑';
         btn.className = 'btn btn-outline-warning me-1';
         exitEditModeAll();
     }
@@ -333,7 +337,7 @@ function exitEditModeAll() {
         }
     }
     if (saved === 0) {
-        flashToast('No changes detected', '');
+        flashToast('没有检测到修改。', '');
     }
 }
 
@@ -345,13 +349,13 @@ function saveProductChanges(id, changes, row) {
     }).then(function(r) { return r.json(); }).then(function(data) {
         if (data.success) {
             updateRowDisplay(row, data.product);
-            flashToast('Saved', 'success');
+            flashToast('已保存。', 'success');
         } else {
-            flashToast(data.error || 'Save failed', 'danger');
+            flashToast(data.error || '保存失败。', 'danger');
             restoreRowDisplay(row);
         }
     }).catch(function() {
-        flashToast('Network error', 'danger');
+        flashToast('网络错误。', 'danger');
         restoreRowDisplay(row);
     });
 }
@@ -516,13 +520,13 @@ function commitCellEdit(cell) {
     }).then(function(r) { return r.json(); }).then(function(data) {
         if (data.success) {
             updateSingleCell(cell, data.product);
-            flashToast('Saved', 'success');
+            flashToast('已保存。', 'success');
         } else {
-            flashToast(data.error || 'Save failed', 'danger');
+            flashToast(data.error || '保存失败。', 'danger');
             restoreCellDisplay(cell);
         }
     }).catch(function() {
-        flashToast('Network error', 'danger');
+        flashToast('网络错误。', 'danger');
         restoreCellDisplay(cell);
     });
 }
@@ -577,25 +581,25 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// ── Delete Product (AJAX) ──
+// ── 删除 Product (AJAX) ──
 function deleteProduct(id, name) {
-    if (!confirm('Delete product ' + name + '?')) return;
+    if (!confirm('删除 product ' + name + '?')) return;
     fetch('/api/products/' + id + '/delete', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.success) {
                 var row = document.getElementById('row-' + id);
                 if (row) { row.style.display = 'none'; }
-                flashToast('Deleted', 'success');
+                flashToast('已删除', 'success');
             } else {
-                flashToast(data.error || 'Delete failed', 'danger');
+                flashToast(data.error || '删除失败。', 'danger');
             }
-        }).catch(function() { flashToast('Network error', 'danger'); });
+        }).catch(function() { flashToast('网络错误。', 'danger'); });
 }
 
-// ── Copy Product ──
+// ── 复制 Product ──
 function copyProduct(id) {
-    if (!confirm('Copy this product? A new product will be created with same info.')) return;
+    if (!confirm('确定复制该产品吗？系统会创建一条相同信息的新产品。')) return;
     fetch('/api/products/' + id + '/copy', { method: 'POST' })
         .then(function(r) { return r.json(); })
         .then(function(data) {
@@ -606,7 +610,7 @@ function copyProduct(id) {
                 tr.id = 'row-' + p.id;
                 tr.innerHTML =
                     '<td><input type="checkbox" class="form-check-input product-check" value="' + p.id + '" onchange="updateBatchBar()"></td>' +
-                    '<td>' + (p.image ? '<img src="/uploads/' + p.image + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">' : '<span class="text-muted">—</span>') + '</td>' +
+                    '<td>' + (p.image ? '<img src="/uploads/thumb/' + encodeURIComponent(p.image) + '" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">' : '<span class="text-muted">—</span>') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="name">' + escHtml(p.name) + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="chinese_name">' + escHtml(p.chinese_name || '') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="product_code">' + escHtml(p.product_code || '') + '</td>' +
@@ -615,21 +619,21 @@ function copyProduct(id) {
                     '<td class="text-end editable editable-price" data-id="' + p.id + '" data-field="unit_price_rmb" data-value="' + (p.unit_price_rmb || 0).toFixed(2) + '">¥' + (p.unit_price_rmb || 0).toFixed(2) + '</td>' +
                     '<td class="text-end rate-cell" data-id="' + p.id + '">' + renderRateCell(p) + '</td>' +
                     '<td class="text-end text-nowrap">' +
-                        '<button type="button" class="btn btn-sm btn-outline-info" title="Copy" onclick="copyProduct(' + p.id + ')"><i class="bi bi-copy"></i></button> ' +
-                        '<a href="/products/' + p.id + '/edit" class="btn btn-sm btn-outline-warning" title="Full edit (image)"><i class="bi bi-pencil"></i></a> ' +
-                        '<button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteProduct(' + p.id + ', \'' + escHtml(p.name) + '\')"><i class="bi bi-trash"></i></button>' +
+                        '<button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct(' + p.id + ')"><i class="bi bi-copy"></i></button> ' +
+                        '<a href="/products/' + p.id + '/edit" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a> ' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger" title="删除" onclick="deleteProduct(' + p.id + ', \'' + escHtml(p.name) + '\')"><i class="bi bi-trash"></i></button>' +
                     '</td>';
                 tbody.insertBefore(tr, tbody.firstChild);
-                flashToast('Copied! Edit below.', 'success');
+                flashToast('复制成功，请在下方编辑。', 'success');
                 tr.style.background = '#d1fae5';
                 setTimeout(function() { tr.style.background = ''; }, 3000);
                 // Auto-edit the new row's name
                 var nameCell = tr.querySelector('.editable[data-field="name"]');
                 if (nameCell) { makeEditable(nameCell, true); }
             } else {
-                flashToast('Copy failed', 'danger');
+                flashToast('复制失败。', 'danger');
             }
-        }).catch(function() { flashToast('Network error', 'danger'); });
+        }).catch(function() { flashToast('网络错误。', 'danger'); });
 }
 
 function renderRateCell(p) {

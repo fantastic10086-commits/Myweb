@@ -1,78 +1,94 @@
 {% extends "base.html" %}
-{% block title %}Settings{% endblock %}
+{% block title %}系统设置{% endblock %}
 
 {% block content %}
 <div class="row mb-3">
     <div class="col">
-        <h2><i class="bi bi-gear me-2"></i>Settings</h2>
+        <h2><i class="bi bi-gear me-2"></i>系统设置</h2>
     </div>
 </div>
 
+<form method="post">
 <div class="card mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-robot me-2"></i>DingTalk Bot (喜报)</h5></div>
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-robot me-2"></i>钉钉机器人 (喜报)</h5></div>
     <div class="card-body">
-        <p class="text-muted">When a payment is confirmed, a 喜报 message will be sent to your DingTalk group via bot.</p>
-        <form method="post">
+        <p class="text-muted">登记回款后，系统会通过机器人向钉钉群发送喜报。</p>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="dingtalk_report_enabled" name="dingtalk_report_enabled" {% if report_enabled %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="dingtalk_report_enabled">开启回款喜报</label>
+            </div>
             <div class="mb-3">
-                <label for="dingtalk_webhook" class="form-label">Webhook URL</label>
+                <label for="dingtalk_webhook" class="form-label">Webhook 地址</label>
                 <input type="url" class="form-control" id="dingtalk_webhook" name="dingtalk_webhook"
-                       value="{{ dingtalk_webhook }}" placeholder="https://oapi.dingtalk.com/robot/send?access_token=...">
+                       value="{{ dingtalk_webhook }}" placeholder="{% if webhook_ok %}已配置，留空表示保持不变{% else %}请填写钉钉机器人地址{% endif %}">
                 <small class="text-muted">
-                    Get this from DingTalk group: Group Settings → Robot → Add Webhook Robot → Copy Webhook URL.
+                    获取路径：钉钉群设置 → 机器人 → 添加自定义机器人 → 复制机器人地址。
                 </small>
             </div>
-            {% if webhook_ok %}<div class="alert alert-success mt-2 mb-0 py-2 small"><i class="bi bi-check-circle"></i> Webhook configured. Payments trigger 喜报.</div>{% endif %}
-        </form>
+            <div class="mb-3">
+                <label for="dingtalk_shu_kei_webhook" class="form-label">Shu Kei 喜报群 Webhook</label>
+                <input type="url" class="form-control" id="dingtalk_shu_kei_webhook" name="dingtalk_shu_kei_webhook"
+                       value="{{ dingtalk_shu_kei_webhook }}" placeholder="{% if shu_kei_webhook_ok %}已配置，留空表示保持不变{% else %}可选；未填写时发送到默认喜报群{% endif %}">
+                <small class="text-muted">配置后，Shu Kei 的喜报只发送到这个群；其他业务员仍发送到默认群。</small>
+            </div>
+            {% if webhook_ok %}<div class="alert alert-success mt-2 mb-0 py-2 small"><i class="bi bi-check-circle"></i> Webhook 已配置，登记回款后会发送喜报。</div>{% endif %}
+            {% if shu_kei_webhook_ok %}<div class="alert alert-info mt-2 mb-0 py-2 small"><i class="bi bi-check-circle"></i> Shu Kei 专用喜报群已配置。</div>{% endif %}
     </div>
 </div>
 
 <div class="card mb-4">
-    <div class="card-header"><h5 class="mb-0"><i class="bi bi-check2-square me-2"></i>DingTalk 待办 (Task Creation)</h5></div>
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-check2-square me-2"></i>钉钉待办（自动创建）</h5></div>
     <div class="card-body">
-        <p class="text-muted">When a payment is confirmed, automatically create a DingTalk task with the PI PDF attached.</p>
-        <form method="post">
+        <p class="text-muted">登记回款后，自动创建钉钉待办并附上 PI PDF。</p>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" role="switch" id="dingtalk_task_enabled" name="dingtalk_task_enabled" {% if task_enabled %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="dingtalk_task_enabled">开启自动创建钉钉待办</label>
+            </div>
             <div class="mb-3">
                 <label for="dingtalk_appkey" class="form-label">AppKey</label>
                 <input type="text" class="form-control" id="dingtalk_appkey" name="dingtalk_appkey"
-                       value="{{ dingtalk_appkey }}" placeholder="DingTalk enterprise app AppKey">
+                       value="{{ dingtalk_appkey }}" placeholder="钉钉企业应用 AppKey">
             </div>
             <div class="mb-3">
                 <label for="dingtalk_appsecret" class="form-label">AppSecret</label>
                 <input type="password" class="form-control" id="dingtalk_appsecret" name="dingtalk_appsecret"
-                       value="{{ dingtalk_appsecret }}" placeholder="DingTalk enterprise app AppSecret">
+                       value="{{ dingtalk_appsecret }}" autocomplete="new-password" placeholder="{% if task_ok %}已配置，留空表示保持不变{% else %}钉钉企业应用 AppSecret{% endif %}">
             </div>
             <div class="mb-3">
-                <label for="exchange_rate" class="form-label">USD : RMB Exchange Rate</label>
+                <label for="exchange_rate" class="form-label">默认业务汇率</label>
                 <div class="input-group" style="max-width:300px;">
-                    <span class="input-group-text">1 USD =</span>
+                    <span class="input-group-text">1 美元 =</span>
                     <input type="text" class="form-control" id="exchange_rate" name="exchange_rate"
                            value="{{ exchange_rate }}" placeholder="7.0">
-                    <span class="input-group-text">RMB</span>
+                    <span class="input-group-text">人民币</span>
                 </div>
-                <small class="text-muted">Used for product list price conversion and procurement profit calculation.</small>
+                <small class="text-muted">
+                    新建 PI 时自动带入，可在每份 PI 中单独调整。已保存 PI 使用自己的历史汇率，不会随这里的修改而改变。
+                    业务员回款业绩始终固定按 1 美元 = 7 人民币折算，与本设置无关。
+                </small>
             </div>
             <div class="mb-3">
                 <label for="dingtalk_agent_id" class="form-label">AgentId</label>
                 <input type="text" class="form-control" id="dingtalk_agent_id" name="dingtalk_agent_id"
-                       value="{{ dingtalk_agent_id }}" placeholder="DingTalk app AgentId (for work notification)">
-                <small class="text-muted">Find in DingTalk Open Platform → App → App Details → AgentId. Used to send work notification after task creation.</small>
+                       value="{{ dingtalk_agent_id }}" placeholder="钉钉应用 AgentId（用于工作通知）">
+                <small class="text-muted">获取路径：钉钉开放平台 → 应用 → 应用详情 → AgentId。用于创建待办后发送工作通知。</small>
             </div>
             <div class="alert alert-warning py-2 mb-2">
-                <strong><i class="bi bi-exclamation-triangle"></i> Required Permissions:</strong>
+                <strong><i class="bi bi-exclamation-triangle"></i> 所需权限：</strong>
                 <ol class="mb-0 mt-1 small">
                     <li><strong>待办任务</strong> → 待办应用中待办写权限</li>
                     <li><strong>通讯录</strong> → Contact.User.Read (通讯录成员信息读权限)</li>
                 </ol>
-                <span class="small">Go to <a href="https://open-dev.dingtalk.com" target="_blank">DingTalk Open Platform</a> → App → Permission Management → search for both "待办" and "Contact.User.Read" → enable them.</span>
+                <span class="small">前往<a href="https://open-dev.dingtalk.com" target="_blank">钉钉开放平台</a> → 应用 → 权限管理，搜索“待办”和“Contact.User.Read”并开通。</span>
             </div>
             <div class="mt-3">
-                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Save</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 保存</button>
             </div>
 
             {% if dt_sps %}
             <div class="mt-3 pt-3 border-top">
-                <label class="form-label fw-bold">Default Task Executors</label>
-                <p class="text-muted small mb-2">These people will always be added as executors on every task (in addition to the PI's salesperson).</p>
+                <label class="form-label fw-bold">默认待办执行人</label>
+                <p class="text-muted small mb-2">这些人员会始终加入每个待办（PI 业务员之外）。</p>
                 {% for sp in dt_sps %}
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" name="default_executors" value="{{ sp.dingtalk_user_id }}"
@@ -84,8 +100,8 @@
                 {% endfor %}
             </div>
             {% endif %}
-        </form>
-        {% if task_ok %}<div class="alert alert-success mt-3 mb-0 py-2"><i class="bi bi-check-circle"></i> DingTalk app configured. Tasks will be created with PDF attachment.</div>{% endif %}
+        {% if task_ok %}<div class="alert alert-success mt-3 mb-0 py-2"><i class="bi bi-check-circle"></i> 钉钉应用已配置，将自动创建带 PDF 附件的待办。</div>{% endif %}
     </div>
 </div>
+</form>
 {% endblock %}

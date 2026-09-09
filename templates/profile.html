@@ -1,42 +1,46 @@
 {% extends "base.html" %}
-{% block title %}My Profile{% endblock %}
+{% block title %}我的资料{% endblock %}
 
 {% block content %}
+{% if current_user.must_change_password %}
+<div class="alert alert-warning"><strong>必须修改密码。</strong> 请设置至少 10 个字符的独立密码后再继续。</div>
+{% endif %}
 <div class="row mb-3">
-    <div class="col"><h2><i class="bi bi-person-circle me-2"></i>My Profile</h2></div>
+    <div class="col"><h2><i class="bi bi-person-circle me-2"></i>我的资料</h2></div>
 </div>
 
 <div class="row g-4">
     <div class="col-lg-5">
-        <div class="card"><div class="card-header"><h5 class="mb-0">Account Info</h5></div><div class="card-body">
+        <div class="card"><div class="card-header"><h5 class="mb-0">账号信息</h5></div><div class="card-body">
             <table class="table table-sm mb-0">
-                <tr><th>Username</th><td>{{ current_user.username }}</td></tr>
-                <tr><th>Role</th><td>{% if is_admin %}<span class="badge bg-warning text-dark">Admin</span>{% else %}<span class="badge bg-info">Salesperson</span>{% endif %}</td></tr>
+                <tr><th>账号</th><td><code>{{ current_user.account }}</code></td></tr>
+                <tr><th>用户名</th><td>{{ current_user.username }}</td></tr>
+                <tr><th>角色</th><td>{% if is_admin %}<span class="badge bg-warning text-dark">管理员</span>{% else %}<span class="badge bg-info">业务员</span>{% endif %}</td></tr>
                 {% if sp %}
-                <tr><th>Name</th><td><strong>{{ sp.name }}</strong></td></tr>
+                <tr><th>姓名</th><td><strong>{{ sp.name }}</strong></td></tr>
                 {% endif %}
             </table>
         </div></div>
 
         {% if sp %}
-        <div class="card mt-3"><div class="card-header"><h5 class="mb-0">Contact Info</h5></div><div class="card-body">
+        <div class="card mt-3"><div class="card-header"><h5 class="mb-0">联系方式</h5></div><div class="card-body">
             <form method="post">
-                <div class="mb-3"><label class="form-label">Phone</label><input type="text" class="form-control" name="phone" value="{{ sp.phone or '' }}"></div>
-                <div class="mb-3"><label class="form-label">Email</label><input type="email" class="form-control" name="email" value="{{ sp.email or '' }}"></div>
-                <div class="mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" name="notes" value="{{ sp.notes or '' }}"></div>
-                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Update</button>
+                <div class="mb-3"><label class="form-label">电话</label><input type="text" class="form-control" name="phone" value="{{ sp.phone or '' }}"></div>
+                <div class="mb-3"><label class="form-label">邮箱</label><input type="email" class="form-control" name="email" value="{{ sp.email or '' }}"></div>
+                <div class="mb-3"><label class="form-label">备注</label><input type="text" class="form-control" name="notes" value="{{ sp.notes or '' }}"></div>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 更新</button>
             </form>
         </div></div>
         {% endif %}
 
-        <!-- Change Password -->
-        <div class="card mt-3"><div class="card-header"><h5 class="mb-0"><i class="bi bi-key me-1"></i>Change Password</h5></div><div class="card-body">
+        <!-- 修改密码 -->
+        <div class="card mt-3"><div class="card-header"><h5 class="mb-0"><i class="bi bi-key me-1"></i>修改密码</h5></div><div class="card-body">
             <form method="post">
                 <input type="hidden" name="action" value="change_password">
-                <div class="mb-3"><label class="form-label">Current Password</label><input type="password" class="form-control" name="current_password" required></div>
-                <div class="mb-3"><label class="form-label">New Password</label><input type="password" class="form-control" name="new_password" required minlength="4"></div>
-                <div class="mb-3"><label class="form-label">Confirm New Password</label><input type="password" class="form-control" name="confirm_password" required minlength="4"></div>
-                <button type="submit" class="btn btn-warning"><i class="bi bi-shield-check"></i> Change Password</button>
+                <div class="mb-3"><label class="form-label">当前密码</label><input type="password" class="form-control" name="current_password" required></div>
+                <div class="mb-3"><label class="form-label">新密码</label><input type="password" class="form-control" name="new_password" required minlength="10" autocomplete="new-password"></div>
+                <div class="mb-3"><label class="form-label">确认新密码</label><input type="password" class="form-control" name="confirm_password" required minlength="10" autocomplete="new-password"></div>
+                <button type="submit" class="btn btn-warning"><i class="bi bi-shield-check"></i> 修改密码</button>
             </form>
         </div></div>
     </div>
@@ -44,22 +48,22 @@
     {% if sp and stats %}
     <div class="col-lg-7">
         <div class="row g-3 mb-3">
-            <div class="col-md-6"><div class="card border-primary"><div class="card-body text-center"><h6 class="text-muted">My PIs</h6><h3 class="text-primary">{{ stats.pi_count }}</h3></div></div></div>
-            <div class="col-md-6"><div class="card border-success"><div class="card-body text-center"><h6 class="text-muted">Total Amount</h6><h3 class="text-success">${{ '%.2f'|format(stats.total_amount) }}</h3></div></div></div>
+            <div class="col-md-6"><div class="card border-primary"><div class="card-body text-center"><h6 class="text-muted">我的 PI</h6><h3 class="text-primary">{{ stats.pi_count }}</h3></div></div></div>
+            <div class="col-md-6"><div class="card border-success"><div class="card-body text-center"><h6 class="text-muted">订单总金额（折合美元）</h6><h3 class="text-success">${{ '%.2f'|format(stats.total_amount) }}</h3></div></div></div>
         </div>
-        <div class="card"><div class="card-header"><h5 class="mb-0">My Recent PIs</h5></div>
+        <div class="card"><div class="card-header"><h5 class="mb-0">我的最近 PI</h5></div>
             {% set my_pis = pi_list %}
             {% if my_pis %}
             <div class="table-responsive"><table class="table table-hover mb-0">
-                <thead><tr><th>PI#</th><th>Customer</th><th>Date</th><th class="text-end">Amount</th></tr></thead>
+                <thead><tr><th>PI 编号</th><th>客户</th><th>日期</th><th class="text-end">金额</th></tr></thead>
                 <tbody>{% for pi in my_pis[:10] %}<tr>
                     <td><strong>{{ pi.pi_number }}</strong></td>
                     <td>{{ pi.customer.name if pi.customer else '-' }}</td>
                     <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                    <td class="text-end">${{ '%.2f'|format(pi.total_amount) }}</td>
+                    <td class="text-end">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.grand_total) }}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
-            {% else %}<div class="text-center py-4 text-muted">No PIs yet.</div>{% endif %}
+            {% else %}<div class="text-center py-4 text-muted">暂无 PI。</div>{% endif %}
         </div>
     </div>
     {% endif %}

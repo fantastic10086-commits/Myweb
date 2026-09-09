@@ -18,7 +18,8 @@ def generate_pi_excel(pi, output_dir):
     cur = getattr(pi, 'currency', 'USD') or 'USD'
     sym = CUR_SYMBOL.get(cur, '$')
     brand = getattr(pi, 'company', 'klista') or 'klista'
-    company_name = BRANDS.get(brand, BRANDS['klista'])
+    company_name = getattr(pi, '_company_name_override', '') or BRANDS.get(brand, BRANDS['klista'])
+    company_address = getattr(pi, '_company_addr_override', '') or 'No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China'
     filename = f"{pi.pi_number}.xlsx"
     filepath = os.path.join(output_dir, filename)
 
@@ -62,7 +63,7 @@ def generate_pi_excel(pi, output_dir):
     c.font = Font(name='Arial', bold=True, size=13, color='1a3a5c'); c.alignment = Alignment(horizontal='center')
     r += 1
     ws.merge_cells(f'A{r}:E{r}')
-    c = ws.cell(row=r, column=1, value='No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China')
+    c = ws.cell(row=r, column=1, value=company_address)
     c.font = Font(name='Arial', size=6, color='888888'); c.alignment = Alignment(horizontal='center')
     r += 1
     ws.merge_cells(f'A{r}:E{r}')
@@ -103,6 +104,12 @@ def generate_pi_excel(pi, output_dir):
         if customer.address:
             ws.cell(row=r, column=4, value='Address:').font = b9
             ws.cell(row=r, column=5, value=customer.address).font = n9; ws.cell(row=r, column=5).alignment = lft; r += 1
+        if customer.notes:
+            ws.cell(row=r, column=4, value='Customer Notes:').font = b9
+            ws.cell(row=r, column=5, value=customer.notes).font = n9
+            ws.cell(row=r, column=5).alignment = lft
+            ws.row_dimensions[r].height = 30
+            r += 1
 
     r = max(r, pi_start + 3) + 2
 
@@ -133,11 +140,28 @@ def generate_pi_excel(pi, output_dir):
         r += 1
     r += 1
 
-    # ── Total ──
+    # ── Totals ──
     total = pi.total_amount
+    adjustment = getattr(pi, 'shipping_cost', 0.0) or 0.0
+    if abs(adjustment) > 0.001:
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
+        ws.cell(row=r, column=1, value='PRODUCT SUBTOTAL:').font = b9
+        ws.cell(row=r, column=1).alignment = rgt
+        c = ws.cell(row=r, column=5, value=total); c.font = n9; c.alignment = rgt; c.number_format = f'{sym}#,##0.00'
+        r += 1
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
+        adjustment_label = (
+            getattr(pi, 'shipping_note_en', '')
+            or getattr(pi, 'shipping_note', '')
+            or 'Other Charges / Discount'
+        )
+        ws.cell(row=r, column=1, value=f'{adjustment_label.upper()}:').font = b9
+        ws.cell(row=r, column=1).alignment = rgt
+        c = ws.cell(row=r, column=5, value=adjustment); c.font = n9; c.alignment = rgt; c.number_format = f'{sym}#,##0.00'
+        r += 1
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
     ws.cell(row=r, column=1, value='TOTAL:').font = Font(name='Arial', bold=True, size=12); ws.cell(row=r, column=1).alignment = rgt
-    c = ws.cell(row=r, column=5, value=total); c.font = Font(name='Arial', bold=True, size=12); c.alignment = rgt
+    c = ws.cell(row=r, column=5, value=total + adjustment); c.font = Font(name='Arial', bold=True, size=12); c.alignment = rgt
     c.number_format = f'{sym}#,##0.00'; c.border = Border(bottom=Side('double'))
     r += 2
 

@@ -1,21 +1,22 @@
 #!/bin/bash
-# PI Management System — One-click startup
-PORT=5001
+set -euo pipefail
+
 APP_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$APP_ROOT"
 
-# Kill existing process on port (if lsof or fuser available)
-PID=$(lsof -ti :$PORT 2>/dev/null || fuser $PORT/tcp 2>/dev/null | awk '{print $1}')
-if [ -n "$PID" ]; then
-    kill -9 $PID 2>/dev/null && sleep 1
-    echo "Killed PID $PID on port $PORT"
+if command -v systemctl >/dev/null 2>&1 && systemctl cat pi-manager.service >/dev/null 2>&1; then
+    sudo systemctl start pi-manager
+    sudo systemctl --no-pager status pi-manager
+    exit 0
 fi
 
-echo "Starting Flask on port $PORT ..."
-nohup python3 -m flask run --host=0.0.0.0 --port=$PORT > pi_manager.log 2>&1 &
-echo $! > pi_manager.pid
+mkdir -p "$APP_ROOT/.run"
+if [ -f "$APP_ROOT/.run/pi-manager.pid" ] && kill -0 "$(cat "$APP_ROOT/.run/pi-manager.pid")" 2>/dev/null; then
+    echo "PI Manager is already running."
+    exit 0
+fi
 
-sleep 2
-echo "Server PID: $(cat pi_manager.pid)"
-echo "Access at http://<NAS_IP>:$PORT"
-echo "Logs: tail -f $APP_ROOT/pi_manager.log"
+nohup "$APP_ROOT/venv/bin/gunicorn" --workers 1 --threads 4 --timeout 120 \
+    --bind 127.0.0.1:8000 app:app > "$APP_ROOT/pi_manager.log" 2>&1 &
+echo $! > "$APP_ROOT/.run/pi-manager.pid"
+echo "PI Manager started on http://127.0.0.1:8000"

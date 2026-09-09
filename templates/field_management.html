@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}字段管理{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col">
+        <h2><i class="bi bi-ui-checks-grid me-2"></i>字段管理</h2>
+        <p class="text-muted mb-0">统一维护 PI 表单中的可选字段和收款账户。</p>
+    </div>
+</div>
+
+<div class="card mb-4" id="shipping_note">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-receipt me-1"></i>客户费用 / 折扣类型（对外）</h5>
+        <small class="text-muted">向客户加收的运费、手续费或给予客户的折扣，会计入订单总金额。中文供内部选择，英文显示在对外 PI、PDF 和 Excel 中。</small>
+    </div>
+    <div class="card-body">
+        <form method="post" action="{{ url_for('field_option_add') }}" class="row g-2 align-items-end mb-3">
+            <input type="hidden" name="field_key" value="shipping_note">
+            <div class="col-md-4">
+                <label class="form-label">中文名称</label>
+                <input type="text" class="form-control" name="value" maxlength="200" required placeholder="例如：运费">
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">英文名称（对外单据）</label>
+                <input type="text" class="form-control" name="english_value" maxlength="200" required placeholder="例如：Freight">
+            </div>
+            <div class="col-md-3 d-grid">
+                <button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>添加选项</button>
+            </div>
+        </form>
+
+        {% if shipping_note_options %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th style="width:70px;">顺序</th><th>中文名称</th><th>英文名称（显示在 PI）</th><th class="text-end" style="width:190px;">操作</th></tr></thead>
+                <tbody>
+                {% for option in shipping_note_options %}
+                    <tr>
+                        <td class="text-muted">{{ loop.index }}</td>
+                        <td>
+                            <form id="shipping-option-{{ option.id }}" method="post" action="{{ url_for('field_option_edit', id=option.id) }}">
+                                <input type="text" class="form-control" name="value" maxlength="200" required value="{{ option.value }}">
+                            </form>
+                        </td>
+                        <td><input form="shipping-option-{{ option.id }}" type="text" class="form-control" name="english_value" maxlength="200" required value="{{ option.english_value }}"></td>
+                        <td class="text-end text-nowrap">
+                            <button form="shipping-option-{{ option.id }}" class="btn btn-outline-warning">保存修改</button>
+                            <form method="post" action="{{ url_for('field_option_delete', id=option.id) }}" class="d-inline" data-value="{{ option.value }}" onsubmit="return confirmFieldOptionDelete(this);">
+                                <button class="btn btn-outline-danger">删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">暂无客户费用 / 折扣类型，请先添加。</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mb-4" id="expense_category">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-cash-stack me-1"></i>订单真实成本类别（内部）</h5>
+        <small class="text-muted">用于登记订单完成过程中实际发生的报关费、真实运费等成本。不计入客户订单总金额，只在管理员利润表中扣减利润。</small>
+    </div>
+    <div class="card-body">
+        <form method="post" action="{{ url_for('field_option_add') }}" class="row g-2 align-items-end mb-3">
+            <input type="hidden" name="field_key" value="expense_category">
+            <div class="col-md-9">
+                <label class="form-label">新增真实成本类别</label>
+                <input type="text" class="form-control" name="value" maxlength="200" required placeholder="例如：报关费、实际运费">
+            </div>
+            <div class="col-md-3 d-grid">
+                <button class="btn btn-danger"><i class="bi bi-plus-lg me-1"></i>添加类别</button>
+            </div>
+        </form>
+        {% if expense_category_options %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light"><tr><th style="width:70px;">顺序</th><th>内部成本类别</th><th class="text-end" style="width:260px;">操作</th></tr></thead>
+                <tbody>
+                {% for option in expense_category_options %}
+                    <tr>
+                        <td class="text-muted">{{ loop.index }}</td>
+                        <td>
+                            <form method="post" action="{{ url_for('field_option_edit', id=option.id) }}" class="d-flex gap-2">
+                                <input type="text" class="form-control" name="value" maxlength="200" required value="{{ option.value }}">
+                                <button class="btn btn-outline-warning text-nowrap">保存修改</button>
+                            </form>
+                        </td>
+                        <td class="text-end">
+                            <form method="post" action="{{ url_for('field_option_delete', id=option.id) }}" class="d-inline" data-value="{{ option.value }}" onsubmit="return confirmFieldOptionDelete(this);">
+                                <button class="btn btn-outline-danger">删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">暂无真实成本类别，请先添加。</div>
+        {% endif %}
+    </div>
+</div>
+
+{% for field_key, title, description, placeholder, options in [
+    ('price_terms', '价格条款', '管理 PI 中的价格条款。新建和编辑 PI 时可从列表选择，也可临时手动输入。', '例如：FOB Shanghai', price_terms_options),
+    ('delivery_time', '交货期', '管理 PI 中的交货时间。历史 PI 保留当时内容，修改选项不会回写旧单。', '例如：15-20 days after receipt of payment', delivery_time_options)
+] %}
+<div class="card mb-4" id="{{ field_key }}">
+    <div class="card-header">
+        <h5 class="mb-1"><i class="bi bi-list-check me-1"></i>{{ title }}</h5>
+        <small class="text-muted">{{ description }}</small>
+    </div>
+    <div class="card-body">
+        <form method="post" action="{{ url_for('field_option_add') }}" class="row g-2 align-items-end mb-3">
+            <input type="hidden" name="field_key" value="{{ field_key }}">
+            <div class="col-md-9">
+                <label class="form-label">新增{{ title }}选项</label>
+                <input type="text" class="form-control" name="value" maxlength="200" required placeholder="{{ placeholder }}">
+            </div>
+            <div class="col-md-3 d-grid"><button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>添加选项</button></div>
+        </form>
+        {% if options %}
+        <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th style="width:70px;">顺序</th><th>{{ title }}</th><th class="text-end" style="width:260px;">操作</th></tr></thead>
+            <tbody>{% for option in options %}<tr>
+                <td class="text-muted">{{ loop.index }}</td>
+                <td><form id="{{ field_key }}-option-{{ option.id }}" method="post" action="{{ url_for('field_option_edit', id=option.id) }}"><input type="text" class="form-control" name="value" maxlength="200" required value="{{ option.value }}"></form></td>
+                <td class="text-end text-nowrap">
+                    <button form="{{ field_key }}-option-{{ option.id }}" class="btn btn-outline-warning">保存修改</button>
+                    <form method="post" action="{{ url_for('field_option_delete', id=option.id) }}" class="d-inline" data-value="{{ option.value }}" onsubmit="return confirmFieldOptionDelete(this);"><button class="btn btn-outline-danger">删除</button></form>
+                </td>
+            </tr>{% endfor %}</tbody>
+        </table></div>
+        {% else %}<div class="text-center py-4 text-muted">暂无{{ title }}选项，新建 PI 时仍可手动输入。</div>{% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="card" id="accounts">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="mb-1"><i class="bi bi-bank me-1"></i>收款账户</h5>
+            <small class="text-muted">选择账户时会将收款人、地址、银行、SWIFT 等整组信息保存到 PI；后续修改账户不影响历史 PI。</small>
+        </div>
+        <a href="{{ url_for('account_add') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>新增账户</a>
+    </div>
+    <div class="card-body p-0">
+        {% if accounts %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light"><tr><th>名称</th><th>币种</th><th>收款人</th><th>银行</th><th>账号</th><th>SWIFT / 银行代码</th><th>品牌</th><th class="text-end">操作</th></tr></thead>
+                <tbody>
+                {% for a in accounts %}
+                    <tr>
+                        <td><strong>{{ a.name }}</strong></td>
+                        <td><span class="badge bg-{{ 'danger' if a.currency == 'RMB' else 'primary' }}">{{ a.currency or 'USD' }}</span></td>
+                        <td>{{ a.company_name[:30] }}</td>
+                        <td>{{ a.bank_name[:30] }}</td>
+                        <td>{{ a.account_no }}</td>
+                        <td>{{ a.swift_code }}{% if a.bank_code %}<div class="small text-muted">Bank: {{ a.bank_code }}</div>{% endif %}{% if a.branch_code %}<div class="small text-muted">Branch: {{ a.branch_code }}</div>{% endif %}</td>
+                        <td>{{ 'QISUO' if a.brand == 'qisuo' else '克利斯达' }}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url_for('account_edit', id=a.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
+                            <form action="{{ url_for('account_delete', id=a.id) }}" method="post" class="d-inline" onsubmit="return confirmAccountDelete(this, {{ a.name|tojson }});">
+                                <input type="hidden" name="confirm_value"><input type="hidden" name="current_password">
+                                <button class="btn btn-sm btn-outline-danger">删除</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">暂无收款账户。</div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function confirmFieldOptionDelete(form) {
+    return confirm('确定删除选项“' + form.dataset.value + '”吗？\n历史 PI 中已经保存的内容不会改变。');
+}
+function confirmAccountDelete(form, name) {
+    var typed = prompt('请输入账户名称以确认删除：\n\n' + name);
+    if (typed === null) return false;
+    var password = prompt('请输入当前管理员密码：');
+    if (password === null) return false;
+    form.querySelector('[name="confirm_value"]').value = typed;
+    form.querySelector('[name="current_password"]').value = password;
+    return true;
+}
+</script>
+{% endblock %}

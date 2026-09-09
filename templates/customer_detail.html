@@ -8,21 +8,21 @@
     </div>
     <div class="col-md-6 text-md-end">
         <a href="{{ url_for('pi_create', customer_id=customer.id) }}" class="btn btn-info">
-            <i class="bi bi-file-earmark-plus"></i> New PI for {{ customer.name }}
+            <i class="bi bi-file-earmark-plus"></i> 为 {{ customer.name }} 新建 PI
         </a>
         <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i> 返回
         </a>
     </div>
 </div>
 
 <div class="row g-4">
-    <!-- Customer Info Card -->
+    <!-- 客户信息 Card -->
     <div class="col-lg-4">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Customer Info</h5>
-                <a href="{{ url_for('customer_edit', id=customer.id) }}" class="btn btn-sm btn-outline-warning">Edit</a>
+                <h5 class="mb-0">客户信息</h5>
+                <a href="{{ url_for('customer_edit', id=customer.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
             </div>
             <div class="card-body">
                 {% if customer.image %}
@@ -31,59 +31,59 @@
                 </div>
                 {% endif %}
                 <table class="table table-sm mb-0">
-                    <tr><th class="ps-0">Name</th><td class="pe-0">{{ customer.name }}</td></tr>
-                    <tr><th class="ps-0">Country</th><td class="pe-0">{{ customer.country or '-' }}</td></tr>
-                    <tr><th class="ps-0">Contact</th><td class="pe-0">{{ customer.contact_person or '-' }}</td></tr>
-                    <tr><th class="ps-0">Salesperson</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
-                    <tr><th class="ps-0">Email</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
-                    <tr><th class="ps-0">Phone</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>
-                    <tr><th class="ps-0">Total Deal (USD)</th><td class="pe-0"><strong class="text-success">${{ '%.2f'|format(customer.total_deal_usd or 0) }}</strong></td></tr>
+                    <tr><th class="ps-0">名称</th><td class="pe-0">{{ customer.name }}</td></tr>
+                    <tr><th class="ps-0">国家</th><td class="pe-0">{{ customer.country or '-' }}</td></tr>
+                    <tr><th class="ps-0">联系人</th><td class="pe-0">{{ customer.contact_person or '-' }}</td></tr>
+                    <tr><th class="ps-0">业务员</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
+                    <tr><th class="ps-0">邮箱</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
+                    <tr><th class="ps-0">电话</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>
+                    <tr><th class="ps-0">总成交额（USD）</th><td class="pe-0"><strong class="text-success">${{ '%.2f'|format(customer.total_deal_usd or 0) }}</strong></td></tr>
 
-                    <tr><th class="ps-0">Created</th><td class="pe-0">{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td></tr>
-                    <tr><th class="ps-0">Address</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.address or '-' }}</td></tr>
-                    <tr><th class="ps-0">Notes</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.notes or '-' }}</td></tr>
+                    <tr><th class="ps-0">创建时间</th><td class="pe-0">{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td></tr>
+                    <tr><th class="ps-0">地址</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.address or '-' }}</td></tr>
+                    <tr><th class="ps-0">备注</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.notes or '-' }}</td></tr>
                 </table>
             </div>
         </div>
     </div>
 
-    <!-- PI History -->
+    <!-- PI 历史 -->
     <div class="col-lg-8">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">PI History ({{ pis|length }})</h5>
+                <h5 class="mb-0">PI 历史 ({{ pis|length }})</h5>
             </div>
             <!-- Filter Bar -->
             <div class="card-body py-2 border-bottom">
                 <form method="get" class="row g-2 align-items-end">
                     <div class="col-md-3">
-                        <label class="form-label small mb-1">PI Number</label>
-                        <input type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number or '' }}" placeholder="Search PI#...">
+                        <label class="form-label small mb-1">PI 编号</label>
+                        <input type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number or '' }}" placeholder="搜索 PI 编号……">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label small mb-1">Date From</label>
+                        <label class="form-label small mb-1">开始日期</label>
                         <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from or '' }}">
                     </div>
                     <div class="col-md-2">
-                        <label class="form-label small mb-1">Date To</label>
+                        <label class="form-label small mb-1">结束日期</label>
                         <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to or '' }}">
                     </div>
                     <div class="col-md-3 position-relative">
-                        <label class="form-label small mb-1">Product</label>
-                        <input type="text" class="form-control form-control-sm" name="product" id="productSearch" value="{{ product or '' }}" placeholder="Type to search..." autocomplete="off">
+                        <label class="form-label small mb-1">产品</label>
+                        <input type="text" class="form-control form-control-sm" name="product" id="productSearch" value="{{ product or '' }}" placeholder="输入关键词搜索……" autocomplete="off">
                         <div id="productDropdown" class="position-absolute bg-white border rounded shadow-sm" style="display:none;max-height:200px;overflow-y:auto;z-index:1000;left:12px;right:12px;"></div>
                     </div>
                     <div class="col-md-1">
-                        <label class="form-label small mb-1">$ Min</label>
+                        <label class="form-label small mb-1">金额下限</label>
                         <input type="number" step="0.01" class="form-control form-control-sm" name="amount_min" value="{{ amount_min or '' }}" placeholder="0">
                     </div>
                     <div class="col-md-1">
-                        <label class="form-label small mb-1">$ Max</label>
+                        <label class="form-label small mb-1">金额上限</label>
                         <input type="number" step="0.01" class="form-control form-control-sm" name="amount_max" value="{{ amount_max or '' }}" placeholder="∞">
                     </div>
                 <div class="col-12 mt-2">
-                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> Search</button>
-                    <a href="{{ url_for('customer_detail', id=customer.id) }}" class="btn btn-sm btn-outline-secondary ms-2">Clear</a>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 搜索</button>
+                    <a href="{{ url_for('customer_detail', id=customer.id) }}" class="btn btn-sm btn-outline-secondary ms-2">清除</a>
                 </div>
                 </form>
             </div>
@@ -93,12 +93,12 @@
                     <table class="table table-hover mb-0 align-middle">
                         <thead class="table-light">
                             <tr>
-                                <th>PI Number</th>
-                                <th>Date</th>
-                                <th>Paid</th>
-                                <th>Items</th>
-                                <th class="text-end">Total (USD)</th>
-                                <th class="text-end">Actions</th>
+                                <th>PI 编号</th>
+                                <th>日期</th>
+                                <th>回款状态</th>
+                                <th>产品</th>
+                                <th class="text-end">订单总金额</th>
+                                <th class="text-end">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -106,7 +106,7 @@
                             <tr>
                                 <td><strong>{{ pi.pi_number }}</strong></td>
                                 <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                                <td>{% if pi.paid %}<span class="badge bg-success">Paid</span>{% elif (pi.received_amount or 0) > 0 %}<span class="badge bg-warning">Partial</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td>
+                                <td>{% if pi.paid %}<span class="badge bg-success">已付清</span>{% elif (pi.received_amount or 0) > 0 %}<span class="badge bg-warning">部分回款</span>{% else %}<span class="badge bg-secondary">未回款</span>{% endif %}</td>
                                 <td>
                                     <small>
                                     {% for item in pi.items %}
@@ -115,13 +115,13 @@
                                     {% endfor %}
                                     </small>
                                 </td>
-                                <td class="text-end">${{ '%.2f'|format(pi.total_amount) }}</td>
+                                <td class="text-end">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.grand_total) }}</td>
                                 <td class="text-end">
                                     <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post" class="d-inline"
-                                          onsubmit="return confirm('Copy PI {{ pi.pi_number }}? All info will be kept, only the date will be updated.');">
-                                        <button type="submit" class="btn btn-sm btn-outline-info" title="Copy"><i class="bi bi-copy"></i></button>
+                                          onsubmit="return confirm('复制 PI {{ pi.pi_number }}? 全部信息会保留，仅更新日期。');">
+                                        <button type="submit" class="btn btn-sm btn-outline-info" title="复制"><i class="bi bi-copy"></i></button>
                                     </form>
-                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">View</button>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">查看</button>
                                     {% if pi.pdf_path %}
                                     <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-outline-success"><i class="bi bi-download"></i> PDF</a>
                                     {% endif %}
@@ -134,9 +134,9 @@
                 {% else %}
                 <div class="text-center py-5 text-muted">
                     <i class="bi bi-inbox display-3"></i>
-                    <p class="mt-2">No PIs for this customer yet.</p>
+                    <p class="mt-2">该客户暂无 PI。</p>
                     <a href="{{ url_for('pi_create', customer_id=customer.id) }}" class="btn btn-info">
-                        <i class="bi bi-plus-circle"></i> Create First PI
+                        <i class="bi bi-plus-circle"></i> 创建第一份 PI
                     </a>
                 </div>
                 {% endif %}
@@ -147,12 +147,12 @@
 
 <div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">PI Preview</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title">PI 预览</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
     </div></div>
 </div>
 <script>
-// Product autocomplete
+// 产品 autocomplete
 var productInput = document.getElementById('productSearch');
 var productDropdown = document.getElementById('productDropdown');
 var productTimer = null;
@@ -176,7 +176,7 @@ productInput.addEventListener('input', function() {
                 for (var i = 0; i < data.length; i++) {
                     html += '<div class="dropdown-item small py-1" style="cursor:pointer;" onmousedown="selectProduct(\'' + escAttr(data[i].name) + '\')">';
                     if (data[i].img) {
-                        html += '<img src="/uploads/' + escAttr(data[i].img) + '" style="width:28px;height:28px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;">';
+                        html += '<img src="/uploads/thumb/' + encodeURIComponent(data[i].img) + '" loading="lazy" decoding="async" style="width:28px;height:28px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;">';
                     }
                     html += escHtml(data[i].name);
                     if (data[i].chinese_name) html += ' <small class=\"text-muted\">' + escHtml(data[i].chinese_name) + '</small>';

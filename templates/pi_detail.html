@@ -1,123 +1,174 @@
 {% extends "base.html" %}
-{% block title %}PI {{ pi.pi_number }}{% endblock %}
+{% block title %}预览 PI {{ pi.pi_number }}{% endblock %}
 
 {% block content %}
-<div class="row mb-3">
+{% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+<div class="row mb-3 align-items-center">
     <div class="col">
-        <h2><i class="bi bi-file-text me-2"></i>{{ pi.pi_number }}</h2>
+        <h2><i class="bi bi-eye me-2"></i>预览 PI {{ pi.pi_number }}</h2>
         <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back to PI List
+            <i class="bi bi-arrow-left"></i> 返回
         </a>
     </div>
-    <div class="col text-end">
-        {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-danger me-1"><i class="bi bi-file-pdf me-1"></i>PDF</a>{% endif %}
-        {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-success me-1"><i class="bi bi-file-excel me-1"></i>Excel</a>{% endif %}
-        <form action="{{ url_for('pi_delete', id=pi.id) }}" method="post" class="d-inline"
-              onsubmit="return confirm('Delete PI {{ pi.pi_number }}?');">
-            <button type="submit" class="btn btn-outline-danger">
-                <i class="bi bi-trash"></i> Delete PI
-            </button>
-        </form>
+    <div class="col-auto">
+        <a href="{{ url_for('pi_export', id=pi.id) }}" class="btn btn-outline-primary me-2">
+            <i class="bi bi-box-arrow-up-right me-1"></i> 导出
+        </a>
+        <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-warning">
+            <i class="bi bi-pencil-square me-1"></i> 编辑
+        </a>
     </div>
 </div>
 
 <div class="row g-4">
-    <!-- PI Info -->
-    <div class="col-lg-4">
-        <div class="card">
-            <div class="card-header"><h5 class="mb-0">PI Information</h5></div>
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div>
             <div class="card-body">
-                <table class="table table-sm mb-0">
-                    <tr><th>PI Number</th><td>{{ pi.pi_number }}</td></tr>
-                    <tr><th>Salesperson</th><td>{{ pi.salesperson or '-' }}</td></tr>
-                    <tr><th>Issue Date</th><td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td></tr>
-                    <tr><th>Currency</th><td>{{ pi.currency or 'USD' }}</td></tr>
-                    <tr><th>Paid</th><td>{% if pi.paid %}<span class="badge bg-success">✓ Paid</span>{% else %}<span class="badge bg-secondary">Unpaid</span>{% endif %}</td></tr>
-
-                    <tr><th>Payment Terms</th><td>{{ pi.payment_terms or '-' }}</td></tr>
-                    <tr><th>Bank Info</th><td style="white-space:pre-wrap;">{{ pi.bank_info or '-' }}</td></tr>
-                    <tr><th>Notes</th><td>{{ pi.notes or '-' }}</td></tr>
-                </table>
+                <div class="mb-3">
+                    <label class="form-label">客户</label>
+                    <input type="text" class="form-control" value="{{ pi.customer.name if pi.customer else '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">业务员</label>
+                    <input type="text" class="form-control" value="{{ pi.salesperson or '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">币种</label>
+                    <input type="text" class="form-control" value="{{ pi.currency or 'USD' }} ({{ sym }})" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">本单业务汇率</label>
+                    <input type="text" class="form-control" value="1 USD = {{ '%.4f'|format(pi.exchange_rate or 7) }} RMB" readonly>
+                    <small class="text-muted">用于本单报价、采购和利润核算；不会随系统默认汇率变化。</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">开单日期</label>
+                    <input type="text" class="form-control" value="{{ pi.issue_date.strftime('%Y/%m/%d') if pi.issue_date else '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">付款条款</label>
+                    <input type="text" class="form-control" value="{{ pi.payment_terms or '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">价格条款</label>
+                    <input type="text" class="form-control" value="{{ pi.price_terms or '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">交货期</label>
+                    <input type="text" class="form-control" value="{{ pi.delivery_time or '-' }}" readonly>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">银行信息快照</label>
+                    <textarea class="form-control" rows="9" readonly>{{ pi.bank_info or '-' }}</textarea>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">收货地址</label>
+                    <textarea class="form-control" rows="3" readonly>{{ pi.shipping_address or '-' }}</textarea>
+                </div>
+                <div>
+                    <label class="form-label">PI 备注</label>
+                    <textarea class="form-control" rows="2" readonly>{{ pi.notes or '-' }}</textarea>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Customer Info -->
-    <div class="col-lg-4">
-        <div class="card">
-            <div class="card-header"><h5 class="mb-0">Customer</h5></div>
+    <div class="col-lg-7">
+        <div class="card mb-3">
+            <div class="card-header"><h5 class="mb-0">产品</h5></div>
             <div class="card-body">
-                {% set c = pi.customer %}
-                <table class="table table-sm mb-0">
-                    <tr><th>Name</th><td><strong>{{ c.name }}</strong></td></tr>
-                    <tr><th>Country</th><td>{{ c.country or '-' }}</td></tr>
-                    <tr><th>Contact</th><td>{{ c.contact_person or '-' }}</td></tr>
-                    <tr><th>Email</th><td>{{ c.email or '-' }}</td></tr>
-                    <tr><th>Phone</th><td>{{ c.phone or '-' }}</td></tr>
-                    <tr><th>Address</th><td style="white-space:pre-wrap;">{{ c.address or '-' }}</td></tr>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th><th>产品</th><th>编码</th>
+                                <th class="text-end">单价</th><th>数量</th><th class="text-end">金额</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in pi.items %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>
+                                    {% if item.product and item.product.image %}
+                                    <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" alt="" loading="lazy" decoding="async" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">
+                                    {% endif %}
+                                    <strong>{{ item.product.name if item.product else '-' }}</strong>
+                                    {% if item.product and item.product.specification %}<br><small class="text-muted">{{ item.product.specification }}</small>{% endif %}
+                                </td>
+                                <td>{{ item.product.product_code if item.product else '-' }}</td>
+                                <td class="text-end">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td class="text-end fw-bold">{{ sym }}{{ '%.2f'|format(item.amount) }}</td>
+                            </tr>
+                            {% else %}
+                            <tr><td colspan="6" class="text-center py-4 text-muted">暂无产品明细。</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
-    </div>
 
-    <!-- Items -->
-    <div class="col-lg-4">
-        <div class="card">
-            <div class="card-header"><h5 class="mb-0">Items ({{ pi.items|length }})</h5></div>
-            <div class="card-body p-0">
-                {% if pi.items %}
-                <table class="table table-sm table-hover mb-0">
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">客户费用 / 折扣（计入订单总额）</label>
+                        <div class="input-group">
+                            <span class="input-group-text">{{ sym }}</span>
+                            <input type="text" class="form-control" value="{{ '%.2f'|format(pi.shipping_cost or 0) }}" readonly>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">类型（中文 / 对外英文）</label>
+                        <input type="text" class="form-control" value="{% if pi.shipping_note %}{{ pi.shipping_note }} / {{ pi.shipping_note_en or pi.shipping_note }}{% else %}-{% endif %}" readonly>
+                    </div>
+                    <div class="col-md-4 text-end">
+                        <small class="text-muted">客户费用 / 折扣： <strong>{{ sym }}{{ '%.2f'|format(pi.shipping_cost or 0) }}</strong></small>
+                        <h6 class="text-muted mb-1 mt-2">订单总金额 ({{ pi.currency or 'USD' }})</h6>
+                        <h2 class="text-primary fw-bold mb-0">{{ sym }}{{ '%.2f'|format(pi.grand_total) }}</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if pi.expenses %}
+        <div class="card mb-3 border-danger-subtle">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-cash-stack me-1"></i>订单真实成本（内部）</h5>
+                <small class="text-muted">不计入客户订单金额</small>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
                     <thead class="table-light">
-                        <tr>
-                            <th>#</th>
-                            <th>Product</th>
-                            <th>Code</th>
-                            <th class="text-end">Qty</th>
-                            <th class="text-end">U.Price</th>
-                            <th class="text-end">Amount</th>
-                        </tr>
+                        <tr><th>类别</th><th>备注</th><th class="text-end">金额</th><th class="text-center">凭证</th></tr>
                     </thead>
                     <tbody>
-                        {% for item in pi.items %}
+                        {% for expense in pi.expenses|sort(attribute='created_at', reverse=true) %}
                         <tr>
-                            <td>{{ loop.index }}</td>
-                            <td>
-                                {{ item.product.name if item.product else '-' }}
-                                {% if item.product and item.product.specification %}<br><small class="text-muted">{{ item.product.specification }}</small>{% endif %}
+                            <td>{{ expense.category }}</td>
+                            <td class="text-muted">{{ expense.note or '-' }}</td>
+                            <td class="text-end fw-semibold">{{ '¥' if expense.currency == 'RMB' else '$' }}{{ '%.2f'|format(expense.amount) }}</td>
+                            <td class="text-center">
+                                {% if expense.attachment %}
+                                <a href="{{ url_for('expense_attachment', id=expense.id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-image me-1"></i>查看图片
+                                </a>
+                                {% else %}<span class="text-muted">—</span>{% endif %}
                             </td>
-                            <td>{{ item.product.product_code if item.product else '-' }}</td>
-                            <td class="text-end">{{ item.quantity }}</td>
-                            <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.unit_price) }}</td>
-                            <td class="text-end fw-bold">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(item.amount) }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
-                    <tfoot class="table-light">
-                        <tr>
-                            <th colspan="5" class="text-end">Subtotal:</th>
-                            <th class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</th>
-                        </tr>
-                        {% if pi.shipping_cost and pi.shipping_cost > 0 %}
-                        <tr>
-                            <th colspan="5" class="text-end">Adj. / Cost:</th>
-                            <th class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.shipping_cost) }}</th>
-                        </tr>
-                        <tr>
-                            <th colspan="5" class="text-end fw-bold text-primary">TOTAL:</th>
-                            <th class="text-end fw-bold text-primary">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount + pi.shipping_cost) }}</th>
-                        </tr>
-                        {% endif %}
-                        {% if pi.shipping_note %}
-                        <tr>
-                            <td colspan="6" class="text-muted small"><i class="bi bi-info-circle me-1"></i>{{ pi.shipping_note }}</td>
-                        </tr>
-                        {% endif %}
-                    </tfoot>
                 </table>
-                {% else %}
-                <div class="text-center py-3 text-muted">No items.</div>
-                {% endif %}
             </div>
+        </div>
+        {% endif %}
+
+        <div class="text-end">
+            <a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-outline-danger me-1"><i class="bi bi-file-pdf"></i> PDF</a>
+            {% if pi.excel_path %}<a href="{{ url_for('pi_excel_download', id=pi.id) }}" class="btn btn-outline-success"><i class="bi bi-file-excel"></i> Excel</a>{% endif %}
         </div>
     </div>
 </div>

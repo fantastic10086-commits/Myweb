@@ -5,8 +5,8 @@
 <div class="row mb-3">
     <div class="col">
         <h2><i class="bi bi-truck me-2"></i>{{ supplier.name }}</h2>
-        <a href="{{ url_for('supplier_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Suppliers</a>
-        <a href="{{ url_for('supplier_statement', id=supplier.id) }}" class="btn btn-sm btn-outline-danger ms-2"><i class="bi bi-file-pdf"></i> Export Statement PDF</a>
+        <a href="{{ url_for('supplier_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回供应商列表</a>
+        <a href="{{ url_for('supplier_statement', id=supplier.id) }}" class="btn btn-sm btn-outline-danger ms-2"><i class="bi bi-file-pdf"></i> 导出对账单 PDF</a>
     </div>
 </div>
 
@@ -17,19 +17,19 @@
             <div class="card-body py-2">
                 <table class="table table-sm mb-0 small">
                     {% if supplier.contact_person %}
-                    <tr><td class="text-muted" style="width:100px;">Contact</td><td>{{ supplier.contact_person }}</td></tr>
+                    <tr><td class="text-muted" style="width:100px;">联系人</td><td>{{ supplier.contact_person }}</td></tr>
                     {% endif %}
                     {% if supplier.phone %}
-                    <tr><td class="text-muted">Phone</td><td>{{ supplier.phone }}</td></tr>
+                    <tr><td class="text-muted">电话</td><td>{{ supplier.phone }}</td></tr>
                     {% endif %}
                     {% if supplier.email %}
-                    <tr><td class="text-muted">Email</td><td>{{ supplier.email }}</td></tr>
+                    <tr><td class="text-muted">邮箱</td><td>{{ supplier.email }}</td></tr>
                     {% endif %}
                     {% if supplier.address %}
-                    <tr><td class="text-muted">Address</td><td>{{ supplier.address }}</td></tr>
+                    <tr><td class="text-muted">地址</td><td>{{ supplier.address }}</td></tr>
                     {% endif %}
                     {% if supplier.notes %}
-                    <tr><td class="text-muted">Notes</td><td>{{ supplier.notes }}</td></tr>
+                    <tr><td class="text-muted">备注</td><td>{{ supplier.notes }}</td></tr>
                     {% endif %}
                 </table>
             </div>
@@ -38,7 +38,7 @@
     <div class="col-md-3">
         <div class="card border-info">
             <div class="card-body text-center py-3">
-                <h6 class="text-muted small">Total Procurement</h6>
+                <h6 class="text-muted small">采购总额</h6>
                 <h4 class="text-info fw-bold mb-0">¥{{ '%.2f'|format(total_proc) }}</h4>
                 <small class="text-muted">{{ count }} items</small>
             </div>
@@ -47,18 +47,18 @@
     <div class="col-md-3">
         <div class="card border-danger">
             <div class="card-body text-center py-3">
-                <h6 class="text-muted small">Outstanding Balance</h6>
+                <h6 class="text-muted small">未结余额</h6>
                 <h4 class="text-danger fw-bold mb-0">¥{{ '%.2f'|format(total_proc) }}</h4>
-                <small class="text-muted">Pending payment</small>
+                <small class="text-muted">待付款</small>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Procurement History by PI -->
+<!-- 采购历史 by PI -->
 <div class="card">
     <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-clock-history me-1"></i>Procurement History</h5>
+        <h5 class="mb-0"><i class="bi bi-clock-history me-1"></i>采购历史</h5>
     </div>
     <div class="card-body p-0">
         {% if pi_groups %}
@@ -67,14 +67,14 @@
                 <thead class="table-light small">
                     <tr>
                         <th></th>
-                        <th>PI Number</th>
-                        <th>Product</th>
-                        <th>Supplier</th>
-                        <th>Date</th>
-                        <th class="text-end">Qty</th>
-                        <th class="text-end">Unit Price</th>
-                        <th class="text-end">Total</th>
-                        <th>Note</th>
+                        <th>PI 编号</th>
+                        <th>产品</th>
+                        <th>供应商</th>
+                        <th>日期</th>
+                        <th class="text-end">数量</th>
+                        <th class="text-end">单价</th>
+                        <th class="text-end">合计</th>
+                        <th>备注</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -83,7 +83,7 @@
                     <tr>
                         <td>
                             {% if p.pi_item and p.pi_item.product and p.pi_item.product.image %}
-                            <img src="{{ url_for('uploaded_file', filename=p.pi_item.product.image) }}" style="width:32px;height:32px;object-fit:cover;border-radius:3px;">
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=p.pi_item.product.image) }}" loading="lazy" decoding="async" style="width:32px;height:32px;object-fit:cover;border-radius:3px;">
                             {% endif %}
                         </td>
                         <td>
@@ -115,7 +115,7 @@
                 </tbody>
                 <tfoot class="table-dark">
                     <tr>
-                        <th colspan="7" class="text-end">Total Outstanding:</th>
+                        <th colspan="7" class="text-end">未结总额：</th>
                         <th class="text-end text-warning">¥{{ '%.2f'|format(total_proc) }}</th>
                         <th></th>
                     </tr>
@@ -125,7 +125,7 @@
         {% else %}
         <div class="text-center py-5 text-muted">
             <i class="bi bi-inbox display-3"></i>
-            <p class="mt-2">No procurement history for this supplier yet.</p>
+            <p class="mt-2">该供应商暂无采购记录。</p>
         </div>
         {% endif %}
     </div>

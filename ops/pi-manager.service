@@ -1,0 +1,24 @@
+[Unit]
+Description=PI Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi-manager
+Group=pi-manager
+WorkingDirectory=/opt/pi-manager/current
+EnvironmentFile=/etc/pi-manager/pi-manager.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pi-manager/venv/bin/gunicorn --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - --bind 127.0.0.1:8000 app:app
+Restart=on-failure
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pi-manager
+
+[Install]
+WantedBy=multi-user.target

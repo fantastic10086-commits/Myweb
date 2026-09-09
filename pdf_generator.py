@@ -19,6 +19,8 @@ from reportlab.platypus.doctemplate import PageTemplate, BaseDocTemplate, Frame
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.lib.utils import ImageReader
+from xml.sax.saxutils import escape
 
 
 # ── Chinese Font Detection ──────────────────────────────────────────
@@ -108,7 +110,10 @@ def _draw_page_template(canvas: canvas.Canvas, doc):
     # Company address in header (centered)
     canvas.setFont(_FONT, 7)
     canvas.setFillColor(HexColor('#cccccc'))
-    canvas.drawCentredString(PAGE_W / 2, PAGE_H - 26 * mm, COMPANY_INFO['address'])
+    canvas.drawCentredString(
+        PAGE_W / 2, PAGE_H - 26 * mm,
+        getattr(doc, 'company_address', COMPANY_INFO['address'])
+    )
 
     # ── Footer ──
     canvas.setFillColor(grey)
@@ -119,6 +124,16 @@ def _draw_page_template(canvas: canvas.Canvas, doc):
     canvas.setStrokeColor(HexColor('#1a3a5c'))
     canvas.setLineWidth(0.5)
     canvas.line(20 * mm, 22 * mm, PAGE_W - 20 * mm, 22 * mm)
+
+    # Keep the legal note inside the fixed footer. As a story flowable it could
+    # create an otherwise empty final page for short invoices.
+    canvas.setFillColor(grey)
+    canvas.setFont(_FONT, 6.5)
+    canvas.drawCentredString(
+        PAGE_W / 2, 25 * mm,
+        'This is a computer-generated Proforma Invoice. For any questions, '
+        f'please contact {COMPANY_INFO["email"]}.'
+    )
 
     canvas.restoreState()
 
@@ -172,11 +187,11 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     override_addr = getattr(pi, '_company_addr_override', None)
     if override_name:
         company_name = override_name
-        COMPANY_INFO['address'] = override_addr or COMPANY_INFO['address']
     else:
         brand = getattr(pi, 'company', 'klista') or 'klista'
         company_name = BRANDS.get(brand, BRANDS['klista'])
     doc.company_name = company_name
+    doc.company_address = override_addr or COMPANY_INFO['address']
 
     # ── Styles ──
     styles = getSampleStyleSheet()
@@ -196,7 +211,8 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     )
     table_header_style = ParagraphStyle(
         'TblHeader', parent=styles['Normal'],
-        fontSize=10, fontName=_FONT_BOLD, textColor=white, alignment=TA_CENTER,
+        fontSize=9, leading=10.5, fontName=_FONT_BOLD,
+        textColor=white, alignment=TA_CENTER,
     )
     table_cell_style = ParagraphStyle(
         'TblCell', parent=styles['Normal'],
@@ -281,7 +297,9 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     story.append(Spacer(1, 2 * mm))
 
     # Table header
-    upload_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads')
+    upload_dir = getattr(pi, '_upload_dir_override', None) or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), 'static', 'uploads'
+    )
     header = [
         Paragraph('No.', table_header_style),
         Paragraph('Image', table_header_style),
@@ -292,7 +310,10 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         Paragraph(f'Unit Price ({cur_label})', table_header_style),
         Paragraph(f'Amount ({cur_label})', table_header_style),
     ]
-    col_widths = [22, 35, 58, 120, 65, 40, 66, 66]
+    # Keep the table within the A4 content width while giving short headers
+    # enough usable room after cell padding. This avoids letter-by-letter wraps
+    # such as "Ima/ge" and "Specificati/on" in the generated PDF.
+    col_widths = [28, 44, 62, 94, 82, 36, 68, 67]
 
     table_data = [header]
     for i, item in enumerate(pi.items, 1):
@@ -302,7 +323,17 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
             img_path = os.path.join(upload_dir, item.product.image)
             if os.path.exists(img_path):
                 try:
-                    img_cell = Image(img_path, width=10*mm, height=10*mm)
+                    source_width, source_height = ImageReader(img_path).getSize()
+                    scale = min(
+                        (10 * mm) / float(source_width),
+                        (10 * mm) / float(source_height),
+                    )
+                    img_cell = Image(
+                        img_path,
+                        width=source_width * scale,
+                        height=source_height * scale,
+                    )
+                    img_cell.hAlign = 'CENTER'
                 except:
                     pass
         row = [
@@ -326,7 +357,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         ('BACKGROUND', (0, 0), (-1, 0), base_color),
         ('TEXTCOLOR', (0, 0), (-1, 0), white),
         ('FONTNAME', (0, 0), (-1, 0), _FONT_BOLD),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
         # Grid
         ('GRID', (0, 0), (-1, -1), 0.5, HexColor('#cccccc')),
         ('LINEBELOW', (0, 0), (-1, 0), 1, base_color),
@@ -334,8 +365,8 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 5),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-        ('LEFTPADDING', (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
     ]
     # Alternate row colors
     for row_idx in range(1, len(table_data)):
@@ -348,8 +379,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     story.append(Spacer(1, 5 * mm))
 
     # ── Total Section ──
-    # Align with product table: the Amount column spans col 5-7 in the footer
-    # Table full width = sum(col_widths) = 472; Amount col at offset 406, width 66
+    # Align the summary with the full product-table width.
     total = pi.total_amount
     shipping_cost = getattr(pi, 'shipping_cost', 0.0) or 0.0
     tbl_w = sum(col_widths)  # 472
@@ -366,34 +396,39 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     # Adjustment row (if non-zero)
     if abs(shipping_cost) > 0.001:
         # Use a table that matches the product table width, with the value in the rightmost columns
-        spacer_w = tbl_w - 140 - 66  # space + label + value columns
+        summary_label_w = 160
+        summary_value_w = 70
+        spacer_w = tbl_w - summary_label_w - summary_value_w
+        shipping_note_en = (
+            getattr(pi, 'shipping_note_en', '')
+            or getattr(pi, 'shipping_note', '')
+            or 'Other Charges / Discount'
+        )
         shipping_data = [
             ['', Paragraph(f'Subtotal ({cur_label}):', right_label_style),
              Paragraph(f'{sym}{total:,.2f}', right_value_style)],
-            ['', Paragraph(f'Adj. / Cost:', right_label_style),
+            ['', Paragraph(f'{escape(shipping_note_en)} ({cur_label}):', right_label_style),
              Paragraph(f'{sym}{shipping_cost:,.2f}', right_value_style)],
         ]
-        # Add shipping note as a separate row if present
-        shipping_note = getattr(pi, 'shipping_note', '') or ''
-        if shipping_note:
-            shipping_data.append(['', Paragraph(f'({shipping_note})', ParagraphStyle(
-                'ShipNote', parent=info_style, fontSize=9, fontName=_FONT,
-                textColor=grey, alignment=TA_RIGHT,
-            )), ''])
-        ship_table = Table(shipping_data, colWidths=[spacer_w, 140, 66])
-        ship_table.setStyle(TableStyle([
+        ship_table = Table(shipping_data, colWidths=[spacer_w, summary_label_w, summary_value_w])
+        ship_style = [
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 2),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]
+        ship_table.setStyle(TableStyle([
+            *ship_style,
         ]))
         story.append(ship_table)
 
-    spacer_w2 = tbl_w - 140 - 66
+    summary_label_w = 160
+    summary_value_w = 70
+    spacer_w2 = tbl_w - summary_label_w - summary_value_w
     total_data = [
         ['', Paragraph(f'<b>TOTAL AMOUNT ({cur_label}):</b>', right_total_label),
          Paragraph(f'<b>{sym}{total + shipping_cost:,.2f}</b>', right_total_value)],
     ]
-    total_table = Table(total_data, colWidths=[spacer_w2, 140, 66])
+    total_table = Table(total_data, colWidths=[spacer_w2, summary_label_w, summary_value_w])
     total_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
@@ -424,23 +459,33 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     ]))
     story.append(pay_table)
 
-    # ── Notes ──
+    # ── Customer Notes ──
+    customer_notes = getattr(getattr(pi, 'customer', None), 'notes', '') or ''
+    if customer_notes.strip():
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph('CUSTOMER NOTES', section_style))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(escape(customer_notes.strip()).replace('\n', '<br/>'), info_style))
+
+    # ── PI Notes ──
     if pi.notes and pi.notes.strip():
         story.append(Spacer(1, 6 * mm))
         story.append(Paragraph('NOTES', section_style))
         story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(pi.notes.strip().replace('\n', '<br/>'), info_style))
+        story.append(Paragraph(escape(pi.notes.strip()).replace('\n', '<br/>'), info_style))
 
-    story.append(Spacer(1, 12 * mm))
+    # Keep a compact signature block so short PIs do not spill only the
+    # signatures onto a nearly empty second page.
+    story.append(Spacer(1, 4 * mm))
 
     # ── Signature Area ──
     sig_data = [
         [
-            Paragraph('<b>Issued By:</b><br/><br/><br/>_________________________<br/>'
-                      f'{COMPANY_INFO["name"]}<br/>'
+            Paragraph('<b>Issued By:</b><br/><br/>_________________________<br/>'
+                      f'{company_name}<br/>'
                       f'Date: {datetime.now().strftime("%Y-%m-%d")}',
                       ParagraphStyle('SigLeft', parent=info_style, fontSize=10)),
-            Paragraph('<b>Authorized Signature &amp; Stamp:</b><br/><br/><br/>'
+            Paragraph('<b>Authorized Signature &amp; Stamp:</b><br/><br/>'
                       '_________________________<br/>'
                       '<i>(Company Chop / Signature)</i>',
                       ParagraphStyle('SigRight', parent=info_style, fontSize=10, alignment=TA_RIGHT)),
@@ -453,14 +498,6 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
     story.append(sig_table)
-
-    story.append(Spacer(1, 6 * mm))
-    story.append(HRFlowable(width="100%", thickness=0.5, color=HexColor('#cccccc'), spaceAfter=2 * mm))
-    story.append(Paragraph(
-        '<i>This is a computer-generated Proforma Invoice. For any questions, '
-        f'please contact {COMPANY_INFO["email"]}.</i>',
-        ParagraphStyle('Disclaimer', parent=info_style, fontSize=7, textColor=grey, alignment=TA_CENTER)
-    ))
 
     # ── Build PDF ──
     doc.build(story)

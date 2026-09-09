@@ -1,497 +1,859 @@
 {% extends "base.html" %}
-{% block title %}Procurement — {{ pi.pi_number }}{% endblock %}
+{% block title %}采购 — {{ pi.pi_number }}{% endblock %}
 
 {% block extra_scripts %}
 <script>
 var piId = {{ pi.id }};
-var suppliers = {{ suppliers|tojson|safe }};
+var supplierInfo = {{ suppliers|tojson|safe }};
 var existing = {{ existing|tojson|safe if existing else '{}' }};
-var piTotal = {{ pi.total_amount }};
-var piShipping = {{ pi.shipping_cost or 0 }};
-var piCurrency = '{{ pi.currency }}';
-var exchangeRate = {{ exchange_rate }};
-var isConfirmed = {{ 'true' if pi.procurement_confirmed else 'false' }};
+var piProductSubtotal = {{ pi.product_subtotal }};
+var piCurrency = {{ pi.currency|tojson }};
+var savedExchangeRate = {{ pi_exchange_rate }};
+var previewPiNumber = {{ pi.pi_number|tojson }};
+var previewCustomer = {{ (pi.customer.name if pi.customer else '—')|tojson }};
+var previewSalesperson = {{ pi.salesperson|tojson }};
+var activeProcurementFilter = 'all';
 
-function usdToRmb(usd) {
-    return Math.round(usd * exchangeRate * 100) / 100;
+function numericValue(elementId) {
+    var element = document.getElementById(elementId);
+    var value = element ? Number(element.value) : 0;
+    return Number.isFinite(value) ? value : 0;
 }
 
-function usdLabel(usd) {
-    // Format USD amount with RMB equivalent
-    var rmb = usdToRmb(usd);
-    return '$' + usd.toFixed(3) + '<br><small class="text-muted">≈ ¥' + rmb.toFixed(2) + '</small>';
+function currentExchangeRate() {
+    if (piCurrency === 'RMB') return savedExchangeRate;
+    return numericValue('businessRate');
 }
 
-function enableEditing() {
-    if (!confirm('Enable editing? This will revoke the confirmation status and you will need to re-confirm after changes.')) return;
-    // Unlock all inputs
-    document.querySelectorAll('#itemsTable .proc-supplier, #itemsTable .proc-price, #itemsTable .proc-qty, #itemsTable .proc-note, #procDate, #actualShipping')
-        .forEach(function(el) { el.disabled = false; });
-    // Show save button, hide edit button and confirmed badge
-    document.getElementById('saveBtn').style.display = '';
-    var editBtn = document.getElementById('editBtn');
-    if (editBtn) editBtn.style.display = 'none';
-    var badge2 = document.getElementById('confirmedBadge2');
-    if (badge2) badge2.style.display = 'none';
-    // Update bottom bar
-    var bottom = document.getElementById('bottomActions');
-    if (bottom) {
-        var sm = document.createElement('small');
-        sm.className = 'text-muted me-2';
-        sm.textContent = '确认后采购数据将被锁定，需要在清单中点击 Edit 才能修改';
-        bottom.innerHTML = '';
-        bottom.appendChild(sm);
-        var cb = document.createElement('button');
-        cb.className = 'btn btn-success';
-        cb.id = 'confirmBtn';
-        cb.innerHTML = '<i class=\"bi bi-check-lg\"></i> Confirm Procurement Complete';
-        cb.onclick = confirmProcurement;
-        bottom.appendChild(cb);
+function orderProductTotalRmb() {
+    return piCurrency === 'RMB'
+        ? piProductSubtotal
+        : Math.round(piProductSubtotal * currentExchangeRate() * 100) / 100;
+}
+
+function rowPurchaseTotal(row) {
+    var price = Number(row.querySelector('.proc-price').value) || 0;
+    var quantity = Number(row.querySelector('.proc-qty').value) || 0;
+    return Math.round(price * quantity * 100) / 100;
+}
+
+function purchaseProductTotal() {
+    var total = 0;
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        total += rowPurchaseTotal(row);
+    });
+    return Math.round(total * 100) / 100;
+}
+
+function profitValues() {
+    var orderTotal = orderProductTotalRmb();
+    var purchaseTotal = purchaseProductTotal();
+    var freight = numericValue('supplierFreight');
+    return {
+        orderTotal: orderTotal,
+        purchaseTotal: purchaseTotal,
+        freight: freight,
+        profit: Math.round((orderTotal - purchaseTotal - freight) * 100) / 100
+    };
+}
+
+function procurementRiskState(row) {
+    var supplierMissing = !row.querySelector('.proc-supplier').value;
+    var priceValue = row.querySelector('.proc-price').value.trim();
+    var priceMissing = priceValue === '';
+    var purchasePrice = Number(priceValue);
+    var sourcePrice = Number(row.dataset.piUnitPrice) || 0;
+    var piPriceRmb = piCurrency === 'RMB' ? sourcePrice : sourcePrice * currentExchangeRate();
+    var highPrice = !priceMissing
+        && Number.isFinite(purchasePrice)
+        && purchasePrice >= 0
+        && purchasePrice > piPriceRmb;
+    var difference = highPrice ? purchasePrice - piPriceRmb : 0;
+    return {
+        missing: supplierMissing || priceMissing,
+        supplierMissing: supplierMissing,
+        priceMissing: priceMissing,
+        highPrice: highPrice,
+        difference: difference,
+        percentage: highPrice && piPriceRmb > 0 ? difference / piPriceRmb * 100 : null
+    };
+}
+
+function applyProcurementFilter() {
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        var visible = activeProcurementFilter === 'all'
+            || (activeProcurementFilter === 'missing' && row.dataset.procMissing === '1')
+            || (activeProcurementFilter === 'high' && row.dataset.procHigh === '1');
+        row.classList.toggle('d-none', !visible);
+    });
+    ['all', 'missing', 'high'].forEach(function(filterName) {
+        var button = document.getElementById('procFilter-' + filterName);
+        if (button) button.classList.toggle('active', activeProcurementFilter === filterName);
+    });
+}
+
+function setProcurementFilter(filterName) {
+    activeProcurementFilter = filterName;
+    applyProcurementFilter();
+}
+
+function updateProcurementHighlights() {
+    var missingCount = 0;
+    var highCount = 0;
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        var risk = procurementRiskState(row);
+        var supplier = row.querySelector('.proc-supplier');
+        var price = row.querySelector('.proc-price');
+        var supplierWarning = row.querySelector('.proc-supplier-warning');
+        var priceWarning = row.querySelector('.proc-price-warning');
+        row.dataset.procMissing = risk.missing ? '1' : '0';
+        row.dataset.procHigh = risk.highPrice ? '1' : '0';
+        if (risk.missing) missingCount += 1;
+        if (risk.highPrice) highCount += 1;
+        supplier.classList.toggle('proc-missing-field', risk.supplierMissing);
+        price.classList.toggle('proc-missing-field', risk.priceMissing);
+        price.classList.toggle('proc-high-price-field', risk.highPrice);
+        supplierWarning.textContent = risk.supplierMissing ? '缺少供应商' : '';
+        priceWarning.textContent = risk.priceMissing
+            ? '缺少采购价格'
+            : (risk.highPrice
+                ? '高于 PI ¥' + risk.difference.toFixed(2)
+                    + (risk.percentage == null ? '' : ' / ' + risk.percentage.toFixed(1) + '%')
+                : '');
+        priceWarning.className = 'proc-price-warning small mt-1 text-end '
+            + (risk.highPrice ? 'text-danger fw-semibold' : 'proc-warning-orange');
+    });
+    document.getElementById('procMissingCount').textContent = missingCount;
+    document.getElementById('procHighCount').textContent = highCount;
+    document.getElementById('procFilter-missing').disabled = missingCount === 0;
+    document.getElementById('procFilter-high').disabled = highCount === 0;
+    if ((activeProcurementFilter === 'missing' && missingCount === 0)
+            || (activeProcurementFilter === 'high' && highCount === 0)) {
+        activeProcurementFilter = 'all';
     }
-    isConfirmed = false;
+    applyProcurementFilter();
 }
 
-function confirmProcurement() {
-    if (!confirm('Confirm procurement as complete?\n\nThis will first save all changes, then mark the PI as fully procured.')) return;
-    var btn = document.getElementById('confirmBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class=\"spinner-border spinner-border-sm me-1\"></span>Saving & Confirming...';
+function updateCalculations() {
+    var rate = currentExchangeRate();
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        var sourceUnitPrice = Number(row.dataset.piUnitPrice) || 0;
+        var orderPriceRmb = piCurrency === 'RMB' ? sourceUnitPrice : sourceUnitPrice * rate;
+        var orderPrice = row.querySelector('.order-unit-price-rmb');
+        var purchaseTotalCell = row.querySelector('.purchase-line-total');
+        if (orderPrice) orderPrice.textContent = '¥' + orderPriceRmb.toFixed(2);
+        if (purchaseTotalCell) purchaseTotalCell.textContent = '¥' + rowPurchaseTotal(row).toFixed(2);
+    });
 
-    // First: save procurement data
+    var values = profitValues();
+    document.getElementById('orderFooterTotal').textContent = '¥' + values.orderTotal.toFixed(2);
+    document.getElementById('orderProductTotal').textContent = '¥' + values.orderTotal.toFixed(2);
+    document.getElementById('purchaseProductTotal').textContent = '¥' + values.purchaseTotal.toFixed(2);
+    document.getElementById('purchaseFooterTotal').textContent = '¥' + values.purchaseTotal.toFixed(2);
+    var profit = document.getElementById('productProfit');
+    profit.textContent = (values.profit < 0 ? '−¥' + Math.abs(values.profit).toFixed(2) : '¥' + values.profit.toFixed(2));
+    profit.className = 'fs-4 fw-bold ' + (values.profit >= 0 ? 'text-success' : 'text-danger');
+    updateConfirmState();
+    updateProcurementHighlights();
+}
+
+function procurementReadiness() {
+    var missing = 0;
     var rows = document.querySelectorAll('#itemsTable tbody tr');
+    rows.forEach(function(row) {
+        var supplierId = row.querySelector('.proc-supplier').value;
+        var priceValue = row.querySelector('.proc-price').value.trim();
+        var quantity = Number(row.querySelector('.proc-qty').value);
+        var requiredQuantity = Number(row.dataset.piQuantity) || 0;
+        var price = Number(priceValue);
+        var complete = Boolean(supplierId)
+            && priceValue !== ''
+            && Number.isFinite(price)
+            && price >= 0
+            && Number.isInteger(quantity)
+            && quantity > 0
+            && quantity >= requiredQuantity;
+        if (!complete) missing += 1;
+    });
+    return {ready: rows.length > 0 && missing === 0, missing: missing};
+}
+
+function updateConfirmState() {
+    var button = document.getElementById('confirmBtn');
+    var message = document.getElementById('procurementReadiness');
+    if (!button || !message) return;
+    var readiness = procurementReadiness();
+    button.disabled = !readiness.ready;
+    message.textContent = readiness.ready
+        ? '全部产品采购信息已完整，可以确认采购完成'
+        : '还差 ' + readiness.missing + ' 项未完成，只能暂存';
+    message.className = (readiness.ready ? 'text-success' : 'text-muted') + ' me-2';
+}
+
+function collectItems(allowEmpty) {
     var items = [];
+    var rows = document.querySelectorAll('#itemsTable tbody tr');
     for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
-        var sel = row.querySelector('.proc-supplier');
+        var supplier = row.querySelector('.proc-supplier');
         var price = row.querySelector('.proc-price');
-        var qty = row.querySelector('.proc-qty');
+        var quantity = row.querySelector('.proc-qty');
         var note = row.querySelector('.proc-note');
-        if (!sel || !sel.value) continue;
+        var defaultQuantity = Number(row.dataset.piQuantity) || 0;
+        var priceValue = price.value.trim();
+        var touched = supplier.value || priceValue || note.value.trim() || Number(quantity.value) !== defaultQuantity;
+        if (!touched) continue;
+        if (!supplier.value) throw new Error('请为第 ' + (i + 1) + ' 项产品选择供应商。');
+        if (priceValue === '' || !Number.isFinite(Number(priceValue)) || Number(priceValue) < 0) {
+            throw new Error('请填写第 ' + (i + 1) + ' 项产品的采购单价（允许填 0）。');
+        }
+        if (!quantity.value || !Number.isInteger(Number(quantity.value)) || Number(quantity.value) <= 0) {
+            throw new Error('第 ' + (i + 1) + ' 项产品的采购数量必须是大于 0 的整数。');
+        }
         items.push({
-            pi_item_id: parseInt(row.dataset.itemId),
-            supplier_id: parseInt(sel.value),
-            unit_price: parseFloat(price.value) || 0,
-            quantity: parseInt(qty.value) || 0,
-            note: note ? note.value : ''
+            pi_item_id: Number(row.dataset.itemId),
+            supplier_id: Number(supplier.value),
+            unit_price: Number(priceValue),
+            quantity: Number(quantity.value),
+            note: note.value.trim()
         });
     }
-    var actualShipping = parseFloat(document.getElementById('actualShipping').value) || 0;
-    var procDate = document.getElementById('procDate').value;
+    if (!items.length && !allowEmpty) throw new Error('请至少填写一项有效采购明细。');
+    return items;
+}
 
-    fetch('/api/procurement/save', {
+function procurementPayload(draft) {
+    var rate = currentExchangeRate();
+    var freight = numericValue('supplierFreight');
+    if (!Number.isFinite(rate) || rate <= 0) throw new Error('本单业务汇率必须大于 0。');
+    if (!Number.isFinite(freight) || freight < 0) throw new Error('供应商采购运费不能为负数。');
+    return {
+        pi_id: piId,
+        items: collectItems(Boolean(draft)),
+        supplier_freight_cost: freight,
+        exchange_rate: rate,
+        procurement_date: document.getElementById('procDate').value,
+        draft: Boolean(draft)
+    };
+}
+
+function persistProcurement(draft) {
+    var payload;
+    try {
+        payload = procurementPayload(Boolean(draft));
+    } catch (error) {
+        return Promise.reject(error);
+    }
+    return fetch('/api/procurement/save', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pi_id: piId, items: items, actual_shipping: actualShipping, procurement_date: procDate})
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (!d.success) {
-            alert(d.error || 'Save failed. Please save first.');
-            btn.disabled = false;
-            btn.innerHTML = '<i class=\"bi bi-check-lg\"></i> Confirm';
-            return;
-        }
-        // Then: confirm
-        return fetch('/api/procurement/' + piId + '/confirm', {method: 'POST'});
-    }).then(function(r) {
-        if (!r) return;
-        return r.json();
-    }).then(function(d) {
-        if (d && d.success) {
-            loadRightPanel();
-            // Lock everything
-            document.querySelectorAll('#itemsTable .proc-supplier, #itemsTable .proc-price, #itemsTable .proc-qty, #itemsTable .proc-note, #procDate, #actualShipping')
-                .forEach(function(el) { el.disabled = true; });
-            document.getElementById('saveBtn').style.display = 'none';
-            // Update bottom bar
-            var bottom = document.getElementById('bottomActions');
-            if (bottom) {
-                bottom.innerHTML = '<small class=\"text-muted me-2\">Click Edit to modify procurement data</small>' +
-                    '<span class=\"badge bg-success fs-6 me-2\" id=\"confirmedBadge2\"><i class=\"bi bi-check-lg me-1\"></i> Confirmed</span>' +
-                    '<button type=\"button\" class=\"btn btn-outline-warning btn-sm\" id=\"editBtn\" onclick=\"enableEditing()\"><i class=\"bi bi-pencil\"></i> Edit</button>';
-            }
-            isConfirmed = true;
-            flashToast('Procurement confirmed!', 'success');
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = '<i class=\"bi bi-check-lg\"></i> Confirm';
-        }
-    }).catch(function() {
-        btn.disabled = false;
-        btn.innerHTML = '<i class=\"bi bi-check-lg\"></i> Confirm';
+        body: JSON.stringify(payload)
+    }).then(function(response) {
+        return response.json().then(function(data) {
+            if (!response.ok || !data.success) throw new Error(data.error || '保存采购数据失败。');
+            return data;
+        });
     });
 }
 
 function saveProcurement() {
-    var rows = document.querySelectorAll('#itemsTable tbody tr');
-    var items = [];
-    for (var i = 0; i < rows.length; i++) {
-        var row = rows[i];
-        var sel = row.querySelector('.proc-supplier');
-        var price = row.querySelector('.proc-price');
-        var qty = row.querySelector('.proc-qty');
-        var note = row.querySelector('.proc-note');
-        if (!sel || !sel.value) continue;
-        items.push({
-            pi_item_id: parseInt(row.dataset.itemId),
-            supplier_id: parseInt(sel.value),
-            unit_price: parseFloat(price.value) || 0,
-            quantity: parseInt(qty.value) || 0,
-            note: note ? note.value : ''
-        });
+    var button = document.getElementById('saveBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
+    persistProcurement(true).then(function() {
+        button.className = 'btn btn-success me-2';
+        button.innerHTML = '<i class="bi bi-check-lg"></i> 已暂存';
+        setTimeout(function() {
+            button.disabled = false;
+            button.className = 'btn btn-outline-primary me-2';
+            button.innerHTML = '<i class="bi bi-save"></i> 暂存';
+        }, 1200);
+    }).catch(function(error) {
+        alert(error.message || '保存失败。');
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-save"></i> 暂存';
+    });
+}
+
+function confirmProcurement() {
+    updateProcurementHighlights();
+    var highPriceCount = document.querySelectorAll('#itemsTable tbody tr[data-proc-high="1"]').length;
+    var message = '确定采购已完成吗？\n\n系统会先保存采购明细、业务汇率和供应商运费，再确认采购完成。';
+    if (highPriceCount > 0) {
+        message += '\n\n注意：有 ' + highPriceCount + ' 项产品的采购单价高于 PI 单价，请确认后再继续。';
     }
-    if (items.length === 0) { alert('Please select at least one item with a supplier.'); return; }
+    if (!confirm(message)) return;
+    var button = document.getElementById('confirmBtn');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存并确认……';
+    persistProcurement(false)
+        .then(function() {
+            return fetch('/api/procurement/' + piId + '/confirm', {method: 'POST'});
+        })
+        .then(function(response) {
+            return response.json().then(function(data) {
+                if (!response.ok || !data.success) throw new Error(data.error || '确认采购失败。');
+                window.location.reload();
+            });
+        })
+        .catch(function(error) {
+            alert(error.message || '保存或确认失败。');
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 确认采购完成';
+            updateConfirmState();
+        });
+}
 
-    var actualShipping = parseFloat(document.getElementById('actualShipping').value) || 0;
+function enableEditing() {
+    if (!confirm('确定修改采购单吗？这会取消采购完成状态，修改后需要重新确认。')) return;
+    fetch('/api/procurement/' + piId + '/confirm?action=unconfirm', {method: 'POST'})
+        .then(function(response) {
+            return response.json().then(function(data) {
+                if (!response.ok || !data.success) throw new Error(data.error || '取消确认失败。');
+                window.location.reload();
+            });
+        })
+        .catch(function(error) { alert(error.message || '网络错误，请稍后重试。'); });
+}
 
-    var btn = document.getElementById('saveBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+function escHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-    var procDate = document.getElementById('procDate').value;
+function supplierDetails(supplierId) {
+    for (var i = 0; i < supplierInfo.length; i++) {
+        if (Number(supplierInfo[i].id) === Number(supplierId)) return supplierInfo[i];
+    }
+    return {id: supplierId, name: '未知供应商', contact_person: '', phone: '', email: '', address: ''};
+}
 
-    fetch('/api/procurement/save', {
+var supplierTargetSelect = null;
+
+function installSupplierOption(supplier, selected) {
+    document.querySelectorAll('.proc-supplier').forEach(function(select) {
+        var option = Array.from(select.options).find(function(candidate) {
+            return Number(candidate.value) === Number(supplier.id);
+        });
+        if (!option) {
+            option = document.createElement('option');
+            option.value = supplier.id;
+            select.appendChild(option);
+        }
+        option.textContent = supplier.name;
+        if (selected && select === supplierTargetSelect) select.value = String(supplier.id);
+    });
+}
+
+function openNewSupplierModal(targetSelect) {
+    supplierTargetSelect = targetSelect || document.querySelector('.proc-supplier:not([disabled])');
+    var form = document.getElementById('newSupplierForm');
+    form.reset();
+    document.getElementById('newSupplierError').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('newSupplierModal')).show();
+    setTimeout(function() { document.getElementById('newSupplierName').focus(); }, 200);
+}
+
+function submitNewSupplier(event) {
+    event.preventDefault();
+    var form = event.currentTarget;
+    var button = document.getElementById('newSupplierSaveBtn');
+    var errorBox = document.getElementById('newSupplierError');
+    var payload = {};
+    new FormData(form).forEach(function(value, key) { payload[key] = String(value).trim(); });
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
+    errorBox.classList.add('d-none');
+    fetch('/api/suppliers', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({pi_id: piId, items: items, actual_shipping: actualShipping, procurement_date: procDate})
-    }).then(function(r) { return r.json(); }).then(function(d) {
-        if (d.success) {
-            btn.innerHTML = '<i class="bi bi-check-lg"></i> Saved!';
-            btn.className = 'btn btn-success';
-            // Refresh right panel immediately so prices match
-            loadRightPanel();
-            // Also refresh existing data from API
-            fetch('/api/procurement/' + piId).then(function(r){ return r.json(); }).then(function(procs){
-                existing = {};
-                for (var i = 0; i < procs.length; i++) {
-                    existing[String(procs[i].pi_item_id)] = procs[i];
-                }
-            });
-            setTimeout(function() {
-                btn.innerHTML = '<i class="bi bi-save"></i> Save Procurement';
-                btn.className = 'btn btn-primary';
-                btn.disabled = false;
-            }, 1500);
-        } else {
-            alert(d.error || 'Failed');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-save"></i> Save Procurement';
+        body: JSON.stringify(payload)
+    }).then(function(response) {
+        return response.json().then(function(data) {
+            if (response.status === 409 && data.supplier) return data;
+            if (!response.ok || !data.success) throw new Error(data.error || '新增供应商失败。');
+            return data;
+        });
+    }).then(function(data) {
+        var supplier = data.supplier;
+        if (!supplierInfo.some(function(item) { return Number(item.id) === Number(supplier.id); })) {
+            supplierInfo.push(supplier);
         }
-    }).catch(function() {
-        alert('Network error.');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-save"></i> Save Procurement';
+        installSupplierOption(supplier, true);
+        updateCalculations();
+        bootstrap.Modal.getInstance(document.getElementById('newSupplierModal')).hide();
+    }).catch(function(error) {
+        errorBox.textContent = error.message || '新增供应商失败。';
+        errorBox.classList.remove('d-none');
+    }).finally(function() {
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-check-lg"></i> 保存供应商';
     });
 }
 
-function loadRightPanel() {
-    fetch('/api/procurement/' + piId)
-        .then(function(r) { return r.json(); })
-        .then(function(procs) {
-            var panel = document.getElementById('rightPanel');
-            var shipping = parseFloat(document.getElementById('actualShipping').value) || 0;
+function purchaseGroups(payload) {
+    var rows = {};
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        rows[Number(row.dataset.itemId)] = row;
+    });
+    var groups = {};
+    payload.items.forEach(function(item) {
+        var supplierId = Number(item.supplier_id);
+        if (!groups[supplierId]) {
+            groups[supplierId] = {
+                supplier: supplierDetails(supplierId),
+                items: [],
+                total: 0
+            };
+        }
+        groups[supplierId].items.push({data: item, row: rows[Number(item.pi_item_id)]});
+        groups[supplierId].total += Math.round(item.unit_price * item.quantity * 100) / 100;
+    });
+    return Object.keys(groups).map(function(id) { return groups[id]; });
+}
 
-            if (!procs || procs.length === 0) {
-                panel.innerHTML = '<div class="text-center py-4 text-muted"><i class="bi bi-inbox display-6"></i><p>No procurement items yet.</p></div>';
-                updateProfit(0, 0, shipping);
-                return;
-            }
-            var procTotal = 0;
-            var piRevenueRmb = 0;  // PI revenue for procured items, in RMB
-            var html = '<table class="table table-sm table-hover mb-0 small">';
-            html += '<thead class="table-light"><tr><th style=\"width:38px;\"></th><th style=\"width:150px;\">Product</th><th>Supplier</th><th>Date</th><th>Qty</th><th class=\"text-end\">Unit</th><th class=\"text-end\">Total</th></tr></thead><tbody>';
-            for (var i = 0; i < procs.length; i++) {
-                var p = procs[i];
-                procTotal += p.total || 0;
-                // PI revenue for this item: PI unit_price × procurement quantity, converted to RMB
-                var piUnitPrice = p.pi_unit_price || 0;
-                var piItemRevenue = piUnitPrice * (p.quantity || 0);
-                if (piCurrency === 'RMB') {
-                    piRevenueRmb += piItemRevenue;
-                } else {
-                    piRevenueRmb += usdToRmb(piItemRevenue);
-                }
-                html += '<tr>';
-                html += '<td>';
-                if (p.pi_item_image) { html += '<img src="/uploads/' + escHtml(p.pi_item_image) + '" style="width:32px;height:32px;object-fit:cover;border-radius:3px;">'; }
-                html += '</td>';
-                html += '<td><div>' + escHtml(p.pi_item_name || 'Item #' + p.pi_item_id) + '</div>';
-                if (p.pi_item_cn) { html += '<small class="text-muted">' + escHtml(p.pi_item_cn) + '</small>'; }
-                html += '</td>';
-                html += '<td>' + escHtml(p.supplier_name || '-') + '</td>';
-                html += '<td><small>' + (p.procurement_date || '-') + '</small></td>';
-                html += '<td>' + p.quantity + '</td>';
-                html += '<td class="text-end">¥' + (p.unit_price || 0).toFixed(2) + '</td>';
-                html += '<td class="text-end fw-bold">¥' + (p.total || 0).toFixed(2) + '</td>';
-                html += '</tr>';
-            }
-            html += '</tbody><tfoot class="table-light"><tr><th colspan="6" class="text-end">Procurement Total</th><th class="text-end text-danger">¥' + procTotal.toFixed(2) + '</th></tr></tfoot></table>';
-            panel.innerHTML = html;
-            updateProfit(piRevenueRmb, procTotal, shipping);
+function responseFilename(response, fallback) {
+    var disposition = response.headers.get('Content-Disposition') || '';
+    var utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+        try { return decodeURIComponent(utf8Match[1]); } catch (error) { /* use fallback */ }
+    }
+    var plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch ? plainMatch[1] : fallback;
+}
+
+function downloadSupplierOrders(supplierId, button) {
+    var payload;
+    try {
+        payload = procurementPayload(false);
+    } catch (error) {
+        alert(error.message || '采购数据不完整。');
+        return;
+    }
+    if (supplierId != null) payload.supplier_id = Number(supplierId);
+    var originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在生成……';
+    fetch('/procurement/' + piId + '/supplier-orders/export', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    }).then(function(response) {
+        if (!response.ok) {
+            return response.json().then(function(data) {
+                throw new Error(data.error || '采购单导出失败。');
+            });
+        }
+        var fallback = supplierId == null
+            ? '供应商采购单_' + previewPiNumber + '.zip'
+            : '采购单_' + previewPiNumber + '.xlsx';
+        var filename = responseFilename(response, fallback);
+        return response.blob().then(function(blob) {
+            var link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function() { URL.revokeObjectURL(link.href); }, 1000);
         });
+    }).catch(function(error) {
+        alert(error.message || '采购单导出失败。');
+    }).finally(function() {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    });
 }
 
-function updateProfit(piRevenueRmb, procTotal, actualShipping) {
-    // All profit calculated in RMB
-    // piRevenueRmb = PI product revenue for procured items (already in RMB)
-    actualShipping = actualShipping || parseFloat(document.getElementById('actualShipping').value) || 0;
-
-    // Full PI product total in RMB (all items, no shipping) — for display only
-    var piProductFullRmb = piCurrency === 'RMB' ? piTotal : usdToRmb(piTotal);
-    // PI shipping in RMB
-    var piShippingRmb = piCurrency === 'RMB' ? piShipping : usdToRmb(piShipping);
-    var piGrossRmb = piRevenueRmb + piShippingRmb;
-
-    // 产品利润 = 已采购PI产品收入(RMB) - 采购总额(RMB)
-    var productProfit = piRevenueRmb - procTotal;
-    // 运费差价 = PI运费(RMB) - 实际运费(RMB)
-    var shippingMargin = piShippingRmb - actualShipping;
-    // PI总利润 = 产品利润 + 运费差价
-    var totalProfit = productProfit + shippingMargin;
-    var pct = piGrossRmb > 0 ? (totalProfit / piGrossRmb * 100) : 0;
-
-    var productCls = productProfit >= 0 ? 'text-success' : 'text-danger';
-    var shippingCls = shippingMargin >= 0 ? 'text-success' : 'text-danger';
-    var totalCls = totalProfit >= 0 ? 'success' : 'danger';
-    var icon = totalProfit >= 0 ? 'arrow-up-circle' : 'arrow-down-circle';
-
-    document.getElementById('profitBar').innerHTML =
-        '<div class="row align-items-center g-2 small">' +
-        '<div class="col-md-2"><span class="text-muted">PI Product:</span> <strong>¥' + piProductFullRmb.toFixed(2) + '</strong></div>' +
-        '<div class="col-md-2"><span class="text-muted">+ Adj / Cost:</span> <strong>¥' + piShippingRmb.toFixed(2) + '</strong></div>' +
-        '<div class="col-md-2"><span class="text-muted">— Procurement:</span> <strong class="text-danger">¥' + procTotal.toFixed(2) + '</strong></div>' +
-        '<div class="col-md-1"><span class="text-muted">— Act.Cost:</span> <strong class="text-danger">¥' + actualShipping.toFixed(2) + '</strong></div>' +
-        '<div class="col-md-3"><span>产品利润: <strong class="' + productCls + '">¥' + productProfit.toFixed(2) + '</strong> | 费用差: <strong class="' + shippingCls + '">¥' + shippingMargin.toFixed(2) + '</strong></span></div>' +
-        '<div class="col-md-2 text-end"><span class="badge bg-' + totalCls + ' fs-6"><i class="bi bi-' + icon + ' me-1"></i> ¥' + totalProfit.toFixed(2) + ' (' + pct.toFixed(1) + '%)</span></div>' +
+function openProcurementPreview() {
+    updateCalculations();
+    var payload;
+    try {
+        payload = procurementPayload(false);
+    } catch (error) {
+        alert(error.message || '请先填写完整的采购数据。');
+        return;
+    }
+    var groups = purchaseGroups(payload);
+    var body = document.getElementById('procurementPreviewBody');
+    var html = '<div class="row g-2 mb-3 small">' +
+        '<div class="col-md-3"><span class="text-muted">PI 编号</span><br><strong>' + escHtml(previewPiNumber) + '</strong></div>' +
+        '<div class="col-md-3"><span class="text-muted">客户</span><br><strong>' + escHtml(previewCustomer) + '</strong></div>' +
+        '<div class="col-md-3"><span class="text-muted">业务员</span><br><strong>' + escHtml(previewSalesperson) + '</strong></div>' +
+        '<div class="col-md-3"><span class="text-muted">采购日期</span><br><strong>' + escHtml(document.getElementById('procDate').value || '—') + '</strong></div>' +
         '</div>';
+    html += '<div class="alert alert-primary py-2"><i class="bi bi-layers me-1"></i>已按供应商拆分为 <strong>' + groups.length + '</strong> 份采购单。每份文件仅包含对应供应商的采购内容。</div>';
+    groups.forEach(function(group, groupIndex) {
+        var supplier = group.supplier;
+        var contacts = [];
+        if (supplier.contact_person) contacts.push('联系人：' + escHtml(supplier.contact_person));
+        if (supplier.phone) contacts.push('电话：' + escHtml(supplier.phone));
+        if (supplier.email) contacts.push('邮箱：' + escHtml(supplier.email));
+        html += '<div class="card mb-3 supplier-purchase-preview">' +
+            '<div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">' +
+            '<div><span class="badge bg-secondary me-2">' + (groupIndex + 1) + ' / ' + groups.length + '</span>' +
+            '<strong class="fs-6">' + escHtml(supplier.name) + '</strong>' +
+            (contacts.length ? '<div class="small text-muted mt-1">' + contacts.join('　') + '</div>' : '') + '</div>' +
+            '<button type="button" class="btn btn-success btn-sm" onclick="downloadSupplierOrders(' + Number(supplier.id) + ', this)"><i class="bi bi-file-earmark-excel me-1"></i>导出该供应商采购单</button>' +
+            '</div><div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-0">' +
+            '<thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th>规格</th><th class="text-end">采购单价</th><th class="text-end">数量</th><th class="text-end">合计</th><th>备注</th></tr></thead><tbody>';
+        group.items.forEach(function(entry, itemIndex) {
+            var item = entry.data;
+            var row = entry.row;
+            var productImage = row ? row.querySelector('td:first-child img') : null;
+            var productPreview = '<div class="d-flex align-items-center gap-2">';
+            if (productImage) {
+                productPreview += '<img class="preview-product-image" src="' + escHtml(productImage.getAttribute('src')) + '" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:4px;">';
+            }
+            productPreview += '<strong>' + escHtml(row ? row.dataset.productName : '未知产品') + '</strong></div>';
+            html += '<tr><td>' + (itemIndex + 1) + '</td>' +
+                '<td>' + productPreview + '</td>' +
+                '<td>' + escHtml(row ? row.dataset.productCode : '') + '</td>' +
+                '<td>' + escHtml(row ? row.dataset.productSpec : '') + '</td>' +
+                '<td class="text-end">¥' + Number(item.unit_price).toFixed(2) + '</td>' +
+                '<td class="text-end">' + Number(item.quantity) + '</td>' +
+                '<td class="text-end fw-bold">¥' + (item.unit_price * item.quantity).toFixed(2) + '</td>' +
+                '<td>' + escHtml(item.note || '—') + '</td></tr>';
+        });
+        html += '</tbody><tfoot class="table-light"><tr><th colspan="6" class="text-end">该供应商采购合计</th>' +
+            '<th class="text-end text-danger">¥' + group.total.toFixed(2) + '</th><th></th></tr></tfoot>' +
+            '</table></div></div>';
+    });
+    var values = profitValues();
+    html += '<div class="border-top pt-3 mt-2"><div class="small fw-semibold text-muted mb-2"><i class="bi bi-shield-lock me-1"></i>内部汇总（不会导出给供应商）</div><div class="row g-3">' +
+        '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">订单产品总金额（RMB）</div><strong class="fs-5">¥' + values.orderTotal.toFixed(2) + '</strong></div></div>' +
+        '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">采购产品总金额</div><strong class="fs-5">¥' + values.purchaseTotal.toFixed(2) + '</strong></div></div>' +
+        '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">供应商采购运费</div><strong class="fs-5">¥' + values.freight.toFixed(2) + '</strong></div></div>' +
+        '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">差额（利润）</div><strong class="fs-5 ' + (values.profit >= 0 ? 'text-success' : 'text-danger') + '">¥' + values.profit.toFixed(2) + '</strong></div></div>' +
+        '</div></div>';
+    if (piCurrency === 'USD') {
+        html += '<div class="alert alert-light border mt-3 mb-0 small">本单业务汇率：1 USD = ¥' + currentExchangeRate().toFixed(4) + '。订单产品金额已按该汇率折算成人民币。</div>';
+    } else {
+        html += '<div class="alert alert-light border mt-3 mb-0 small">原始订单币种为人民币，订单产品金额保持原值，不进行汇率换算。</div>';
+    }
+    body.innerHTML = html;
+    var exportAllButton = document.getElementById('exportAllSupplierOrdersBtn');
+    exportAllButton.style.display = groups.length > 1 ? '' : 'none';
+    exportAllButton.innerHTML = '<i class="bi bi-file-earmark-zip me-1"></i>全部导出（' + groups.length + ' 份 ZIP）';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('procurementPreviewModal')).show();
 }
-
-function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 document.addEventListener('DOMContentLoaded', function() {
-    for (var itemId in existing) {
-        if (existing.hasOwnProperty(itemId)) {
-            var row = document.querySelector('tr[data-item-id="' + itemId + '"]');
-            if (!row) continue;
-            var p = existing[itemId];
-            var sel = row.querySelector('.proc-supplier');
-            var price = row.querySelector('.proc-price');
-            var qty = row.querySelector('.proc-qty');
-            var note = row.querySelector('.proc-note');
-            if (sel) sel.value = p.supplier_id || '';
-            if (price) price.value = p.unit_price || '';
-            if (qty) qty.value = p.quantity || '';
-            if (note) note.value = p.note || '';
-            if (p.quantity > 0) row.style.background = '#f0fff4';
-        }
-    }
-    {% if pi.actual_shipping_cost %}
-    document.getElementById('actualShipping').value = {{ pi.actual_shipping_cost }};
-    {% endif %}
-    document.getElementById('actualShipping').addEventListener('input', function() {
-        loadRightPanel();
+    Object.keys(existing).forEach(function(itemId) {
+        var row = document.querySelector('tr[data-item-id="' + itemId + '"]');
+        if (!row) return;
+        var item = existing[itemId];
+        row.querySelector('.proc-supplier').value = item.supplier_id || '';
+        row.querySelector('.proc-price').value = item.unit_price == null ? '' : item.unit_price;
+        row.querySelector('.proc-qty').value = item.quantity || '';
+        row.querySelector('.proc-note').value = item.note || '';
     });
-    loadRightPanel();
+    document.querySelectorAll('.proc-price, .proc-qty').forEach(function(input) {
+        input.addEventListener('input', updateCalculations);
+    });
+    document.querySelectorAll('.proc-supplier').forEach(function(select) {
+        select.addEventListener('change', updateCalculations);
+    });
+    var freight = document.getElementById('supplierFreight');
+    if (freight) freight.addEventListener('input', updateCalculations);
+    var rate = document.getElementById('businessRate');
+    if (rate) rate.addEventListener('input', updateCalculations);
+    updateCalculations();
 });
 </script>
 {% endblock %}
 
 {% block content %}
-<!-- PI Info Bar -->
+<style>
+#itemsTable th, #itemsTable td { white-space: nowrap; }
+#itemsTable .proc-product { width: 210px; max-width: 210px; }
+#itemsTable .proc-product-name, #itemsTable .proc-product-meta {
+    display: block;
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#itemsTable .proc-price {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+#itemsTable .proc-price::-webkit-inner-spin-button,
+#itemsTable .proc-price::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.proc-missing-field {
+    border-color: #fd7e14 !important;
+    background-color: #fff7ed !important;
+    box-shadow: 0 0 0 0.12rem rgba(253, 126, 20, 0.18) !important;
+}
+.proc-high-price-field {
+    border-color: #dc3545 !important;
+    background-color: #fff5f5 !important;
+    color: #b02a37 !important;
+    font-weight: 600;
+}
+.proc-warning-orange { color: #c45100; font-weight: 600; }
+.proc-risk-filter-missing {
+    color: #a74400;
+    border-color: #fd7e14;
+}
+.proc-risk-filter-missing:hover,
+.proc-risk-filter-missing.active {
+    color: #fff;
+    background-color: #fd7e14;
+    border-color: #fd7e14;
+}
+</style>
+{% set order_status = pi.effective_procurement_status %}
+{% set order_status_class = {'待采购':'warning text-dark', '部分采购':'info text-dark', '采购完成':'primary', '发货完成':'success'}.get(order_status, 'secondary') %}
+
 <div class="card mb-3">
     <div class="card-body py-2">
-        <div class="row align-items-center">
-            <div class="col-md-2">
-                <a href="{{ url_for('procurement_select') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a>
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <a href="{{ url_for('procurement_select') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回</a>
+                <a href="{{ url_for('pi_detail', id=pi.id) }}" class="badge bg-primary text-decoration-none fs-6" title="查看原始 PI">{{ pi.pi_number }} <i class="bi bi-box-arrow-up-right small"></i></a>
+                <strong>{{ pi.customer.name if pi.customer else '—' }}</strong>
+                <span class="text-muted">{{ pi.issue_date }}</span>
+                {% if pi.customer and pi.customer.country %}<span class="text-muted">{{ pi.customer.country }}</span>{% endif %}
+                <span class="text-muted">业务员：{{ pi.salesperson }}</span>
+                <span class="badge bg-{{ order_status_class }}">{{ order_status }}</span>
             </div>
-            <div class="col-md-10">
-                <h5 class="mb-0">
-                    <a href="{{ url_for('pi_detail', id=pi.id) }}" class="badge bg-primary me-2 text-decoration-none" title="View original PI">{{ pi.pi_number }} <i class="bi bi-box-arrow-up-right small"></i></a>
-                    <span>{{ pi.customer.name if pi.customer else '—' }}</span>
-                    <small class="text-muted ms-3">{{ pi.issue_date }}</small>
-                    <small class="text-muted ms-2">{{ pi.customer.country if pi.customer else '' }}</small>
-                    <span class="ms-3">
-                        <span class="text-muted">Product:</span>
-                        <strong>{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}</strong>
-                        {% if pi.currency != 'RMB' %}
-                        <small class="text-muted">≈ ¥{{ '%.2f'|format(pi.total_amount * exchange_rate) }}</small>
-                        {% endif %}
-                    </span>
-                    <span class="ms-2 text-muted">+</span>
-                    <span>
-                        <span class="text-muted">Adj:</span>
-                        <strong>{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.shipping_cost or 0) }}</strong>
-                        {% if pi.currency != 'RMB' %}
-                        <small class="text-muted">≈ ¥{{ '%.2f'|format((pi.shipping_cost or 0) * exchange_rate) }}</small>
-                        {% endif %}
-                    </span>
-                    <span class="ms-2 text-muted">=</span>
-                    <span class="fw-bold text-primary">
-                        {% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount + (pi.shipping_cost or 0)) }}
-                    </span>
-                    <small class="text-muted ms-3">Sales: {{ pi.salesperson }}</small>
-                </h5>
-            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="openProcurementPreview()">
+                <i class="bi bi-eye me-1"></i>预览采购汇总
+            </button>
         </div>
     </div>
 </div>
 
-<div class="row g-3">
-    <!-- LEFT: PI Items + Shipping Info -->
-    <div class="col-md-7">
-        <div class="card mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">PI Items</h5>
-                <div class="d-flex gap-2 align-items-center">
-                    <label class="small mb-0">Date:</label>
-                    <input type="date" class="form-control form-control-sm" id="procDate" value="{{ today_str }}" style="width:150px;" {% if pi.procurement_confirmed %}disabled{% endif %}>
-                    <button type="button" class="btn btn-primary btn-sm" id="saveBtn" onclick="saveProcurement()" {% if pi.procurement_confirmed %}style="display:none"{% endif %}>
-                        <i class="bi bi-save"></i> Save Procurement
-                    </button>
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive" style="max-height:500px;overflow-y:auto;">
-                    <table class="table table-sm table-hover mb-0 align-middle" id="itemsTable">
-                        <thead class="table-light small">
-                            <tr>
-                                <th style="width:38px;"></th>
-                                <th style="width:150px;">Product</th>
-                                <th style="width:80px;">Spec</th>
-                                <th class="text-end" style="width:55px;">PI Qty</th>
-                                <th class="text-end" style="width:80px;">PI Price</th>
-                                <th style="width:130px;">Supplier</th>
-                                <th class="text-end" style="width:75px;">Proc. Price</th>
-                                <th class="text-end" style="width:65px;">Proc. Qty</th>
-                                <th>Note</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item in pi.items %}
-                            <tr data-item-id="{{ item.id }}">
-                                <td>
-                                    {% if item.product and item.product.image %}
-                                    <img src="{{ url_for('uploaded_file', filename=item.product.image) }}" style="width:36px;height:36px;object-fit:cover;border-radius:3px;">
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <div><strong>{{ item.product.name if item.product else '?' }}</strong></div>
-                                    {% if item.product and item.product.chinese_name %}
-                                    <small class="text-muted">{{ item.product.chinese_name }}</small>
-                                    {% endif %}
-                                    {% if item.product and item.product.product_code %}
-                                    <br><small class="text-muted">[{{ item.product.product_code }}]</small>
-                                    {% endif %}
-                                </td>
-                                <td><small>{{ item.product.specification if item.product else '-' }}</small></td>
-                                <td class="text-end">{{ item.quantity }}</td>
-                                <td class="text-end">
-                                    {{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.3f'|format(item.unit_price) }}
-                                    {% if pi.currency != 'RMB' %}
-                                    <br><small class="text-muted">≈ ¥{{ '%.2f'|format(item.unit_price * exchange_rate) }}</small>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <select class="form-select form-select-sm proc-supplier" style="min-width:130px;" {% if pi.procurement_confirmed %}disabled{% endif %}>
-                                        <option value="">— Select —</option>
-                                        {% for s in suppliers %}
-                                        <option value="{{ s.id }}">{{ s.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </td>
-                                <td><input type="number" step="0.01" min="0" class="form-control form-control-sm proc-price" style="width:90px;" placeholder="¥0.00" {% if pi.procurement_confirmed %}disabled{% endif %}></td>
-                                <td><input type="number" min="0" class="form-control form-control-sm proc-qty" style="width:70px;" placeholder="0" {% if pi.procurement_confirmed %}disabled{% endif %}></td>
-                                <td><input type="text" class="form-control form-control-sm proc-note" style="width:100px;" placeholder="Note" {% if pi.procurement_confirmed %}disabled{% endif %}></td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                        <tfoot class="table-light">
-                            <tr>
-                                <td colspan="3"></td>
-                                <td class="text-end fw-bold">{{ pi.items|sum(attribute='quantity') }}</td>
-                                <td class="text-end text-primary fw-bold">
-                                    {% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.total_amount) }}
-                                </td>
-                                <td colspan="4"><small class="text-muted">Product Subtotal</small></td>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- RIGHT: Procurement Summary -->
-    <div class="col-md-5">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-clipboard-check me-1"></i>Procurement Summary</h5>
-            </div>
-            <div class="card-body p-0" id="rightPanel" style="max-height:500px;overflow-y:auto;">
-                <div class="text-center py-4 text-muted">
-                    <i class="bi bi-inbox display-6"></i>
-                    <p>Loading...</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Shipping Row — aligned left/right -->
-<div class="row g-3 mt-0">
-    <div class="col-md-7">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0"><i class="bi bi-calculator me-1"></i>PI Adjustment / Cost</h6>
-            </div>
-            <div class="card-body py-2">
-                <span class="text-muted">Adj:</span>
-                <strong>{{ pi.currency }} {{ '%.2f'|format(pi.shipping_cost or 0) }}</strong>
-                {% if pi.currency != 'RMB' %}
-                <small class="text-muted">≈ ¥{{ '%.2f'|format(pi.shipping_cost * exchange_rate) }}</small>
-                {% endif %}
-                {% if pi.shipping_note %}<br><small class="text-muted">{{ pi.shipping_note }}</small>{% endif %}
-            </div>
-        </div>
-    </div>
-    <div class="col-md-5">
-        <div class="card">
-            <div class="card-header">
-                <h6 class="mb-0"><i class="bi bi-cash me-1"></i>Actual Cost</h6>
-            </div>
-            <div class="card-body py-2">
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">¥</span>
-                    <input type="number" step="0.01" class="form-control" id="actualShipping" placeholder="0.00" value="{{ '%.2f'|format(pi.actual_shipping_cost) if pi.actual_shipping_cost else '' }}" {% if pi.procurement_confirmed %}disabled{% endif %}>
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0"><i class="bi bi-cart-check me-1"></i>采购模块</h5>
+        <div class="d-flex align-items-end flex-wrap gap-2">
+            {% if not pi.procurement_confirmed %}
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-0" onclick="openNewSupplierModal(null)">
+                <i class="bi bi-plus-lg"></i> 新增供应商
+            </button>
+            {% endif %}
+            {% if pi.currency != 'RMB' %}
+            <div>
+                <label for="businessRate" class="form-label small mb-1">本单业务汇率</label>
+                <div class="input-group input-group-sm" style="width:220px;">
+                    <span class="input-group-text">1 USD =</span>
+                    <input type="number" class="form-control" id="businessRate" min="0.0001" step="0.0001" value="{{ '%.4f'|format(pi_exchange_rate) }}" {% if pi.procurement_confirmed %}disabled{% endif %}>
                     <span class="input-group-text">RMB</span>
                 </div>
-                <small class="text-muted">实际运费（人民币）</small>
+            </div>
+            {% else %}
+            <input type="hidden" id="businessRate" value="{{ pi_exchange_rate }}">
+            <span class="badge bg-light text-dark border mb-1">人民币订单无需汇率换算</span>
+            {% endif %}
+            <div>
+                <label for="procDate" class="form-label small mb-1">采购日期</label>
+                <input type="date" class="form-control form-control-sm" id="procDate" value="{{ today_str }}" style="width:150px;" {% if pi.procurement_confirmed %}disabled{% endif %}>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="d-flex align-items-center flex-wrap gap-2 px-3 py-2 border-bottom bg-light" id="procurementRiskSummary">
+            <span class="small fw-semibold text-muted me-1"><i class="bi bi-exclamation-triangle me-1"></i>重点检查</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary active" id="procFilter-all" onclick="setProcurementFilter('all')">显示全部</button>
+            <button type="button" class="btn btn-sm proc-risk-filter-missing" id="procFilter-missing" onclick="setProcurementFilter('missing')">
+                缺少采购信息 <span class="badge text-bg-light ms-1" id="procMissingCount">0</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-danger" id="procFilter-high" onclick="setProcurementFilter('high')">
+                采购价高于 PI <span class="badge text-bg-light ms-1" id="procHighCount">0</span>
+            </button>
+            <span class="small text-muted ms-auto">红色为价格风险，橙色为待补充信息</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle" id="itemsTable">
+                <thead class="table-light small">
+                    <tr>
+                        <th class="text-center" style="width:56px;">序号</th>
+                        <th style="width:46px;"></th>
+                        <th style="width:210px;">产品</th>
+                        <th>规格</th>
+                        <th class="text-end">PI 数量</th>
+                        <th class="text-end">PI 单价{% if pi.currency == 'USD' %}（USD / RMB）{% else %}（RMB）{% endif %}</th>
+                        <th>供应商</th>
+                        <th class="text-end">采购单价（RMB）</th>
+                        <th class="text-end">采购数量</th>
+                        <th class="text-end">采购合计</th>
+                        <th>备注</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in pi.items %}
+                    <tr data-item-id="{{ item.id }}" data-pi-unit-price="{{ item.unit_price }}" data-pi-quantity="{{ item.quantity }}" data-product-name="{{ (item.product.name if item.product else '未知产品')|e }}" data-product-code="{{ (item.product.product_code if item.product else '')|e }}" data-product-spec="{{ (item.product.specification if item.product else '')|e }}">
+                        <td class="text-center proc-sequence">{{ loop.index }}</td>
+                        <td>
+                            {% if item.product and item.product.image %}
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">
+                            {% endif %}
+                        </td>
+                        <td class="proc-product" title="{{ (item.product.name if item.product else '未知产品')|e }}{% if item.product and item.product.chinese_name %} / {{ item.product.chinese_name|e }}{% endif %}">
+                            {% set product_name = item.product.name if item.product else '未知产品' %}
+                            <strong class="proc-product-name">{{ product_name[:30] }}{% if product_name|length > 30 %}…{% endif %}</strong>
+                            {% if item.product and item.product.chinese_name %}<span class="small text-muted proc-product-meta">{{ item.product.chinese_name }}</span>{% endif %}
+                            {% if item.product and item.product.product_code %}<span class="small text-muted proc-product-meta">[{{ item.product.product_code }}]</span>{% endif %}
+                        </td>
+                        <td class="small">{{ item.product.specification if item.product else '—' }}</td>
+                        <td class="text-end">{{ item.quantity }}</td>
+                        <td class="text-end fw-semibold">{% if pi.currency == 'USD' %}<div>${{ '%.2f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.2f'|format(item.unit_price) }}</div>{% endif %}</td>
+                        <td>
+                            <div class="input-group input-group-sm" style="min-width:180px;">
+                                <select class="form-select proc-supplier" {% if pi.procurement_confirmed %}disabled{% endif %}>
+                                    <option value="">— 请选择 —</option>
+                                    {% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}
+                                </select>
+                                {% if not pi.procurement_confirmed %}
+                                <button type="button" class="btn btn-outline-secondary" title="新增供应商" aria-label="新增供应商" onclick="openNewSupplierModal(this.parentElement.querySelector('.proc-supplier'))">
+                                    <i class="bi bi-plus-lg"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                            <div class="proc-supplier-warning small mt-1 proc-warning-orange"></div>
+                        </td>
+                        <td>
+                            <input type="number" step="0.01" min="0" class="form-control form-control-sm proc-price text-end" style="min-width:105px;" placeholder="0.00" {% if pi.procurement_confirmed %}disabled{% endif %}>
+                            <div class="proc-price-warning small mt-1 text-end"></div>
+                        </td>
+                        <td><input type="number" step="1" min="1" class="form-control form-control-sm proc-qty text-end" style="min-width:80px;" value="{{ item.quantity }}" {% if pi.procurement_confirmed %}disabled{% endif %}></td>
+                        <td class="text-end fw-bold purchase-line-total">¥0.00</td>
+                        <td><input type="text" class="form-control form-control-sm proc-note" style="min-width:110px;" maxlength="1000" placeholder="备注" {% if pi.procurement_confirmed %}disabled{% endif %}></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr>
+                        <th colspan="5" class="text-end">订单产品总金额（RMB）</th>
+                        <th class="text-end text-primary" id="orderFooterTotal">¥0.00</th>
+                        <th colspan="3" class="text-end">采购产品总金额</th>
+                        <th class="text-end text-danger" id="purchaseFooterTotal">¥0.00</th>
+                        <th></th>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer bg-white">
+        <div class="row align-items-end g-3">
+            <div class="col-md-7 col-lg-8">
+                <small class="text-muted">利润 = 订单产品总金额 − 采购产品总金额 − 供应商采购运费</small>
+            </div>
+            <div class="col-md-5 col-lg-4 ms-md-auto">
+                <label for="supplierFreight" class="form-label fw-semibold mb-1">供应商采购运费成本</label>
+                <div class="input-group">
+                    <span class="input-group-text">¥</span>
+                    <input type="number" step="0.01" min="0" class="form-control" id="supplierFreight" value="{{ '%.2f'|format(pi.supplier_freight_cost) if pi.supplier_freight_cost else '' }}" placeholder="0.00" {% if pi.procurement_confirmed %}disabled{% endif %}>
+                    <span class="input-group-text">RMB</span>
+                </div>
+                <small class="text-muted">填写从供应商处采购本单产品产生的运费。</small>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Profit Bar -->
-<div class="card mt-3 border-2" id="profitBar">
-    <div class="card-body py-2 text-center text-muted">
-        <small>汇率 1 USD = {{ '%.2f'|format(exchange_rate) }} RMB | 利润以人民币计算</small>
-        <br><i class="bi bi-calculator me-1"></i> Profit calculation will appear here after saving procurement items.
+<div class="card mt-3 border-2">
+    <div class="card-body">
+        <div class="row g-3 text-center align-items-center">
+            <div class="col-md-4">
+                <div class="text-muted">订单产品总金额（RMB）</div>
+                <div class="fs-4 fw-bold text-primary" id="orderProductTotal">¥0.00</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">采购产品总金额（RMB）</div>
+                <div class="fs-4 fw-bold text-danger" id="purchaseProductTotal">¥0.00</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">差额（利润）</div>
+                <div class="fs-4 fw-bold" id="productProfit">¥0.00</div>
+                <small class="text-muted">已扣除供应商采购运费</small>
+            </div>
+        </div>
     </div>
 </div>
 
-<!-- Bottom Action Bar -->
 <div class="card mt-3">
-    <div class="card-body py-2 text-center" id="bottomActions">
-        {% if pi.procurement_confirmed %}
-        <small class="text-muted me-2">Click Edit to modify procurement data</small>
-        <span class="badge bg-success fs-6 me-2" id="confirmedBadge2"><i class="bi bi-check-lg me-1"></i> Confirmed</span>
-        <button type="button" class="btn btn-outline-warning btn-sm" id="editBtn" onclick="enableEditing()">
-            <i class="bi bi-pencil"></i> Edit
-        </button>
+    <div class="card-body py-2 text-center">
+        {% if pi.shipping_completed and pi.procurement_confirmed %}
+        <span class="badge bg-success fs-6 me-2"><i class="bi bi-truck me-1"></i>发货完成</span>
+        <small class="text-muted">发货记录请在 PI 列表查看。</small>
+        {% elif pi.procurement_confirmed %}
+        <span class="badge bg-primary fs-6 me-2"><i class="bi bi-check-lg me-1"></i>采购完成</span>
+        <small class="text-muted me-2">发货由业务员在 PI 列表登记。</small>
+        <button type="button" class="btn btn-outline-warning btn-sm" onclick="enableEditing()"><i class="bi bi-pencil"></i> 修改采购单</button>
         {% else %}
-        <small class="text-muted me-2">确认后采购数据将被锁定，需要在清单中点击 Edit 才能修改</small>
-        <button type="button" class="btn btn-success" id="confirmBtn" onclick="confirmProcurement()">
-            <i class="bi bi-check-lg"></i> Confirm Procurement Complete
-        </button>
+        <small class="text-muted me-2" id="procurementReadiness">正在检查采购信息……</small>
+        <button type="button" class="btn btn-outline-primary me-2" id="saveBtn" onclick="saveProcurement()"><i class="bi bi-save"></i> 暂存</button>
+        <button type="button" class="btn btn-success" id="confirmBtn" onclick="confirmProcurement()" disabled><i class="bi bi-check-lg"></i> 确认采购完成</button>
         {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="procurementPreviewModal" tabindex="-1" aria-labelledby="procurementPreviewModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="procurementPreviewModalLabel"><i class="bi bi-clipboard-check me-1"></i>供应商采购单预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" id="procurementPreviewBody"></div>
+            <div class="modal-footer">
+                <small class="text-muted me-auto">导出的供应商文件不包含客户、销售价格、汇率及利润等内部信息。</small>
+                <button type="button" class="btn btn-success" id="exportAllSupplierOrdersBtn" onclick="downloadSupplierOrders(null, this)" style="display:none"></button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="newSupplierModal" tabindex="-1" aria-labelledby="newSupplierModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <form id="newSupplierForm" onsubmit="submitNewSupplier(event)">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="newSupplierModalLabel"><i class="bi bi-truck me-1"></i>新增供应商</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="newSupplierError" class="alert alert-danger d-none" role="alert"></div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="newSupplierName" class="form-label">供应商名称 <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="newSupplierName" name="name" maxlength="200" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">联系人</label>
+                            <input type="text" class="form-control" name="contact_person" maxlength="100">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">电话</label>
+                            <input type="text" class="form-control" name="phone" maxlength="50">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">邮箱</label>
+                            <input type="email" class="form-control" name="email" maxlength="200">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">地址</label>
+                            <textarea class="form-control" name="address" rows="2"></textarea>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">备注</label>
+                            <textarea class="form-control" name="notes" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-success" id="newSupplierSaveBtn"><i class="bi bi-check-lg"></i> 保存供应商</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 {% endblock %}

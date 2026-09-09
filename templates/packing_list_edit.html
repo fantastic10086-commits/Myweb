@@ -1,0 +1,493 @@
+{% extends "base.html" %}
+{% block title %}装箱单 {{ pi.pi_number }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .packing-overview-card { border-top: 3px solid #0d6efd; }
+    .packing-overview-stat { min-width: 112px; padding-left: 1rem; border-left: 1px solid #dee2e6; }
+    .packing-overview-stat .value { font-size: 1.15rem; font-weight: 700; white-space: nowrap; }
+    .packing-progress { height: .55rem; }
+    .packing-workspace { align-items: flex-start; }
+    .packing-box-card { border-left: 4px solid #0d6efd; overflow: hidden; }
+    .packing-box-card .form-label { font-size: .8rem; color: #6c757d; margin-bottom: .2rem; }
+    .packing-box-toggle { min-width: 0; cursor: pointer; }
+    .packing-box-title { min-width: 0; }
+    .packing-box-meta { color: #6c757d; font-size: .82rem; }
+    .packing-box-body[hidden] { display: none !important; }
+    .packing-unallocated-panel { position: sticky; top: 5.25rem; }
+    .packing-pending-list { max-height: 58vh; overflow-y: auto; }
+    .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .7rem; background: #fff; }
+    .packing-pending-item + .packing-pending-item { margin-top: .6rem; }
+    .packing-empty-state { border: 1px dashed #ced4da; border-radius: .55rem; padding: 1.25rem; text-align: center; color: #6c757d; }
+    .packing-min-width-0 { min-width: 0; }
+    .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
+    .packing-readonly-table td, .packing-readonly-table th { vertical-align:middle; }
+    @media (max-width: 1199.98px) {
+        .packing-unallocated-panel { position: static; }
+        .packing-pending-list { max-height: none; }
+    }
+    @media (max-width: 767.98px) {
+        .packing-overview-stat { border-left: 0; padding-left: 0; min-width: 92px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <a href="{{ url_for('packing_list_index') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回</a>
+            <h2 class="mb-0"><i class="bi bi-box-seam me-2"></i>装箱单</h2>
+            {% if packing_list and packing_list.is_completed %}<span class="badge bg-success">已完成</span>
+            {% elif packing_list %}<span class="badge bg-warning text-dark">草稿</span>
+            {% else %}<span class="badge bg-secondary">未创建</span>{% endif %}
+        </div>
+        <div class="text-muted mt-2">PI：<strong>{{ pi.pi_number }}</strong> · 客户：{{ pi.customer.name if pi.customer else '-' }} · 业务员：{{ pi.salesperson or '-' }}</div>
+    </div>
+    {% if packing_list %}
+    <div class="d-flex gap-2 flex-wrap justify-content-end">
+        {% if is_admin and pi.paid and packing_list.is_completed and not can_edit %}
+        <a href="{{ url_for('packing_list_detail', pi_id=pi.id, edit=1) }}"
+           class="btn btn-primary"
+           {% if pi.shipping_completed %}onclick="return confirm('该订单已经登记发货，确认仍要编辑装箱单吗？')"{% endif %}>
+            <i class="bi bi-pencil-square"></i> 编辑装箱单
+        </a>
+        {% endif %}
+        <div class="btn-group" role="group" aria-label="完整 A4 装箱单导出">
+            <span class="btn btn-outline-secondary disabled">完整 A4</span>
+            <a href="{{ url_for('packing_list_export_excel', pi_id=pi.id) }}" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a href="{{ url_for('packing_list_export_pdf', pi_id=pi.id) }}" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+        </div>
+        <div class="btn-group" role="group" aria-label="精简 100×150 装箱单导出">
+            <span class="btn btn-outline-secondary disabled">精简 100×150</span>
+            <a href="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id) }}" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a href="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id) }}" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% if packing_list and not pi.paid %}
+<div class="alert alert-warning">
+    <i class="bi bi-lock me-1"></i>PI 当前未付清，这份历史装箱单仅允许查看和导出，暂不能修改。
+</div>
+{% endif %}
+
+{% if can_edit %}
+<div id="packingAlert" class="alert d-none" role="alert"></div>
+<div class="card packing-overview-card mb-3">
+    <div class="card-body">
+        <div class="row g-3 align-items-center">
+            <div class="col-md-4 col-xl-2">
+                <label class="form-label">装箱日期</label>
+                <input type="date" id="packingDate" class="form-control" value="{{ packing_data.packing_date }}">
+            </div>
+            <div class="col-md-8 col-xl-4">
+                <div class="d-flex justify-content-between gap-2 mb-1 small">
+                    <span class="fw-bold">产品分配进度</span>
+                    <span id="packingProgressText" class="text-muted">0 / 0</span>
+                </div>
+                <div class="progress packing-progress">
+                    <div id="packingProgressBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3 col-xl packing-overview-stat">
+                <div class="small text-muted">箱数</div><div id="packingBoxCount" class="value">0</div>
+            </div>
+            <div class="col-6 col-md-3 col-xl packing-overview-stat">
+                <div class="small text-muted">总净重</div><div id="packingNetTotal" class="value">0.00 kg</div>
+            </div>
+            <div class="col-6 col-md-3 col-xl packing-overview-stat">
+                <div class="small text-muted">总毛重</div><div id="packingGrossTotal" class="value">0.00 kg</div>
+            </div>
+            <div class="col-6 col-md-3 col-xl packing-overview-stat">
+                <div class="small text-muted">总体积</div><div id="packingVolumeTotal" class="value">0.0000 m³</div>
+            </div>
+            <div class="col-md-auto ms-md-auto">
+                <button type="button" id="addBoxButton" class="btn btn-primary"><i class="bi bi-plus-lg"></i> 添加箱子</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 packing-workspace">
+    <div class="col-xl-9"><div id="packingBoxes"></div></div>
+    <div class="col-xl-3">
+        <div class="card packing-unallocated-panel mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center gap-2">
+                <strong><i class="bi bi-box-arrow-in-down me-1"></i>待分配产品</strong>
+                <span id="packingPendingCount" class="badge bg-secondary">0 项</span>
+            </div>
+            <div class="card-body">
+                <label class="form-label small text-muted">批量加入到</label>
+                <select id="packingTargetBox" class="form-select form-select-sm mb-3"></select>
+                <div id="packingPendingProducts" class="packing-pending-list mb-3"></div>
+                <button type="button" id="batchAddProducts" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-plus-lg"></i> 加入所选产品
+                </button>
+                <div class="small text-muted mt-2">仅显示尚未全部装箱的产品；可勾选多项后一次加入目标箱。</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card packing-sticky-actions">
+    <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
+        <span class="text-muted small">草稿允许部分装箱；“完成装箱单”要求每项产品的装箱数量与 PI 完全一致。</span>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-primary packing-save" data-action="draft"><i class="bi bi-save"></i> 保存草稿</button>
+            <button type="button" class="btn btn-success packing-save" data-action="complete"><i class="bi bi-check-lg"></i> 保存并完成</button>
+        </div>
+    </div>
+</div>
+<script id="packingData" type="application/json">{{ packing_data|tojson }}</script>
+{% else %}
+    {% if not packing_list %}
+    <div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>管理员尚未创建这份装箱单。</div>
+    {% else %}
+    <div class="alert alert-light border">
+        <i class="bi bi-eye me-1"></i>当前为只读查看。装箱日期：<strong>{{ packing_list.packing_date.strftime('%Y-%m-%d') if packing_list.packing_date else '-' }}</strong>
+        {% if packing_list.updated_at %}
+        · 最后修改：{{ packing_list.updated_by or packing_list.created_by or '-' }}，{{ packing_list.updated_at.strftime('%Y-%m-%d %H:%M') }}
+        {% endif %}
+    </div>
+    {% for box in packing_list.boxes %}
+    <div class="card packing-box-card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>箱号：{{ box.box_no }}</strong><span class="text-muted">{{ box.items|length }} 项产品</span>
+        </div>
+        <div class="card-body pb-2">
+            <div class="row g-2 small mb-3">
+                <div class="col-6 col-md-2"><span class="text-muted">净重</span><div class="fw-bold">{{ '%.2f'|format(box.net_weight or 0) }} kg</div></div>
+                <div class="col-6 col-md-2"><span class="text-muted">毛重</span><div class="fw-bold">{{ '%.2f'|format(box.gross_weight or 0) }} kg</div></div>
+                <div class="col-6 col-md-2"><span class="text-muted">尺寸</span><div>{{ box.length_cm or 0 }} × {{ box.width_cm or 0 }} × {{ box.height_cm or 0 }} cm</div></div>
+                <div class="col-6 col-md-2"><span class="text-muted">体积</span><div>{{ '%.4f'|format(box.volume_cbm or 0) }} m³</div></div>
+                <div class="col-12 col-md-2"><span class="text-muted">唛头</span><div>{{ box.shipping_mark or '-' }}</div></div>
+                <div class="col-12 col-md-2"><span class="text-muted">备注</span><div>{{ box.note or '-' }}</div></div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm packing-readonly-table mb-0">
+                    <thead class="table-light"><tr><th>产品</th><th>产品编码</th><th>规格</th><th class="text-end">装箱数量</th><th>产品备注</th></tr></thead>
+                    <tbody>{% for item in box.items %}<tr><td class="fw-bold">{{ item.product_name }}</td><td>{{ item.product_code or '-' }}</td><td>{{ item.specification or '-' }}</td><td class="text-end">{{ item.quantity }}</td><td>{{ item.note or '-' }}</td></tr>{% endfor %}</tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if can_edit %}
+<script>
+(() => {
+    const data = JSON.parse(document.getElementById('packingData').textContent);
+    const products = data.pi_items;
+    let boxes = data.boxes || [];
+    let version = data.version || 0;
+    let selectedTargetBox = 0;
+    const expandedBoxes = new Set([0]);
+    const container = document.getElementById('packingBoxes');
+    const alertBox = document.getElementById('packingAlert');
+    const targetBoxSelect = document.getElementById('packingTargetBox');
+    const pendingProducts = document.getElementById('packingPendingProducts');
+    const pendingCount = document.getElementById('packingPendingCount');
+
+    const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+    const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
+    const productId = (value) => value === '' || value === null || value === undefined ? '' : Number(value);
+    const newBoxNo = () => {
+        const used = new Set(boxes.map(box => String(box.box_no).toLowerCase()));
+        let value = 1;
+        while (used.has(String(value))) value += 1;
+        return String(value);
+    };
+    const newItem = () => ({pi_item_id:'', quantity:1, note:''});
+    const emptyBox = () => ({box_no:newBoxNo(), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
+    if (!boxes.length) boxes.push(emptyBox());
+
+    function boxVolume(box) {
+        return numberValue(box.length_cm) * numberValue(box.width_cm) * numberValue(box.height_cm) / 1000000;
+    }
+
+    function packedQuantities() {
+        const packed = Object.fromEntries(products.map(product => [Number(product.id), 0]));
+        boxes.forEach(box => (box.items || []).forEach(item => {
+            const id = productId(item.pi_item_id);
+            if (Object.prototype.hasOwnProperty.call(packed, id)) packed[id] += numberValue(item.quantity);
+        }));
+        return packed;
+    }
+
+    function boxItemCount(box) {
+        return (box.items || []).reduce((total, item) => total + integerValue(item.quantity), 0);
+    }
+
+    function field(label, type, value, key, boxIndex, options={}) {
+        const wrap = document.createElement('div');
+        wrap.className = options.className || 'col-6 col-md-3 col-xl-2';
+        const labelEl = document.createElement('label');
+        labelEl.className = 'form-label'; labelEl.textContent = label;
+        const input = document.createElement('input');
+        input.type = type; input.className = 'form-control form-control-sm'; input.value = value ?? '';
+        if (type === 'number') { input.min = '0'; input.step = options.step || '0.01'; }
+        input.addEventListener('input', () => {
+            boxes[boxIndex][key] = input.value;
+            if (key === 'box_no') {
+                const targetOption = targetBoxSelect.querySelector(`option[value="${boxIndex}"]`);
+                if (targetOption) targetOption.textContent = `第 ${boxIndex + 1} 箱（箱号 ${input.value.trim() || '未填写'}）`;
+            }
+            if (['length_cm','width_cm','height_cm'].includes(key)) {
+                boxes[boxIndex].volume_cbm = boxVolume(boxes[boxIndex]);
+                const cbmElement = document.querySelector(`[data-cbm-box="${boxIndex}"]`);
+                if (cbmElement) cbmElement.textContent = `自动计算体积：${numberValue(boxes[boxIndex].volume_cbm).toFixed(4)} m³`;
+            }
+            updateBoxSummary(boxIndex);
+            renderOverview();
+        });
+        wrap.append(labelEl, input); return wrap;
+    }
+
+    function renderOverview() {
+        const packed = packedQuantities();
+        const totalRequired = products.reduce((total, product) => total + integerValue(product.quantity), 0);
+        const totalPacked = products.reduce((total, product) => total + Math.min(packed[Number(product.id)] || 0, integerValue(product.quantity)), 0);
+        const hasOverpacked = products.some(product => (packed[Number(product.id)] || 0) > integerValue(product.quantity));
+        const progress = totalRequired > 0 ? Math.min(100, totalPacked / totalRequired * 100) : 0;
+        document.getElementById('packingProgressText').textContent = `${totalPacked} / ${totalRequired}`;
+        const progressBar = document.getElementById('packingProgressBar');
+        progressBar.style.width = `${progress}%`;
+        progressBar.className = `progress-bar ${hasOverpacked ? 'bg-danger' : progress === 100 ? 'bg-success' : ''}`;
+        progressBar.setAttribute('aria-valuenow', String(progress));
+        document.getElementById('packingBoxCount').textContent = boxes.length;
+        document.getElementById('packingNetTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.net_weight), 0).toFixed(2)} kg`;
+        document.getElementById('packingGrossTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.gross_weight), 0).toFixed(2)} kg`;
+        document.getElementById('packingVolumeTotal').textContent = `${boxes.reduce((total, box) => total + boxVolume(box), 0).toFixed(4)} m³`;
+    }
+
+    function updateBoxSummary(boxIndex) {
+        const box = boxes[boxIndex];
+        const title = document.querySelector(`[data-box-title="${boxIndex}"]`);
+        const meta = document.querySelector(`[data-box-meta="${boxIndex}"]`);
+        if (title) title.textContent = `第 ${boxIndex + 1} 箱 · 箱号 ${box.box_no || '未填写'}`;
+        if (meta) meta.textContent = `${box.items.length} 项 · ${boxItemCount(box)} 件 · 净重 ${numberValue(box.net_weight).toFixed(2)} kg · 毛重 ${numberValue(box.gross_weight).toFixed(2)} kg · ${boxVolume(box).toFixed(4)} m³`;
+    }
+
+    function renderTargetBoxes() {
+        if (selectedTargetBox >= boxes.length) selectedTargetBox = Math.max(0, boxes.length - 1);
+        targetBoxSelect.replaceChildren();
+        boxes.forEach((box, index) => {
+            const option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = `第 ${index + 1} 箱（箱号 ${box.box_no || '未填写'}）`;
+            option.selected = index === selectedTargetBox;
+            targetBoxSelect.append(option);
+        });
+    }
+
+    function renderPendingProducts() {
+        const packed = packedQuantities();
+        const remainingProducts = products.map(product => ({
+            ...product,
+            packed: packed[Number(product.id)] || 0,
+            remaining: integerValue(product.quantity) - (packed[Number(product.id)] || 0)
+        })).filter(product => product.remaining !== 0);
+        pendingCount.textContent = `${remainingProducts.length} 项`;
+        pendingCount.className = `badge ${remainingProducts.some(product => product.remaining < 0) ? 'bg-danger' : remainingProducts.length ? 'bg-warning text-dark' : 'bg-success'}`;
+        pendingProducts.replaceChildren();
+        if (!remainingProducts.length) {
+            const complete = document.createElement('div');
+            complete.className = 'packing-empty-state text-success border-success';
+            complete.innerHTML = '<i class="bi bi-check-circle fs-4 d-block mb-1"></i><strong>全部产品已分配</strong>';
+            pendingProducts.append(complete);
+            return;
+        }
+        remainingProducts.forEach(product => {
+            const card = document.createElement('div');
+            card.className = `packing-pending-item ${product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
+            const top = document.createElement('div'); top.className = 'd-flex align-items-start gap-2';
+            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining < 0;
+            const content = document.createElement('div'); content.className = 'packing-min-width-0 flex-grow-1';
+            const name = document.createElement('div'); name.className = 'fw-bold text-truncate'; name.title = product.name || '未命名产品'; name.textContent = product.name || '未命名产品';
+            const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = product.product_code || product.specification || '无产品编码';
+            const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
+            content.append(name, code, state); top.append(check, content); card.append(top);
+            if (product.remaining > 0) {
+                const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm mt-2';
+                const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '加入';
+                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(product.remaining); qty.step = '1'; qty.value = String(product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id);
+                const unit = document.createElement('span'); unit.className = 'input-group-text'; unit.textContent = '件';
+                qtyWrap.append(label, qty, unit); card.append(qtyWrap);
+            }
+            pendingProducts.append(card);
+        });
+    }
+
+    function renderBoxes() {
+        container.replaceChildren();
+        boxes.forEach((box, boxIndex) => {
+            if (!Array.isArray(box.items)) box.items = [];
+            const card = document.createElement('div'); card.className = 'card packing-box-card mb-3';
+            const header = document.createElement('div'); header.className = 'card-header d-flex justify-content-between align-items-center gap-2';
+            const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn btn-link text-decoration-none text-start text-dark p-0 flex-grow-1 packing-box-toggle';
+            const toggleContent = document.createElement('div'); toggleContent.className = 'd-flex align-items-center gap-2';
+            const icon = document.createElement('i'); icon.className = `bi ${expandedBoxes.has(boxIndex) ? 'bi-chevron-down' : 'bi-chevron-right'} text-primary`;
+            const titleWrap = document.createElement('div'); titleWrap.className = 'packing-box-title';
+            const title = document.createElement('div'); title.className = 'fw-bold text-truncate'; title.dataset.boxTitle = String(boxIndex);
+            const meta = document.createElement('div'); meta.className = 'packing-box-meta text-truncate'; meta.dataset.boxMeta = String(boxIndex);
+            titleWrap.append(title, meta); toggleContent.append(icon, titleWrap); toggle.append(toggleContent);
+            toggle.addEventListener('click', () => {
+                if (expandedBoxes.has(boxIndex)) expandedBoxes.delete(boxIndex); else expandedBoxes.add(boxIndex);
+                renderBoxes();
+            });
+            const remove = document.createElement('button'); remove.type='button'; remove.className='btn btn-sm btn-outline-danger'; remove.innerHTML='<i class="bi bi-trash"></i> 删除箱子';
+            remove.addEventListener('click', () => {
+                if (boxes.length === 1) return showAlert('至少需要保留一个箱子。', 'warning');
+                if (!confirm(`确认删除第 ${boxIndex + 1} 箱吗？箱内产品会回到待分配列表。`)) return;
+                boxes.splice(boxIndex, 1);
+                expandedBoxes.clear(); expandedBoxes.add(Math.max(0, Math.min(boxIndex, boxes.length - 1)));
+                renderBoxes();
+            });
+            header.append(toggle, remove);
+            const body = document.createElement('div'); body.className='card-body packing-box-body'; body.hidden = !expandedBoxes.has(boxIndex);
+            const fields = document.createElement('div'); fields.className='row g-2 mb-3';
+            fields.append(
+                field('箱号 *','text',box.box_no,'box_no',boxIndex),
+                field('净重 N.W.（kg）','number',box.net_weight,'net_weight',boxIndex),
+                field('毛重 G.W.（kg）','number',box.gross_weight,'gross_weight',boxIndex),
+                field('长（cm）','number',box.length_cm,'length_cm',boxIndex),
+                field('宽（cm）','number',box.width_cm,'width_cm',boxIndex),
+                field('高（cm）','number',box.height_cm,'height_cm',boxIndex),
+                field('唛头','text',box.shipping_mark,'shipping_mark',boxIndex,{className:'col-12 col-md-6'}),
+                field('箱备注','text',box.note,'note',boxIndex,{className:'col-12 col-md-6'})
+            );
+            const cbm = document.createElement('div'); cbm.className='small text-muted mb-2'; cbm.dataset.cbmBox=String(boxIndex); cbm.textContent=`自动计算体积：${numberValue(box.volume_cbm).toFixed(4)} m³`;
+            const responsive = document.createElement('div'); responsive.className='table-responsive';
+            const table = document.createElement('table'); table.className='table table-sm align-middle mb-2';
+            table.innerHTML='<thead class="table-light"><tr><th style="min-width:260px">产品 *</th><th style="width:150px">装箱数量 *</th><th style="min-width:220px">产品备注</th><th style="width:60px"></th></tr></thead>';
+            const tbody = document.createElement('tbody');
+            box.items.forEach((item, itemIndex) => {
+                const tr = document.createElement('tr');
+                const productTd = document.createElement('td'); const select = document.createElement('select'); select.className='form-select form-select-sm';
+                const placeholder = document.createElement('option'); placeholder.value=''; placeholder.textContent='— 选择 PI 产品 —'; select.append(placeholder);
+                const usedInBox = new Set(box.items.filter((_, index) => index !== itemIndex).map(row => productId(row.pi_item_id)));
+                products.forEach(product => {
+                    const option=document.createElement('option'); option.value=product.id; option.textContent=`${product.name} · ${product.product_code || '无编码'} · PI 数量 ${product.quantity}`; option.selected=productId(item.pi_item_id)===Number(product.id); option.disabled = usedInBox.has(Number(product.id)); select.append(option);
+                });
+                select.addEventListener('change',()=>{ item.pi_item_id=productId(select.value); renderOverview(); renderPendingProducts(); }); productTd.append(select);
+                const qtyTd=document.createElement('td'); const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
+                qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
+                qty.addEventListener('change',renderPendingProducts); qtyTd.append(qty);
+                const noteTd=document.createElement('td'); const note=document.createElement('input'); note.type='text'; note.maxLength=500; note.className='form-control form-control-sm'; note.value=item.note || ''; note.placeholder='可选'; note.addEventListener('input',()=>{item.note=note.value;}); noteTd.append(note);
+                const actionTd=document.createElement('td'); const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger'; removeItem.title='删除产品行'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();}); actionTd.append(removeItem);
+                tr.append(productTd,qtyTd,noteTd,actionTd); tbody.append(tr);
+            });
+            if (!box.items.length) {
+                const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.className = 'text-center text-muted py-4'; td.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，可从右侧批量加入或手动添加。'; tr.append(td); tbody.append(tr);
+            }
+            table.append(tbody); responsive.append(table);
+            const addItem=document.createElement('button'); addItem.type='button'; addItem.className='btn btn-sm btn-outline-primary'; addItem.innerHTML='<i class="bi bi-plus-lg"></i> 手动添加产品行'; addItem.addEventListener('click',()=>{box.items.push(newItem());expandedBoxes.add(boxIndex);renderBoxes();});
+            body.append(fields,cbm,responsive,addItem); card.append(header,body); container.append(card);
+            updateBoxSummary(boxIndex);
+        });
+        renderOverview();
+        renderTargetBoxes();
+        renderPendingProducts();
+    }
+
+    function showAlert(message, type='danger', shouldScroll=true) {
+        alertBox.className=`alert alert-${type}`; alertBox.textContent=message; alertBox.classList.remove('d-none');
+        if (shouldScroll) alertBox.scrollIntoView({behavior:'smooth',block:'center'});
+    }
+
+    function validateBeforeSave(action) {
+        if (!document.getElementById('packingDate').value) return '请填写装箱日期。';
+        if (!boxes.length) return '请至少添加一个箱子。';
+        const boxNumbers = new Set();
+        for (let boxIndex = 0; boxIndex < boxes.length; boxIndex += 1) {
+            const box = boxes[boxIndex];
+            const boxLabel = `第 ${boxIndex + 1} 箱`;
+            const normalizedBoxNo = String(box.box_no || '').trim().toLowerCase();
+            if (!normalizedBoxNo) return `${boxLabel}还没有填写箱号。`;
+            if (boxNumbers.has(normalizedBoxNo)) return `箱号“${box.box_no}”重复，请修改后再保存。`;
+            boxNumbers.add(normalizedBoxNo);
+            if (numberValue(box.gross_weight) < numberValue(box.net_weight)) return `${boxLabel}的毛重不能小于净重。`;
+            if (!box.items.length) return `${boxLabel}还没有产品，请先加入产品或删除空箱。`;
+            const usedProducts = new Set();
+            for (const item of box.items) {
+                const id = productId(item.pi_item_id);
+                if (!products.some(product => Number(product.id) === id)) return `${boxLabel}存在尚未选择产品的行。`;
+                if (usedProducts.has(id)) return `${boxLabel}中同一产品不能重复，请合并装箱数量。`;
+                usedProducts.add(id);
+                if (integerValue(item.quantity) <= 0) return `${boxLabel}的装箱数量必须是大于 0 的整数。`;
+            }
+        }
+        const packed = packedQuantities();
+        for (const product of products) {
+            const required = integerValue(product.quantity);
+            const actual = packed[Number(product.id)] || 0;
+            if (actual > required) return `产品“${product.name}”超装 ${actual - required} 件，请调整后再保存。`;
+            if (action === 'complete' && actual !== required) return `产品“${product.name}”尚有 ${required - actual} 件未装箱，不能完成装箱单。`;
+        }
+        return null;
+    }
+
+    async function save(action) {
+        const validationError = validateBeforeSave(action);
+        if (validationError) return showAlert(validationError, 'warning');
+        if (action === 'complete' && !confirm('确认所有产品和箱数均已核对，并完成这份装箱单吗？')) return;
+        const buttons=[...document.querySelectorAll('.packing-save')]; buttons.forEach(button=>button.disabled=true);
+        alertBox.classList.add('d-none');
+        try {
+            const response=await fetch({{ url_for('packing_list_save', pi_id=pi.id)|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,version,packing_date:document.getElementById('packingDate').value,boxes})});
+            const result=await response.json();
+            if(!response.ok || !result.success) throw new Error(result.error || '保存失败。');
+            version=result.data.version; boxes=result.data.boxes;
+            [...expandedBoxes].forEach(index => { if (index >= boxes.length) expandedBoxes.delete(index); });
+            if (!expandedBoxes.size) expandedBoxes.add(0);
+            showAlert(result.message,'success'); renderBoxes();
+            if(action==='complete') setTimeout(()=>window.location.reload(),500);
+        } catch(error) { showAlert(error.message || '保存失败，请稍后重试。'); }
+        finally { buttons.forEach(button=>button.disabled=false); }
+    }
+
+    targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; });
+    document.getElementById('batchAddProducts').addEventListener('click', () => {
+        const checked = [...document.querySelectorAll('.pending-product-check:checked')];
+        if (!checked.length) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
+        if (!boxes[selectedTargetBox]) return showAlert('请选择要加入的目标箱。', 'warning');
+        const packed = packedQuantities();
+        const additions = [];
+        for (const checkbox of checked) {
+            const id = Number(checkbox.value);
+            const product = products.find(row => Number(row.id) === id);
+            if (!product) continue;
+            const remaining = integerValue(product.quantity) - (packed[id] || 0);
+            const quantityInput = document.querySelector(`.pending-product-qty[data-product-id="${id}"]`);
+            const quantity = integerValue(quantityInput ? quantityInput.value : remaining);
+            if (quantity <= 0 || quantity > remaining) return showAlert(`产品“${product.name}”的加入数量应为 1 至 ${remaining}。`, 'warning');
+            additions.push({id, quantity});
+        }
+        for (const addition of additions) {
+            const {id, quantity} = addition;
+            const existing = boxes[selectedTargetBox].items.find(item => productId(item.pi_item_id) === id);
+            if (existing) existing.quantity = integerValue(existing.quantity) + quantity;
+            else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity, note:''});
+        }
+        expandedBoxes.add(selectedTargetBox);
+        renderBoxes();
+        showAlert(`已将 ${additions.length} 项产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
+    });
+    document.getElementById('addBoxButton').addEventListener('click',()=>{
+        boxes.push(emptyBox());
+        selectedTargetBox = boxes.length - 1;
+        expandedBoxes.add(selectedTargetBox);
+        renderBoxes();
+    });
+    document.querySelectorAll('.packing-save').forEach(button=>button.addEventListener('click',()=>save(button.dataset.action)));
+    renderBoxes();
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -8,7 +8,7 @@ sys.path.insert(0, '.')
 from app import app, db
 from models import Product
 
-ctx = ssl._create_unverified_context()
+ctx = ssl.create_default_context()
 
 def translate(text):
     try:

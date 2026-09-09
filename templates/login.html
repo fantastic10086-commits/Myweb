@@ -1,29 +1,85 @@
 {% extends "base.html" %}
-{% block title %}Login{% endblock %}
+{% block title %}登录{% endblock %}
 
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-md-5 col-lg-4">
         <div class="text-center mb-4">
-            <h3><i class="bi bi-shield-lock me-2"></i>PI Manager</h3>
+            <h3><i class="bi bi-shield-lock me-2"></i>PI 管理系统</h3>
             <p class="text-muted">{{ company.name }}</p>
         </div>
         <div class="card">
             <div class="card-body">
                 <form method="post">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required autofocus>
+                        <label for="account" class="form-label">账号</label>
+                        <input type="text" class="form-control" id="account" name="account" required autofocus autocomplete="username" maxlength="64" value="{{ login_account or '' }}" placeholder="请输入登录账号">
                     </div>
                     <div class="mb-3">
-                        <label for="password" class="form-label">Password</label>
+                        <label for="resolved_username" class="form-label">用户名</label>
+                        <input type="text" class="form-control bg-light" id="resolved_username" readonly tabindex="-1" aria-live="polite" placeholder="输入账号后自动显示">
+                        <div class="form-text" id="account_lookup_hint">系统会根据账号自动识别用户名。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">密码</label>
                         <input type="password" class="form-control" id="password" name="password" required>
                     </div>
-                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-box-arrow-in-right me-1"></i> Login</button>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-box-arrow-in-right me-1"></i> 登录</button>
                 </form>
             </div>
         </div>
-        <p class="text-center text-muted mt-3 small">Default admin: admin / admin123</p>
+        <p class="text-center text-muted mt-3 small">如无法登录，请联系管理员。</p>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+    const accountInput = document.getElementById('account');
+    const usernameInput = document.getElementById('resolved_username');
+    const hint = document.getElementById('account_lookup_hint');
+    let timer = null;
+    let requestSequence = 0;
+
+    async function resolveUsername() {
+        const account = accountInput.value.trim();
+        const sequence = ++requestSequence;
+        usernameInput.value = '';
+        if (!account) {
+            hint.textContent = '系统会根据账号自动识别用户名。';
+            return;
+        }
+        hint.textContent = '正在识别账号……';
+        try {
+            const response = await fetch('{{ url_for("login_account_name") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({account})
+            });
+            const data = await response.json();
+            if (sequence !== requestSequence) return;
+            if (response.ok && data.ok) {
+                usernameInput.value = data.username;
+                hint.textContent = '账号已识别，请输入密码。';
+            } else {
+                hint.textContent = data.message || '未识别到可用账号，请检查后重试。';
+            }
+        } catch (_error) {
+            if (sequence === requestSequence) hint.textContent = '暂时无法识别，仍可输入密码尝试登录。';
+        }
+    }
+
+    accountInput.addEventListener('input', () => {
+        clearTimeout(timer);
+        usernameInput.value = '';
+        timer = setTimeout(resolveUsername, 450);
+    });
+    accountInput.addEventListener('blur', () => {
+        clearTimeout(timer);
+        resolveUsername();
+    });
+    if (accountInput.value.trim()) resolveUsername();
+})();
+</script>
 {% endblock %}

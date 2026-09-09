@@ -1,14 +1,62 @@
 {% extends "base.html" %}
-{% block title %}Fees Report{% endblock %}
+{% block title %}利润表{% endblock %}
+
+{% block extra_head %}
+<style>
+    .profit-summary-card { min-height: 104px; }
+    .profit-amount { font-variant-numeric: tabular-nums; }
+    .profit-line { display: flex; justify-content: space-between; gap: 1rem; }
+    .profit-line + .profit-line { margin-top: .25rem; }
+    .profit-muted { color: #6c757d; font-size: .82rem; }
+    .profit-total-line { border-top: 1px solid #dee2e6; margin-top: .4rem; padding-top: .4rem; }
+    .profit-table { min-width: 900px; }
+    .profit-table .profit-compact-row > td { padding-top: .8rem; padding-bottom: .8rem; }
+    .profit-main-value { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .profit-detail-row > td { background: #f8f9fa; }
+    .profit-detail-panel { padding: 1rem 1.25rem 1.15rem; border-bottom: 1px solid #dee2e6; }
+    .profit-detail-section { height: 100%; padding: .85rem 1rem; background: #fff; border: 1px solid #e3e7eb; border-radius: .5rem; }
+    .profit-detail-section h6 { margin-bottom: .65rem; }
+    .profit-action-cell { min-width: 215px; }
+    .profit-status-badge { font-size: .74rem; }
+</style>
+{% endblock %}
 
 {% block extra_scripts %}
 <script>
 var currentPiId = null;
+var expenseAttachmentPreviewUrl = '';
+function clearExpenseAttachment() {
+    var input = document.getElementById('exp_attachment');
+    if (input) input.value = '';
+    if (expenseAttachmentPreviewUrl) URL.revokeObjectURL(expenseAttachmentPreviewUrl);
+    expenseAttachmentPreviewUrl = '';
+    document.getElementById('exp_attachment_preview').removeAttribute('src');
+    document.getElementById('exp_attachment_preview_wrap').classList.add('d-none');
+}
+function previewExpenseAttachment(input) {
+    if (!input.files || !input.files[0]) { clearExpenseAttachment(); return; }
+    var file = input.files[0];
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+        clearExpenseAttachment();
+        alert('附件必须是 JPG、PNG、WebP 或 GIF 图片。');
+        return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+        clearExpenseAttachment();
+        alert('凭证图片不能超过 12 MB。');
+        return;
+    }
+    if (expenseAttachmentPreviewUrl) URL.revokeObjectURL(expenseAttachmentPreviewUrl);
+    expenseAttachmentPreviewUrl = URL.createObjectURL(file);
+    document.getElementById('exp_attachment_preview').src = expenseAttachmentPreviewUrl;
+    document.getElementById('exp_attachment_preview_wrap').classList.remove('d-none');
+}
 function openExpense(piId) {
     currentPiId = piId;
     document.getElementById('exp_category').value = '';
     document.getElementById('exp_amount').value = '';
     document.getElementById('exp_note').value = '';
+    clearExpenseAttachment();
     new bootstrap.Modal(document.getElementById('expenseModal')).show();
 }
 function addExpense() {
@@ -16,16 +64,18 @@ function addExpense() {
     var amt = document.getElementById('exp_amount').value.trim();
     var cur = document.getElementById('exp_currency').value;
     var note = document.getElementById('exp_note').value.trim();
-    if (!cat) { alert('Category is required.'); return; }
-    if (!amt || parseFloat(amt) <= 0) { alert('Amount must be > 0.'); return; }
+    if (!cat) { alert('请选择真实成本类别。'); return; }
+    if (!amt || !Number.isFinite(Number(amt)) || Number(amt) <= 0) { alert('金额必须是大于 0 的有效数字。'); return; }
     var btn = document.getElementById('expSubmitBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
     var fd = new FormData();
     fd.append('category', cat);
     fd.append('amount', amt);
     fd.append('currency', cur);
     fd.append('note', note);
+    var attachment = document.getElementById('exp_attachment').files[0];
+    if (attachment) fd.append('attachment', attachment);
     if (currentPiId) fd.append('pi_id', currentPiId);
     fetch('/api/expenses', {method: 'POST', body: fd})
         .then(function(r) { return r.json(); })
@@ -33,22 +83,25 @@ function addExpense() {
             if (d.success) {
                 location.reload();
             } else {
-                alert(d.error || 'Failed');
+                alert(d.error || '保存失败。');
                 btn.disabled = false;
-                btn.innerHTML = '<i class="bi bi-check-lg"></i> Save';
+                btn.innerHTML = '<i class="bi bi-check-lg"></i> 保存';
             }
         })
-        .catch(function() { alert('Network error.'); btn.disabled = false; btn.innerHTML = '<i class="bi bi-check-lg"></i> Save'; });
+        .catch(function() {
+            alert('网络错误。');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-check-lg"></i> 保存';
+        });
 }
 function deleteExpense(id) {
-    if (!confirm('Delete this expense?')) return;
+    if (!confirm('确定删除该费用吗？')) return;
     fetch('/api/expenses/' + id, {method: 'DELETE'})
         .then(function(r) { return r.json(); })
-        .then(function(d) { if (d.success) location.reload(); });
-}
-function toggleCol(cls, cb) {
-    var els = document.querySelectorAll('.' + cls);
-    for (var i = 0; i < els.length; i++) { els[i].style.display = cb.checked ? '' : 'none'; }
+        .then(function(d) {
+            if (d.success) location.reload();
+            else alert(d.error || '删除失败。');
+        });
 }
 </script>
 {% endblock %}
@@ -56,173 +109,229 @@ function toggleCol(cls, cb) {
 {% block content %}
 <div class="row mb-3">
     <div class="col">
-        <h2><i class="bi bi-cash-stack me-2"></i>Fees Report</h2>
-        <p class="text-muted">PI total amounts broken down by product subtotal, adjustments, and expenses.</p>
-    </div>
-</div>
-
-<!-- Summary Cards -->
-<div class="row g-3 mb-3">
-    <div class="col-md-4">
-        <div class="card border-warning">
-            <div class="card-body text-center py-3">
-                <h6 class="text-muted small">Adjustment / Cost</h6>
-                <h4 class="text-warning fw-bold mb-0">{{ '%.2f'|format(total_shipping) }}</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-success">
-            <div class="card-body text-center py-3">
-                <h6 class="text-muted small">PI Grand Total</h6>
-                <h4 class="text-success fw-bold mb-0">{{ '%.2f'|format(total_all) }}</h4>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card border-danger">
-            <div class="card-body text-center py-3">
-                <h6 class="text-muted small">All Expenses</h6>
-                <h4 class="text-danger fw-bold mb-0">{{ '%.2f'|format(total_expense) }}</h4>
-            </div>
+        <h2><i class="bi bi-graph-up-arrow me-2"></i>利润表 <span class="badge bg-warning text-dark fs-6 align-middle">管理员专属</span></h2>
+        <p class="text-muted mb-2">快速查看每份订单的收入、真实成本与净利润，所有汇总统一折算为人民币。</p>
+        <div class="alert alert-primary py-2 mb-0 small">
+            <i class="bi bi-info-circle me-1"></i>
+            <strong>{{ summary.total_count }} 份有回款 PI，{{ summary.calculable_count }} 份可核算</strong>；
+            {% if summary.pending_count %}<strong>{{ summary.pending_count }} 份待补采购成本</strong>{% else %}全部可核算{% endif %}。
+            <span class="ms-2">新单默认汇率：1 USD = ¥{{ '%.4f'|format(default_exchange_rate) }}，历史订单仍使用各自保存的本单汇率。</span>
         </div>
     </div>
 </div>
 
-<!-- PI Table with Expenses -->
+{% set filter_endpoint = 'fees_report' %}
+{% set filtered_count = pi_list|length %}
+{% include '_pi_report_filters.html' %}
+
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 mb-3">
+    <div class="col">
+        <div class="card border-primary profit-summary-card">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small">订单总金额</div>
+                <h4 class="text-primary fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.order_revenue_rmb) }}</h4>
+                <small class="text-muted">产品 ¥{{ '%.2f'|format(summary.product_revenue_rmb) }} · 费用/折扣 {% if summary.adjustment_rmb > 0 %}+{% elif summary.adjustment_rmb < 0 %}−{% endif %}¥{{ '%.2f'|format(summary.adjustment_rmb|abs) }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-warning profit-summary-card">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small">净收入</div>
+                <h4 class="text-warning fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.net_income_rmb) }}</h4>
+                <small class="text-muted">已扣收款手续费 ¥{{ '%.2f'|format(summary.payment_fee_rmb) }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-danger profit-summary-card">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small">订单真实成本</div>
+                <h4 class="text-danger fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.total_actual_cost_rmb) }}</h4>
+                <small class="text-muted">采购 ¥{{ '%.2f'|format(summary.procurement_cost_rmb) }} · 其他 ¥{{ '%.2f'|format(summary.actual_expense_rmb) }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="card border-success profit-summary-card">
+            <div class="card-body text-center py-3">
+                <div class="text-muted small">净利润</div>
+                <h4 class="{{ 'text-success' if summary.profit_rmb >= 0 else 'text-danger' }} fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.profit_rmb) }}</h4>
+                <small class="text-muted">利润率：{{ '%.1f'|format(summary.margin_pct) if summary.margin_pct is not none else '-' }}%</small>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">PI Breakdown</h5>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-pinum',this)"><label class="form-check-label">PI#</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-cust',this)"><label class="form-check-label">Customer</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-country',this)"><label class="form-check-label">Country</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-date',this)"><label class="form-check-label">Date</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-total',this)"><label class="form-check-label">Total</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-pay',this)"><label class="form-check-label">Payment</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-ship',this)"><label class="form-check-label">Adjustment</label>
-        </div>
-        <div class="form-check form-check-inline mb-0" style="font-size:12px;">
-            <input class="form-check-input" type="checkbox" checked onchange="toggleCol('col-exp',this)"><label class="form-check-label">Expenses</label>
-        </div>
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">每单利润明细</h5>
+        <small class="text-muted">默认显示关键金额，点击“明细”查看完整计算过程。</small>
     </div>
     <div class="card-body p-0">
         {% if pi_list %}
         <div class="table-responsive">
-            <table class="table table-hover mb-0 align-middle" id="feesTable">
+            <table class="table table-hover mb-0 align-middle profit-table">
                 <thead class="table-light">
                     <tr>
-                        <th class="col-pinum">PI Number</th>
-                        <th class="col-cust">Customer</th>
-                        <th class="col-country">Country</th>
-                        <th class="col-date">Date</th>
-                        <th class="col-total text-end">Total</th>
-                        <th class="col-pay text-center">Payment</th>
-                        <th class="col-ship text-end">Adjustment</th>
-                        <th class="col-exp text-end">Expenses</th>
-                        <th></th>
+                        <th>PI / 客户</th>
+                        <th class="text-end">订单总金额</th>
+                        <th class="text-end">订单真实成本</th>
+                        <th class="text-end">净利润</th>
+                        <th class="text-end">状态 / 操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for p in pi_list %}
-                    <tr>
-                        <td class="col-pinum"><strong>{{ p.pi_number }}</strong></td>
-                        <td class="col-cust">{{ p.customer }}</td>
-                        <td class="col-country"><small>{{ p.country or '-' }}</small></td>
-                        <td class="col-date"><small>{{ p.date }}</small></td>
-                        <td class="col-total text-end fw-bold">{{ p.sym }}{{ '%.2f'|format(p.total) }}</td>
-                        <td class="col-pay text-center">
-                            {% if p.paid %}
-                            <span class="badge bg-success" title="Fully Paid">✓</span>
-                            {% else %}
-                            <span class="badge bg-warning text-dark" title="Partial: {{ p.sym }}{{ '%.2f'|format(p.received) }} / {{ p.sym }}{{ '%.2f'|format(p.total) }}">◐</span>
-                            {% endif %}
-                        </td>
-                        <td class="col-ship text-end">
-                            {{ p.sym }}{{ '%.2f'|format(p.shipping) if p.shipping != 0 else '-' }}
-                            {% if p.currency == 'USD' and p.shipping != 0 %}
-                            <br><small class="text-muted">≈ ¥{{ '%.2f'|format(p.shipping * exchange_rate) }}</small>
-                            {% endif %}
-                        </td>
-                        <td class="col-exp text-end">
-                            {% if p.expenses %}
-                            <span class="text-danger fw-bold">{{ p.sym }}{{ '%.2f'|format(p.exp_total) }}</span>
-                            {% for e in p.expenses %}
-                            <br><small class="text-muted">{{ e.category }} {{ '¥' if e.currency == 'RMB' else '$' }}{{ '%.2f'|format(e.amount) }}</small>
-                            <a href="javascript:void(0)" onclick="deleteExpense({{ e.id }})" class="text-danger ms-1" title="Delete"><i class="bi bi-x-circle"></i></a>
-                            {% endfor %}
-                            {% else %}
-                            <span class="text-muted">-</span>
-                            {% endif %}
+                    <tr class="profit-compact-row">
+                        <td>
+                            <strong>{{ p.pi_number }}</strong>
+                            <div class="profit-muted">{{ p.customer }}{% if p.country %} · {{ p.country }}{% endif %}</div>
+                            <div class="profit-muted">{{ p.date }} · {% if p.paid %}已付清{% else %}部分回款 {{ p.sym }}{{ '%.2f'|format(p.received) }}{% endif %}</div>
                         </td>
                         <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="openExpense({{ p.id }})" title="Add Expense"><i class="bi bi-plus-lg"></i></button>
+                            <div class="profit-main-value">{{ p.sym }}{{ '%.2f'|format(p.order_revenue) }}</div>
+                            {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="profit-main-value">¥{{ '%.2f'|format(p.total_actual_cost_rmb) }}</div>
+                            {% if not p.procurement_data_complete %}
+                            <span class="badge bg-secondary profit-status-badge">待补采购数据</span>
+                            {% elif not p.procurement_confirmed %}
+                            <span class="badge bg-warning text-dark profit-status-badge">暂估</span>
+                            {% endif %}
+                            {% if p.potential_duplicate_freight %}<div><span class="badge bg-warning text-dark profit-status-badge mt-1">疑似重复运费</span></div>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            {% if p.profit_rmb is not none %}
+                            <div class="profit-main-value {{ 'text-success' if p.profit_rmb >= 0 else 'text-danger' }}">¥{{ '%.2f'|format(p.profit_rmb) }}</div>
+                            <div class="profit-muted">利润率 {{ '%.1f'|format(p.margin_pct) if p.margin_pct is not none else '-' }}%</div>
+                            {% if p.profit_rmb < 0 %}<span class="badge bg-danger profit-status-badge">亏损</span>{% elif not p.procurement_confirmed %}<span class="badge bg-warning text-dark profit-status-badge">暂估利润</span>{% endif %}
+                            {% else %}
+                            <span class="badge bg-secondary profit-status-badge">待核算</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end profit-action-cell">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#profitDetail{{ p.id }}" aria-controls="profitDetail{{ p.id }}">
+                                <i class="bi bi-chevron-down me-1"></i>查看明细
+                            </button>
+                        </td>
+                    </tr>
+                    <tr class="profit-detail-row">
+                        <td colspan="5" class="p-0 border-0">
+                            <div class="collapse" id="profitDetail{{ p.id }}">
+                                <div class="profit-detail-panel">
+                                    <div class="row g-3">
+                                        <div class="col-lg-6">
+                                            <div class="profit-detail-section">
+                                                <h6><i class="bi bi-receipt me-1"></i>收入明细</h6>
+                                                <div class="profit-line"><span>产品收入</span><strong>{{ p.sym }}{{ '%.2f'|format(p.product_revenue) }}</strong></div>
+                                                <div class="profit-line">
+                                                    <span>{{ '客户承担费用' if p.adjustment > 0 else ('订单折扣' if p.adjustment < 0 else '费用 / 折扣') }}</span>
+                                                    <span>{% if p.adjustment > 0 %}+ {% elif p.adjustment < 0 %}− {% endif %}{{ p.sym }}{{ '%.2f'|format(p.adjustment_abs) }}</span>
+                                                </div>
+                                                <div class="profit-line profit-total-line"><span>订单总金额</span><strong>{{ p.sym }}{{ '%.2f'|format(p.order_revenue) }}</strong></div>
+                                                {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合人民币 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
+                                                <div class="profit-line"><span>收款手续费</span><span class="text-danger">− ¥{{ '%.2f'|format(p.payment_fee_rmb) }}</span></div>
+                                                <div class="profit-line profit-total-line"><strong>净收入</strong><strong>¥{{ '%.2f'|format(p.net_income_rmb) }}</strong></div>
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <div class="profit-detail-section">
+                                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                                    <h6 class="mb-0"><i class="bi bi-calculator me-1"></i>订单真实成本结构{% if p.expense_lines %} <span class="badge bg-light text-dark border ms-1">{{ p.expense_lines|length }} 笔登记成本</span>{% endif %}</h6>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="openExpense({{ p.id }})"><i class="bi bi-plus-lg me-1"></i>新增成本</button>
+                                                </div>
+                                                <div class="profit-line">
+                                                    <span>采购产品成本</span>
+                                                    <span><strong>¥{{ '%.2f'|format(p.procurement_cost_rmb) }}</strong>{% if p.procurement_data_complete and p.procurement_confirmed %}<span class="badge bg-success ms-1">已确认</span>{% elif p.procurement_data_complete %}<span class="badge bg-warning text-dark ms-1">暂估</span>{% else %}<span class="badge bg-secondary ms-1">待补数据</span>{% endif %}</span>
+                                                </div>
+                                                <div class="profit-line"><span>供应商采购运费</span><span>¥{{ '%.2f'|format(p.actual_freight_rmb) }}</span></div>
+                                                <div class="profit-line"><span>业务员登记的真实成本</span><span>¥{{ '%.2f'|format(p.recorded_expense_rmb) }}</span></div>
+                                                {% for e in p.expense_lines %}
+                                                <div class="profit-muted d-flex justify-content-between gap-2 ms-2">
+                                                    <span>· {{ e.category }}{% if e.note %}（{{ e.note }}）{% endif %}{% if e.has_attachment %}<a href="{{ url_for('expense_attachment', id=e.id) }}" target="_blank" rel="noopener" class="ms-1 text-decoration-none"><i class="bi bi-paperclip"></i>查看凭证</a>{% endif %}</span>
+                                                    <span class="text-nowrap">{{ e.symbol }}{{ '%.2f'|format(e.amount) }}{% if e.currency == 'USD' %} ≈ ¥{{ '%.2f'|format(e.amount_rmb) }}{% endif %}<a href="javascript:void(0)" onclick="deleteExpense({{ e.id }})" class="text-danger ms-1" title="删除费用"><i class="bi bi-x-circle"></i></a></span>
+                                                </div>
+                                                {% else %}
+                                                <div class="profit-muted ms-2">暂无业务员登记的真实成本。</div>
+                                                {% endfor %}
+                                                <div class="profit-line profit-total-line"><strong>订单真实成本合计</strong><strong class="text-danger">¥{{ '%.2f'|format(p.total_actual_cost_rmb) }}</strong></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex flex-wrap justify-content-between gap-2 mt-2 profit-muted">
+                                        <span>本单汇率：1 USD = ¥{{ '%.4f'|format(p.exchange_rate) }} · 净利润 = 净收入 − 订单真实成本合计</span>
+                                        {% if p.potential_duplicate_freight %}<span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>供应商采购运费与运费类真实成本同时存在，请检查是否重复记账。</span>{% endif %}
+                                    </div>
+                                </div>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
-                <tfoot class="table-light">
-                    <tr>
-                        <th colspan="10" class="text-end">Total for {{ pi_list|length }} PI(s) — Adjustment: {{ '%.2f'|format(total_shipping) }} &nbsp;|&nbsp; Grand Total: {{ '%.2f'|format(total_all) }} &nbsp;|&nbsp; Expenses: {{ '%.2f'|format(total_expense) }}</th>
-                    </tr>
-                </tfoot>
             </table>
         </div>
         {% else %}
-        <div class="text-center py-5 text-muted"><i class="bi bi-cash-stack display-3"></i><p class="mt-2">No PI data yet.</p></div>
+        <div class="text-center py-5 text-muted"><i class="bi bi-cash-stack display-3"></i><p class="mt-2">暂无已回款 PI。</p></div>
         {% endif %}
     </div>
 </div>
 
-<!-- Expense Modal -->
+<details class="alert alert-light border mt-3 mb-0 small text-muted">
+    <summary class="fw-semibold">查看计算口径</summary>
+    <div class="mt-2">订单总金额 = 产品收入 + 客户费用/折扣；净收入 = 订单总金额 − 收款手续费；订单真实成本 = 采购产品成本 + 供应商采购运费 + 业务员登记的真实成本；净利润 = 净收入 − 订单真实成本合计。美元按各 PI 保存的本单业务汇率折算成人民币，采购数据不完整的订单不进入顶部利润汇总。</div>
+</details>
+
 <div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-dash-circle me-1"></i>Add Expense</h5>
+                <h5 class="modal-title"><i class="bi bi-dash-circle me-1"></i>新增订单真实成本</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div class="alert alert-info py-2 small">此处登记报关费、实际运费等订单后续真实支出。它不会改变客户订单总金额，只会在利润核算中扣除；采购页已经登记的供应商采购运费不要重复填写。</div>
                 <div class="mb-3">
-                    <label class="form-label">Category <span class="text-danger">*</span></label>
+                    <label class="form-label">真实成本类别 <span class="text-danger">*</span></label>
                     <select class="form-select" id="exp_category">
-                        <option value="">— Select —</option>
-                        <option value="运费">运费 (Shipping)</option>
-                        <option value="保险费">保险费 (Insurance)</option>
-                        <option value="报关费">报关费 (Customs)</option>
+                        <option value="">— 请选择 —</option>
+                        {% for option in expense_category_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
                     </select>
+                    <small class="text-muted">类别由管理员在“字段管理”中统一维护。</small>
                 </div>
                 <div class="row g-2 mb-3">
                     <div class="col-md-7">
-                        <label class="form-label">Amount <span class="text-danger">*</span></label>
+                        <label class="form-label">真实成本金额 <span class="text-danger">*</span></label>
                         <input type="number" step="0.01" min="0.01" class="form-control" id="exp_amount" placeholder="0.00">
                     </div>
                     <div class="col-md-5">
-                        <label class="form-label">Currency</label>
-                        <input type="text" class="form-control" value="RMB (¥)" readonly style="background:#e9ecef;">
+                        <label class="form-label">币种</label>
+                        <input type="text" class="form-control" value="人民币 (¥)" readonly>
                         <input type="hidden" id="exp_currency" value="RMB">
                     </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Note</label>
-                    <input type="text" class="form-control" id="exp_note" placeholder="Optional note...">
+                    <label class="form-label">备注</label>
+                    <input type="text" class="form-control" id="exp_note" maxlength="1000" placeholder="选填备注……">
+                </div>
+                <div class="mb-1">
+                    <label class="form-label" for="exp_attachment">附件图片（选填）</label>
+                    <input type="file" class="form-control" id="exp_attachment"
+                           accept="image/jpeg,image/png,image/webp,image/gif"
+                           onchange="previewExpenseAttachment(this)">
+                    <small class="text-muted">可上传发票、报关单、运费单或付款凭证；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                    <div id="exp_attachment_preview_wrap" class="d-none mt-2">
+                        <img id="exp_attachment_preview" class="img-thumbnail" alt="真实成本凭证预览"
+                             style="max-height:180px;max-width:100%;object-fit:contain;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                                onclick="clearExpenseAttachment()">移除图片</button>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" id="expSubmitBtn" onclick="addExpense()"><i class="bi bi-check-lg"></i> Save</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="expSubmitBtn" onclick="addExpense()"><i class="bi bi-check-lg"></i> 保存</button>
             </div>
         </div>
     </div>

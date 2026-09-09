@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}操作审计{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2><i class="bi bi-journal-check me-2"></i>操作审计 <small class="text-muted fs-6">（{{ total }}）</small></h2>
+  <a class="btn btn-outline-secondary" href="{{ url_for('recycle_bin') }}"><i class="bi bi-trash3"></i> 回收站</a>
+</div>
+<form method="get" class="row g-2 mb-3">
+  <div class="col-md-3"><select name="entity_type" class="form-select"><option value="">全部记录类型</option><option value="customer" {% if entity_type == 'customer' %}selected{% endif %}>客户</option><option value="pi" {% if entity_type == 'pi' %}selected{% endif %}>PI</option><option value="payment" {% if entity_type == 'payment' %}selected{% endif %}>回款</option><option value="account" {% if entity_type == 'account' %}selected{% endif %}>收款账户</option></select></div>
+  <div class="col-md-3"><select name="action" class="form-select"><option value="">全部操作</option><option value="create" {% if action == 'create' %}selected{% endif %}>新增</option><option value="update" {% if action == 'update' %}selected{% endif %}>修改</option><option value="reassign" {% if action == 'reassign' %}selected{% endif %}>转交</option><option value="soft_delete" {% if action == 'soft_delete' %}selected{% endif %}>移入回收站</option><option value="restore" {% if action == 'restore' %}selected{% endif %}>恢复</option><option value="delete" {% if action == 'delete' %}selected{% endif %}>删除</option></select></div>
+  <div class="col"><button class="btn btn-primary">筛选</button></div>
+</form>
+<div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle">
+<thead class="table-light"><tr><th>时间</th><th>用户 / IP</th><th>操作</th><th>记录</th><th>说明</th><th>修改前 / 修改后</th></tr></thead>
+<tbody>{% for log in logs %}<tr>
+<td class="text-nowrap">{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') if log.created_at else '' }}</td>
+<td>{{ log.username }}<br><small class="text-muted">{{ log.ip_address }}</small></td>
+<td><span class="badge bg-{{ 'danger' if 'delete' in log.action else ('success' if log.action in ['create','restore'] else 'secondary') }}">{% if log.action == 'create' %}新增{% elif log.action == 'update' %}修改{% elif log.action == 'reassign' %}转交{% elif log.action == 'soft_delete' %}移入回收站{% elif log.action == 'restore' %}恢复{% elif log.action == 'delete' %}删除{% else %}{{ log.action }}{% endif %}</span></td>
+<td>{% if log.entity_type == 'customer' %}客户{% elif log.entity_type == 'payment' %}回款{% elif log.entity_type == 'account' %}收款账户{% else %}PI{% endif %} #{{ log.entity_id or '-' }}</td><td>{{ log.summary }}</td>
+<td><details><summary>查看</summary><div class="small mt-1"><strong>修改前</strong><pre class="bg-light p-2 text-wrap">{{ log.before_json }}</pre><strong>修改后</strong><pre class="bg-light p-2 text-wrap">{{ log.after_json }}</pre></div></details></td>
+</tr>{% else %}<tr><td colspan="6" class="text-center text-muted py-4">暂无审计记录。</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% if total_pages > 1 %}<nav class="mt-3"><ul class="pagination pagination-sm">{% for p in range(1, total_pages + 1) %}<li class="page-item {{ 'active' if p == page else '' }}"><a class="page-link" href="{{ url_for('audit_logs', page=p, entity_type=entity_type, action=action) }}">{{ p }}</a></li>{% endfor %}</ul></nav>{% endif %}
+{% endblock %}

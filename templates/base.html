@@ -1,20 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN" translate="no" class="notranslate">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}PI Manager{% endblock %} — {{ company.name }}</title>
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+    <meta name="google" content="notranslate">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}PI 管理系统{% endblock %} — {{ company.name }}</title>
+    {# 版本号用于刷新浏览器长期缓存的站点图标。 #}
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg', v='20260902') }}">
+    <link rel="shortcut icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg', v='20260902') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap-icons.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     {% block extra_head %}{% endblock %}
 </head>
-<body>
+<body translate="no" class="notranslate">
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
         <div class="container">
             <a class="navbar-brand fw-bold" href="{{ url_for('index') }}">
-                <i class="bi bi-file-earmark-text me-2"></i>PI Manager
+                <i class="bi bi-file-earmark-text me-2"></i><span translate="no" class="notranslate">PI Manager</span>
             </a>
             {% if current_user %}
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -24,43 +28,50 @@
                 <ul class="navbar-nav ms-auto">
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('index') }}">
-                            <i class="bi bi-speedometer2"></i> Dashboard
+                            <i class="bi bi-speedometer2"></i> 首页
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('customer_list') }}">
-                            <i class="bi bi-people"></i> Customers
+                            <i class="bi bi-people"></i> 客户
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('product_list') }}">
-                            <i class="bi bi-box"></i> Products
+                            <i class="bi bi-box"></i> 产品
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pi_create') }}">
-                            <i class="bi bi-plus-circle"></i> New PI
+                            <i class="bi bi-plus-circle"></i> 新建 PI
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('pi_list') }}">
-                            <i class="bi bi-files"></i> PI List
+                            <i class="bi bi-files"></i> PI 列表
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('sales_stats') }}">
-                            <i class="bi bi-bar-chart"></i> Sales Stats
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('fees_report') }}">
-                            <i class="bi bi-cash-stack"></i> Fees
+                            <i class="bi bi-bar-chart"></i> 回款统计
                         </a>
                     </li>
                     {% if is_admin %}
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('procurement_select') }}">
-                            <i class="bi bi-cart-check"></i> Procurement
+                            <i class="bi bi-cart-check"></i> 采购
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('packing_list_index') }}">
+                            <i class="bi bi-box-seam"></i> 装箱单
+                        </a>
+                    </li>
+                    {% if is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('fees_report') }}">
+                            <i class="bi bi-graph-up-arrow"></i> 利润表
                         </a>
                     </li>
                     {% endif %}
@@ -69,21 +80,23 @@
                 <div class="dropdown">
                     <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
                         <i class="bi bi-person-circle me-1"></i>{{ current_user.username }}
-                        {% if current_user.role == 'admin' %}<span class="badge bg-warning text-dark ms-1">Admin</span>{% endif %}
+                        {% if current_user.role == 'admin' %}<span class="badge bg-warning text-dark ms-1">管理员</span>{% endif %}
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
-                        <li><span class="dropdown-item-text small text-muted">{{ current_user.salesperson_name or 'Administrator' }}</span></li>
+                        <li><span class="dropdown-item-text small text-muted">{{ current_user.salesperson_name or '管理员' }}</span></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> My Profile</a></li>
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('user_list') }}"><i class="bi bi-people-fill"></i> Users</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('settings_page') }}"><i class="bi bi-gear"></i> Settings</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('backup_page') }}"><i class="bi bi-shield-check"></i> Backup</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-bank"></i> Accounts</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('supplier_list') }}"><i class="bi bi-truck"></i> Suppliers</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> Salespersons</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('procurement_select') }}"><i class="bi bi-cart-check"></i> Procurement</a></li>{% endif %}
+                        <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> 我的资料</a></li>
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('user_list') }}"><i class="bi bi-people-fill"></i> 用户管理</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('settings_page') }}"><i class="bi bi-gear"></i> 系统设置</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('backup_page') }}"><i class="bi bi-shield-check"></i> 数据备份</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('audit_logs') }}"><i class="bi bi-journal-check"></i> 操作审计</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('recycle_bin') }}"><i class="bi bi-trash3"></i> 回收站</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-ui-checks-grid"></i> 字段管理</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('document_template_list') }}"><i class="bi bi-file-earmark-spreadsheet"></i> 单据模板</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('supplier_list') }}"><i class="bi bi-truck"></i> 供应商</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> 业务员</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> Logout</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
                     </ul>
                 </div>
                 {% endif %}
@@ -108,10 +121,39 @@
     </div>
 
     <footer class="text-center text-muted py-3 mt-4 border-top">
-        <small>{{ company.name }} — PI Management System</small>
+        <small>{{ company.name }} — PI 管理系统</small>
     </footer>
 
     <script src="{{ url_for('static', filename='lib/bootstrap.bundle.min.js') }}"></script>
+    <script>
+    (() => {
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        const addToken = (form) => {
+            if (!form.querySelector('input[name="csrf_token"]')) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'csrf_token';
+                input.value = token;
+                form.appendChild(input);
+            }
+        };
+        document.querySelectorAll('form[method="post"], form[method="POST"]').forEach(addToken);
+        const nativeSubmit = HTMLFormElement.prototype.submit;
+        HTMLFormElement.prototype.submit = function () {
+            if ((this.method || 'get').toLowerCase() === 'post') addToken(this);
+            return nativeSubmit.call(this);
+        };
+        const originalFetch = window.fetch;
+        window.fetch = (input, init = {}) => {
+            const method = (init.method || 'GET').toUpperCase();
+            if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method)) {
+                init.headers = new Headers(init.headers || {});
+                init.headers.set('X-CSRFToken', token);
+            }
+            return originalFetch(input, init);
+        };
+    })();
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

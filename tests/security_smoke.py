@@ -1,0 +1,2426 @@
+"""Run with the project virtualenv: python tests/security_smoke.py."""
+
+import os
+import re
+import shutil
+import sys
+import tempfile
+import unittest
+import zipfile
+from io import BytesIO
+from unittest.mock import patch
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+
+TEST_ROOT = tempfile.TemporaryDirectory(prefix='pi-manager-tests-')
+for name in ('instance', 'uploads', 'pdf', 'backups'):
+    os.makedirs(os.path.join(TEST_ROOT.name, name), exist_ok=True)
+
+os.environ.update({
+    'FLASK_ENV': 'production',
+    'SECRET_KEY': 'test-only-secret-key-never-use-in-production',
+    'INITIAL_ADMIN_PASSWORD': 'InitialTestPass123!',
+    'DATABASE_DIR': os.path.join(TEST_ROOT.name, 'instance'),
+    'UPLOAD_DIR': os.path.join(TEST_ROOT.name, 'uploads'),
+    'PDF_DIR': os.path.join(TEST_ROOT.name, 'pdf'),
+    'BACKUP_DIR': os.path.join(TEST_ROOT.name, 'backups'),
+    'SETTINGS_FILE': os.path.join(TEST_ROOT.name, 'settings.json'),
+})
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from werkzeug.security import generate_password_hash
+import app as application
+from werkzeug.datastructures import MultiDict
+from models import (
+    Account, AuditLog, Customer, DocumentTemplate, Expense, FieldOption,
+    PackingBox, PackingItem, PackingList, Payment, PI, PIItem, Procurement,
+    Product, Supplier, User, db,
+)
+from document_export import _fixed_values, convert_excel_to_pdf, find_soffice
+
+
+class SecuritySmokeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with application.app.app_context():
+            db.session.add_all([
+                User(account='alice-login', username='alice', password_hash=generate_password_hash('StrongPass123!'),
+                     role='salesperson', salesperson_name='Alice', must_change_password=False),
+                User(account='bob-login', username='bob', password_hash=generate_password_hash('StrongPass123!'),
+                     role='salesperson', salesperson_name='Bob', must_change_password=False),
+                User(account='admin-test-login', username='admin-test', password_hash=generate_password_hash('AdminPass123!'),
+                     role='admin', salesperson_name='', must_change_password=False),
+                Customer(name='Alice Customer', salesperson='Alice'),
+                Customer(name='Bob Customer', salesperson='Bob'),
+                Account(name='Approved', bank_name='SAFE BANK', account_no='123', swift_code='SAFE'),
+                Product(name='Original Product', product_code='ORIG', specification='Original spec', unit_price=10),
+            ])
+            db.session.commit()
+            cls.alice_customer = Customer.query.filter_by(name='Alice Customer').one().id
+            cls.bob_customer = Customer.query.filter_by(name='Bob Customer').one().id
+            cls.approved_account = Account.query.filter_by(name='Approved').one().id
+            product = Product.query.filter_by(name='Original Product').one()
+            pi = PI(pi_number='PI-TEST-001', customer_id=cls.alice_customer,
+                    salesperson='Alice', bank_info='SAFE BANK\nA/C: 123\nSWIFT: SAFE',
+                    currency='USD', exchange_rate=7.0, total_amount=10)
+            db.session.add(pi)
+            db.session.flush()
+            db.session.add(PIItem(pi_id=pi.id, product_id=product.id,
+                                  quantity=1, unit_price=10, amount=10))
+            db.session.commit()
+            cls.alice_pi = pi.id
+
+    def setUp(self):
+        self.client = application.app.test_client()
+
+    def token(self, path='/login'):
+        html = self.client.get(path).get_data(as_text=True)
+        return re.search(r'<meta name="csrf-token" content="([^"]+)"', html).group(1)
+
+    def login(self, username='alice'):
+        password = 'AdminPass123!' if username == 'admin-test' else 'StrongPass123!'
+        account = {
+            'alice': 'alice-login',
+            'bob': 'bob-login',
+            'admin-test': 'admin-test-login',
+        }.get(username, username)
+        return self.client.post('/login', data={
+            'account': account,
+            'password': password,
+            'csrf_token': self.token(),
+        })
+
+    @staticmethod
+    def image_upload(filename='receipt.png'):
+        from PIL import Image
+        receipt = BytesIO()
+        Image.new('RGB', (4, 4), '#ffffff').save(receipt, format='PNG')
+        receipt.seek(0)
+        return receipt, filename
+
+    def test_login_account_resolves_username_and_authenticates(self):
+        token = self.token()
+        lookup = self.client.post('/login/account-name', json={
+            'account': 'ALICE-LOGIN',
+        }, headers={'X-CSRFToken': token})
+        self.assertEqual(lookup.status_code, 200)
+        self.assertEqual(lookup.get_json(), {'ok': True, 'username': 'alice'})
+
+        missing = self.client.post('/login/account-name', json={
+            'account': 'does-not-exist',
+        }, headers={'X-CSRFToken': token})
+        self.assertEqual(missing.status_code, 200)
+        self.assertEqual(missing.get_json(), {'ok': False, 'username': ''})
+
+        response = self.client.post('/login', data={
+            'account': 'ALICE-LOGIN',
+            'password': 'StrongPass123!',
+            'csrf_token': token,
+        })
+        self.assertEqual(response.status_code, 302)
+
+    def test_anonymous_business_download_redirects_to_login(self):
+        self.assertEqual(self.client.get('/pi/1/download').status_code, 302)
+
+    def test_submitted_pi_items_preserve_explicit_selection_order(self):
+        with application.app.app_context():
+            first = Product(name='Order First', product_code='ORDER-FIRST', unit_price=11)
+            second = Product(name='Order Second', product_code='ORDER-SECOND', unit_price=22)
+            db.session.add_all([first, second])
+            db.session.commit()
+            first_id, second_id = first.id, second.id
+
+            # Deliberately put selected_* keys in the opposite order.  The
+            # explicit UI order must be authoritative.
+            form = MultiDict([
+                (f'selected_{first_id}', 'on'),
+                (f'qty_{first_id}', '1'),
+                (f'unit_price_{first_id}', '11'),
+                (f'selected_{second_id}', 'on'),
+                (f'qty_{second_id}', '1'),
+                (f'unit_price_{second_id}', '22'),
+                ('product_order', f'{second_id},{first_id}'),
+            ])
+            items, total = application._submitted_pi_items(form)
+            self.assertEqual(
+                [item['product'].id for item in items],
+                [second_id, first_id],
+            )
+            self.assertEqual(total, 33)
+
+            db.session.delete(first)
+            db.session.delete(second)
+            db.session.commit()
+
+    def test_saved_pi_documents_use_export_workbench_renderer(self):
+        calls = []
+
+        def fake_render(export_pi, template, output_format, work_dir, preview=False):
+            extension = 'pdf' if output_format == 'pdf' else 'xlsx'
+            path = os.path.join(work_dir, f'generated.{extension}')
+            with open(path, 'wb') as output:
+                output.write(b'%PDF' if extension == 'pdf' else b'xlsx')
+            calls.append((template.id, output_format, [item.product.name for item in export_pi.items]))
+            return path, 'application/octet-stream'
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            expected_template_id = application._export_template().id
+            with patch.object(application, '_render_pi_export', side_effect=fake_render):
+                pdf_name, excel_name = application._generate_default_pi_documents(pi)
+
+        self.assertEqual([call[1] for call in calls], ['pdf', 'xlsx'])
+        self.assertEqual([call[0] for call in calls], [expected_template_id, expected_template_id])
+        self.assertEqual(calls[0][2], ['Original Product'])
+        self.assertEqual(pdf_name, 'PI-TEST-001.pdf')
+        self.assertEqual(excel_name, 'PI-TEST-001.xlsx')
+
+    def test_new_pi_redirects_to_its_preview_after_creation(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            product_id = Product.query.filter_by(product_code='ORIG').one().id
+
+        with patch.object(
+            application,
+            '_generate_default_pi_documents',
+            return_value=('created-preview.pdf', 'created-preview.xlsx'),
+        ):
+            response = self.client.post('/pi/create', data={
+                'customer_id': str(self.alice_customer),
+                'salesperson': 'Alice',
+                'payment_terms': '100% TT before shipment',
+                'price_terms': '',
+                'delivery_time': '',
+                'bank_info': 'SAFE BANK',
+                'notes': 'redirect-to-preview-test',
+                'issue_date': '2026-09-09',
+                'currency': 'USD',
+                'exchange_rate': '7',
+                'company': 'klista',
+                'shipping_address': '',
+                'shipping_cost': '0',
+                'shipping_note': '',
+                f'selected_{product_id}': 'on',
+                f'qty_{product_id}': '1',
+                f'unit_price_{product_id}': '10',
+                'product_order': str(product_id),
+                'csrf_token': self.token('/pi/create'),
+            })
+
+        self.assertEqual(response.status_code, 302)
+        location = response.headers['Location']
+        self.assertRegex(location, r'/pi/\d+$')
+        self.assertNotEqual(location, '/pi/list')
+        created_id = int(location.rsplit('/', 1)[-1])
+        preview = self.client.get(location)
+        self.assertEqual(preview.status_code, 200)
+        self.assertIn('redirect-to-preview-test', preview.get_data(as_text=True))
+
+        with application.app.app_context():
+            created = db.session.get(PI, created_id)
+            if created:
+                db.session.delete(created)
+                db.session.commit()
+
+    def test_direct_pi_pdf_download_uses_current_default_export_renderer(self):
+        self.login('alice')
+        calls = []
+
+        def fake_render(export_pi, template, output_format, work_dir, preview=False):
+            path = os.path.join(work_dir, 'current-template.pdf')
+            with open(path, 'wb') as output:
+                output.write(b'%PDF-current-default-template')
+            calls.append((
+                export_pi.pi_number,
+                template.code,
+                output_format,
+                preview,
+            ))
+            return path, 'application/pdf'
+
+        with patch.object(application, '_render_pi_export', side_effect=fake_render):
+            response = self.client.get(f'/pi/{self.alice_pi}/download')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data, b'%PDF-current-default-template')
+            self.assertEqual(response.mimetype, 'application/pdf')
+            self.assertIn('no-store', response.headers.get('Cache-Control', ''))
+            response.close()
+
+        self.assertEqual(calls, [
+            ('PI-TEST-001', 'system-default', 'pdf', False),
+        ])
+
+    def test_salesperson_cannot_read_another_customer(self):
+        self.login()
+        self.assertEqual(self.client.get(f'/customers/{self.alice_customer}').status_code, 200)
+        self.assertEqual(self.client.get(f'/customers/{self.bob_customer}').status_code, 403)
+
+    def test_salesperson_cannot_open_admin_pages(self):
+        self.login()
+        self.assertEqual(self.client.get('/users').status_code, 403)
+
+    def test_customs_record_is_scoped_audited_and_does_not_change_order_state(self):
+        self.login('alice')
+        list_page = self.client.get('/pi/list')
+        self.assertEqual(list_page.status_code, 200)
+        list_html = list_page.get_data(as_text=True)
+        self.assertIn('报关', list_html)
+        self.assertIn('customsBtn-', list_html)
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            original_state = (
+                pi.received_amount, pi.procurement_confirmed,
+                pi.shipping_completed, pi.procurement_status,
+            )
+
+        token = self.token('/pi/list')
+        invalid = self.client.post(
+            f'/api/pi/{self.alice_pi}/customs-declaration',
+            json={'customs_required': None, 'note': ''},
+            headers={'X-CSRFToken': token},
+        )
+        self.assertEqual(invalid.status_code, 400)
+
+        saved = self.client.post(
+            f'/api/pi/{self.alice_pi}/customs-declaration',
+            json={'customs_required': True, 'note': '一般贸易报关'},
+            headers={'X-CSRFToken': token},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertTrue(saved.get_json()['customs_required'])
+
+        detail = self.client.get(
+            f'/api/pi/{self.alice_pi}/customs-declaration'
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()['note'], '一般贸易报关')
+        self.assertEqual(detail.get_json()['recorded_by'], 'alice')
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            self.assertIs(pi.customs_required, True)
+            self.assertEqual(pi.customs_note, '一般贸易报关')
+            self.assertEqual(
+                (pi.received_amount, pi.procurement_confirmed,
+                 pi.shipping_completed, pi.procurement_status),
+                original_state,
+            )
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='pi', entity_id=pi.id, action='update'
+            ).filter(AuditLog.summary.contains('报关记录')).first())
+
+        self.client.get('/logout')
+        self.login('bob')
+        self.assertEqual(self.client.get(
+            f'/api/pi/{self.alice_pi}/customs-declaration'
+        ).status_code, 403)
+        self.assertEqual(self.client.post(
+            f'/api/pi/{self.alice_pi}/customs-declaration',
+            json={'customs_required': False},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        ).status_code, 403)
+
+        self.client.get('/logout')
+        self.login('admin-test')
+        changed = self.client.post(
+            f'/api/pi/{self.alice_pi}/customs-declaration',
+            json={'customs_required': False, 'note': '管理员复核'},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(changed.status_code, 200)
+        self.assertIs(changed.get_json()['customs_required'], False)
+
+        # Keep this shared fixture neutral for tests that run afterward.
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            pi.customs_required = None
+            pi.customs_note = ''
+            pi.customs_recorded_at = None
+            pi.customs_recorded_by = ''
+            db.session.commit()
+
+    def test_salesperson_can_add_products_but_cannot_manage_existing_products(self):
+        self.login()
+        product_page = self.client.get('/products')
+        self.assertEqual(product_page.status_code, 200)
+        self.assertIn('添加产品', product_page.get_data(as_text=True))
+        self.assertEqual(self.client.get('/products/add').status_code, 200)
+
+        response = self.client.post('/products/add', data={
+            'name': 'Sales Added Product',
+            'product_code': 'SALES-ADD',
+            'unit_price': '12.5',
+            'unit_price_rmb': '87.5',
+            'csrf_token': self.token('/products/add'),
+        })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='SALES-ADD').one()
+            audit = AuditLog.query.filter_by(
+                entity_type='product', entity_id=product.id, action='create'
+            ).one()
+            self.assertEqual(audit.username, 'alice')
+            product_id = product.id
+
+        create_pi_html = self.client.get('/pi/create').get_data(as_text=True)
+        self.assertIn('data-bs-target="#quickAddProductModal"', create_pi_html)
+        api_response = self.client.post('/api/products/add', data={
+            'name': 'Sales Quick Product',
+            'product_code': 'SALES-QUICK',
+            'unit_price': '5',
+            'csrf_token': self.token('/pi/create'),
+        })
+        self.assertEqual(api_response.status_code, 200)
+        self.assertTrue(api_response.get_json()['success'])
+
+        self.assertEqual(self.client.get(f'/products/{product_id}/edit').status_code, 403)
+        self.assertEqual(self.client.get('/products/import').status_code, 403)
+        denied_delete = self.client.post(f'/products/{product_id}/delete', data={
+            'csrf_token': self.token('/products'),
+        })
+        self.assertEqual(denied_delete.status_code, 403)
+        with application.app.app_context():
+            self.assertIsNotNone(db.session.get(Product, product_id))
+
+    def test_product_picker_supports_pagination_search_and_batch_ui(self):
+        self.login()
+        create_pi = self.client.get('/pi/create')
+        self.assertEqual(create_pi.status_code, 200)
+        html = create_pi.get_data(as_text=True)
+        self.assertIn('id="productPickerModal"', html)
+        self.assertIn('id="picker_add_selected"', html)
+        self.assertIn('跨页多选', html)
+        self.assertIn('id="product_order"', html)
+        self.assertIn('var pickerSelectionOrder = [];', html)
+        self.assertIn('var ids = pickerSelectionOrder.slice();', html)
+        self.assertNotIn('Object.keys(pickerSelections)', html)
+
+        response = self.client.get('/api/products/search?picker=1&page=1&per_page=24')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn('items', payload)
+        self.assertEqual(payload['page'], 1)
+        self.assertLessEqual(len(payload['items']), 24)
+        self.assertGreaterEqual(payload['total'], 1)
+
+        matched = self.client.get('/api/products/search?picker=1&q=ORIG&page=1&per_page=24').get_json()
+        product = next(item for item in matched['items'] if item['name'] == 'Original Product')
+        self.assertEqual(product['code'], 'ORIG')
+        self.assertEqual(product['product_code'], 'ORIG')
+
+        legacy = self.client.get('/api/products/search?q=ORIG').get_json()
+        self.assertIsInstance(legacy, list)
+        legacy_product = next(item for item in legacy if item['name'] == 'Original Product')
+        self.assertEqual(legacy_product['code'], 'ORIG')
+
+    def test_pi_rate_defaults_from_settings_but_existing_pi_keeps_its_rate(self):
+        with application.app.app_context():
+            original_settings = application._load_settings().copy()
+            settings = original_settings.copy()
+            settings['exchange_rate'] = '8.25'
+            application._save_settings(settings)
+            pi = db.session.get(PI, self.alice_pi)
+            original_rate = pi.exchange_rate
+            pi.exchange_rate = 6.75
+            db.session.commit()
+
+        try:
+            self.login('alice')
+            create_html = self.client.get('/pi/create').get_data(as_text=True)
+            self.assertIn('name="exchange_rate"', create_html)
+            self.assertIn('value="8.25"', create_html)
+
+            edit_html = self.client.get(f'/pi/{self.alice_pi}/edit').get_data(as_text=True)
+            self.assertIn('本单业务汇率', edit_html)
+            self.assertIn('value="6.75"', edit_html)
+
+            with application.app.app_context():
+                self.assertEqual(db.session.get(PI, self.alice_pi).exchange_rate, 6.75)
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                pi.exchange_rate = original_rate
+                db.session.commit()
+                application._save_settings(original_settings)
+
+    def test_pi_list_combines_payment_order_and_customs_filters(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='ORIG').one()
+            supplier = Supplier(name='PI List Filter Supplier')
+            pi = PI(
+                pi_number='PI-FILTER-STATUS-001',
+                customer_id=self.alice_customer,
+                salesperson='Alice',
+                currency='USD',
+                total_amount=10,
+                received_amount=5,
+                paid=False,
+                customs_required=True,
+                procurement_confirmed=False,
+                shipping_completed=False,
+            )
+            db.session.add_all([supplier, pi])
+            db.session.flush()
+            item = PIItem(
+                pi_id=pi.id, product_id=product.id,
+                quantity=1, unit_price=10, amount=10,
+            )
+            db.session.add(item)
+            db.session.commit()
+            pi_id = pi.id
+            supplier_id = supplier.id
+            item_id = item.id
+
+        try:
+            combined = self.client.get(
+                '/pi/list?payment_status=partial&order_status=pending&customs_status=required'
+            )
+            self.assertEqual(combined.status_code, 200)
+            combined_html = combined.get_data(as_text=True)
+            self.assertIn('PI-FILTER-STATUS-001', combined_html)
+            self.assertIn('name="payment_status"', combined_html)
+            self.assertIn('name="order_status"', combined_html)
+            self.assertIn('name="customs_status"', combined_html)
+            self.assertIn('回款状态：<strong>部分回款</strong>', combined_html)
+            self.assertIn('订单进度：<strong>待采购</strong>', combined_html)
+            self.assertIn('报关登记：<strong>需要报关</strong>', combined_html)
+
+            paid_only = self.client.get('/pi/list?payment_status=paid')
+            self.assertNotIn('PI-FILTER-STATUS-001', paid_only.get_data(as_text=True))
+            unregistered = self.client.get('/pi/list?customs_status=unregistered')
+            self.assertNotIn('PI-FILTER-STATUS-001', unregistered.get_data(as_text=True))
+
+            with application.app.app_context():
+                db.session.add(Procurement(
+                    pi_id=pi_id,
+                    pi_item_id=item_id,
+                    supplier_id=supplier_id,
+                    unit_price=8,
+                    quantity=1,
+                    total=8,
+                ))
+                db.session.commit()
+            partial = self.client.get('/pi/list?order_status=partial')
+            self.assertIn('PI-FILTER-STATUS-001', partial.get_data(as_text=True))
+
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                pi.procurement_confirmed = True
+                pi.procurement_status = '采购完成'
+                db.session.commit()
+            purchased = self.client.get('/pi/list?order_status=purchased')
+            self.assertIn('PI-FILTER-STATUS-001', purchased.get_data(as_text=True))
+
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                pi.shipping_completed = True
+                pi.procurement_status = '发货完成'
+                pi.customs_required = False
+                db.session.commit()
+            shipped = self.client.get(
+                '/pi/list?order_status=shipped&customs_status=not_required'
+            )
+            self.assertIn('PI-FILTER-STATUS-001', shipped.get_data(as_text=True))
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                if pi:
+                    db.session.delete(pi)
+                    db.session.flush()
+                supplier = db.session.get(Supplier, supplier_id)
+                if supplier:
+                    db.session.delete(supplier)
+                db.session.commit()
+
+    def test_customer_notes_are_visible_on_pi_pages_and_available_to_templates(self):
+        with application.app.app_context():
+            customer = db.session.get(Customer, self.alice_customer)
+            original_notes = customer.notes
+            customer.notes = 'External customer instruction'
+            db.session.commit()
+            pi = db.session.get(PI, self.alice_pi)
+            self.assertEqual(_fixed_values(pi, None)['customer_notes'], 'External customer instruction')
+        try:
+            self.login('alice')
+            create_html = self.client.get(
+                f'/pi/create?customer_id={self.alice_customer}'
+            ).get_data(as_text=True)
+            edit_html = self.client.get(f'/pi/{self.alice_pi}/edit').get_data(as_text=True)
+            preview_html = self.client.get(f'/pi/{self.alice_pi}/preview').get_data(as_text=True)
+            self.assertIn('客户备注', create_html)
+            self.assertIn('External customer instruction', create_html)
+            self.assertIn('External customer instruction', edit_html)
+            self.assertIn('CUSTOMER NOTES', preview_html)
+
+            with application.app.app_context():
+                template_id = DocumentTemplate.query.filter_by(code='system-default').one().id
+                item = db.session.get(PI, self.alice_pi).items[0]
+                item_id = item.id
+                item_quantity = item.quantity
+                item_price = item.unit_price
+            exported = self.client.post(f'/pi/{self.alice_pi}/export', data={
+                'template_id': template_id,
+                'output_format': 'xlsx',
+                'mode': 'download',
+                f'qty_{item_id}': str(item_quantity),
+                f'price_{item_id}': str(item_price),
+                'csrf_token': self.token(f'/pi/{self.alice_pi}/export'),
+            })
+            self.assertEqual(exported.status_code, 200)
+            rendered = load_workbook(BytesIO(exported.data), data_only=False)
+            rendered_values = [
+                str(cell.value) for row in rendered.active.iter_rows() for cell in row
+                if cell.value is not None
+            ]
+            rendered.close()
+            exported.close()
+            self.assertIn('External customer instruction', rendered_values)
+
+            template_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                'assets', 'system_default_pi_template.xlsx',
+            )
+            workbook = load_workbook(template_path, data_only=False)
+            values = [
+                str(cell.value) for row in workbook.active.iter_rows() for cell in row
+                if cell.value is not None
+            ]
+            workbook.close()
+            self.assertTrue(any('{{customer_notes}}' in value for value in values))
+        finally:
+            with application.app.app_context():
+                customer = db.session.get(Customer, self.alice_customer)
+                customer.notes = original_notes
+                db.session.commit()
+
+    def test_dingtalk_switches_and_shu_kei_group_routing(self):
+        original_settings = application._load_settings().copy()
+        try:
+            enabled = {
+                'dingtalk_webhook': 'https://example.invalid/default',
+                'dingtalk_shu_kei_webhook': 'https://example.invalid/shu-kei',
+                'dingtalk_report_enabled': '1',
+                'dingtalk_task_enabled': '0',
+            }
+            self.assertEqual(
+                application._dingtalk_report_webhook('Shu Kei', enabled),
+                enabled['dingtalk_shu_kei_webhook'],
+            )
+            self.assertEqual(
+                application._dingtalk_report_webhook('Alice', enabled),
+                enabled['dingtalk_webhook'],
+            )
+            self.assertFalse(application._setting_enabled(enabled, 'dingtalk_task_enabled'))
+            disabled = dict(enabled, dingtalk_report_enabled='0')
+            self.assertEqual(application._dingtalk_report_webhook('Shu Kei', disabled), '')
+
+            self.login('admin-test')
+            response = self.client.post('/settings', data={
+                'dingtalk_report_enabled': 'on',
+                'exchange_rate': '7.2',
+                'csrf_token': self.token('/settings'),
+            })
+            self.assertEqual(response.status_code, 302)
+            saved = application._load_settings()
+            self.assertEqual(saved['dingtalk_report_enabled'], '1')
+            self.assertEqual(saved['dingtalk_task_enabled'], '0')
+            html = self.client.get('/settings').get_data(as_text=True)
+            self.assertIn('id="dingtalk_report_enabled"', html)
+            self.assertIn('id="dingtalk_task_enabled"', html)
+            self.assertIn('Shu Kei 喜报群 Webhook', html)
+        finally:
+            application._save_settings(original_settings)
+
+    def test_sales_performance_uses_fixed_seven_not_pi_or_default_rate(self):
+        with application.app.app_context():
+            original_settings = application._load_settings().copy()
+            settings = original_settings.copy()
+            settings['exchange_rate'] = '8.88'
+            application._save_settings(settings)
+            pi = db.session.get(PI, self.alice_pi)
+            original = {
+                'currency': pi.currency,
+                'exchange_rate': pi.exchange_rate,
+                'received_amount': pi.received_amount,
+                'paid': pi.paid,
+            }
+            pi.currency = 'RMB'
+            pi.exchange_rate = 9.5
+            pi.received_amount = 70
+            pi.paid = True
+            db.session.commit()
+        try:
+            self.login('alice')
+            html = self.client.get('/sales-stats').get_data(as_text=True)
+            self.assertIn('1 美元 = 7.00 人民币', html)
+            self.assertIn('$10.00', html)
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                for key, value in original.items():
+                    setattr(pi, key, value)
+                db.session.commit()
+                application._save_settings(original_settings)
+
+    def test_procurement_status_is_record_driven_and_shipping_is_scoped_to_pi_owner(self):
+        with application.app.app_context():
+            Procurement.query.filter_by(pi_id=self.alice_pi).delete()
+            Payment.query.filter_by(pi_id=self.alice_pi).delete()
+            pi = db.session.get(PI, self.alice_pi)
+            pi.received_amount = 0
+            pi.paid = False
+            pi.procurement_confirmed = False
+            pi.shipping_completed = False
+            pi.procurement_status = '未回款'
+            db.session.commit()
+
+        self.login('alice')
+        salesperson_page = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn('订单进度', salesperson_page)
+        self.assertIn('未回款', salesperson_page)
+        self.assertNotIn('onchange="updateProcurementStatus(', salesperson_page)
+        unavailable_record = self.client.get(
+            f'/api/pi/{self.alice_pi}/shipping-record',
+        )
+        self.assertEqual(unavailable_record.status_code, 200)
+        self.assertFalse(unavailable_record.get_json()['can_ship'])
+        self.assertIn('尚未回款', unavailable_record.get_json()['unavailable_reason'])
+        denied = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-complete',
+            json={'completed': True},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(denied.status_code, 403)
+
+        self.client.get('/logout')
+        self.login('admin-test')
+        no_payment = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-complete',
+            json={'completed': True},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(no_payment.status_code, 400)
+        self.assertIn('尚未回款', no_payment.get_json()['error'])
+
+        with application.app.app_context():
+            payment = Payment(
+                pi_id=self.alice_pi,
+                amount=5,
+                fee=0,
+                order_no='PROC-STATUS-001',
+                order_no_normalized='proc-status-001',
+                idempotency_key='proc-status-test-001',
+                receiving_account_id=self.approved_account,
+                receiving_account_name='Approved',
+                receiving_account_currency='USD',
+            )
+            db.session.add(payment)
+            pi = db.session.get(PI, self.alice_pi)
+            application._recalculate_pi_payments(pi)
+            db.session.commit()
+            self.assertEqual(pi.effective_procurement_status, '待采购')
+            item_id = PIItem.query.filter_by(pi_id=self.alice_pi).one().id
+
+        new_supplier = self.client.post(
+            '/api/suppliers',
+            json={
+                'name': 'Procurement Test Supplier',
+                'contact_person': 'Quick Add Contact',
+                'phone': '123456',
+            },
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(new_supplier.status_code, 201)
+        self.assertTrue(new_supplier.get_json()['success'])
+        supplier_id = new_supplier.get_json()['supplier']['id']
+
+        admin_page = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertNotIn('updateProcurementStatus(', admin_page)
+        self.assertIn('待采购', admin_page)
+        procurement_page = self.client.get(f'/procurement/{self.alice_pi}')
+        self.assertEqual(procurement_page.status_code, 200)
+        procurement_html = procurement_page.get_data(as_text=True)
+        self.assertIn('预览采购汇总', procurement_html)
+        self.assertIn('id="procurementPreviewModal"', procurement_html)
+        self.assertIn('preview-product-image', procurement_html)
+        self.assertIn('供应商采购单预览', procurement_html)
+        self.assertIn('已按供应商拆分为', procurement_html)
+        self.assertIn('导出该供应商采购单', procurement_html)
+        self.assertIn('supplier-orders/export', procurement_html)
+        self.assertIn('PI 单价（USD / RMB）', procurement_html)
+        self.assertIn('$10.00', procurement_html)
+        self.assertIn('data-pi-quantity="1"', procurement_html)
+        self.assertRegex(procurement_html, r'class="[^"]*proc-qty[^"]*"[^>]*value="1"')
+        self.assertNotIn('订单单价（RMB）', procurement_html)
+        self.assertIn('供应商采购运费成本', procurement_html)
+        self.assertIn('id="newSupplierModal"', procurement_html)
+        self.assertIn('新增供应商', procurement_html)
+        self.assertIn('<i class="bi bi-save"></i> 暂存', procurement_html)
+        self.assertIn('id="procurementReadiness"', procurement_html)
+        self.assertIn('只能暂存', procurement_html)
+        self.assertRegex(procurement_html, r'id="confirmBtn"[^>]*disabled')
+        self.assertIn("priceValue !== ''", procurement_html)
+        self.assertIn('允许填 0', procurement_html)
+        self.assertIn('id="procurementRiskSummary"', procurement_html)
+        self.assertIn('缺少采购信息', procurement_html)
+        self.assertIn('采购价高于 PI', procurement_html)
+        self.assertIn('>序号</th>', procurement_html)
+        self.assertIn('class="text-center proc-sequence">1</td>', procurement_html)
+        self.assertIn('proc-missing-field', procurement_html)
+        self.assertIn('proc-high-price-field', procurement_html)
+        self.assertIn('highPriceCount', procurement_html)
+        self.assertIn('.proc-price::-webkit-inner-spin-button', procurement_html)
+        self.assertIn('-moz-appearance: textfield', procurement_html)
+        self.assertIn('利润 = 订单产品总金额 − 采购产品总金额 − 供应商采购运费', procurement_html)
+        self.assertNotIn('实际运费成本（内部）', procurement_html)
+        self.assertNotIn('客户费用 / 折扣（对外）', procurement_html)
+        incomplete = self.client.post(
+            f'/api/procurement/{self.alice_pi}/confirm',
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(incomplete.status_code, 400)
+        self.assertIn('尚未完整', incomplete.get_json()['error'])
+
+        draft_only = self.client.post(
+            '/api/procurement/save',
+            json={
+                'pi_id': self.alice_pi,
+                'supplier_freight_cost': 1.5,
+                'exchange_rate': 8.25,
+                'procurement_date': '2026-09-02',
+                'draft': True,
+                'items': [],
+            },
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(draft_only.status_code, 200)
+        self.assertTrue(draft_only.get_json()['draft'])
+
+        missing_price = self.client.post(
+            '/api/procurement/save',
+            json={
+                'pi_id': self.alice_pi,
+                'supplier_freight_cost': 1.5,
+                'exchange_rate': 8.25,
+                'procurement_date': '2026-09-02',
+                'draft': True,
+                'items': [{
+                    'pi_item_id': item_id,
+                    'supplier_id': supplier_id,
+                    'quantity': 1,
+                }],
+            },
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(missing_price.status_code, 400)
+        self.assertIn('缺少采购单价', missing_price.get_json()['error'])
+
+        saved = self.client.post(
+            '/api/procurement/save',
+            json={
+                'pi_id': self.alice_pi,
+                'supplier_freight_cost': 1.5,
+                'exchange_rate': 8.25,
+                'procurement_date': '2026-09-02',
+                'items': [{
+                    'pi_item_id': item_id,
+                    'supplier_id': supplier_id,
+                    'unit_price': 0,
+                    'quantity': 1,
+                    'note': 'test',
+                }],
+            },
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(saved.status_code, 200)
+        self.assertTrue(saved.get_json()['complete'])
+        with application.app.app_context():
+            saved_procurement = Procurement.query.filter_by(pi_id=self.alice_pi).one()
+            self.assertEqual(saved_procurement.unit_price, 0)
+            self.assertEqual(db.session.get(PI, self.alice_pi).effective_procurement_status, '部分采购')
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='supplier', entity_id=supplier_id, action='create'
+            ).first())
+        procurement_list = self.client.get('/procurement').get_data(as_text=True)
+        self.assertIn('部分采购', procurement_list)
+        self.assertIn('继续采购', procurement_list)
+
+        export_payload = {
+            'procurement_date': '2026-09-02',
+            'items': [{
+                'pi_item_id': item_id,
+                'supplier_id': supplier_id,
+                'unit_price': 7,
+                'quantity': 1,
+                'note': 'test',
+            }],
+        }
+        supplier_export = self.client.post(
+            f'/procurement/{self.alice_pi}/supplier-orders/export',
+            json=dict(export_payload, supplier_id=supplier_id),
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(supplier_export.status_code, 200)
+        self.assertEqual(
+            supplier_export.mimetype,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        workbook = load_workbook(BytesIO(supplier_export.data))
+        workbook_text = '\n'.join(
+            str(cell.value)
+            for row in workbook.active.iter_rows()
+            for cell in row
+            if cell.value is not None
+        )
+        self.assertIn('采购订单', workbook_text)
+        self.assertIn('Procurement Test Supplier', workbook_text)
+        self.assertIn('Original Product', workbook_text)
+        self.assertIn('ORIG', workbook_text)
+        self.assertNotIn('Alice Customer', workbook_text)
+        self.assertNotIn('利润', workbook_text)
+
+        bundle_export = self.client.post(
+            f'/procurement/{self.alice_pi}/supplier-orders/export',
+            json=export_payload,
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(bundle_export.status_code, 200)
+        self.assertEqual(bundle_export.mimetype, 'application/zip')
+        with zipfile.ZipFile(BytesIO(bundle_export.data)) as bundle:
+            self.assertEqual(len(bundle.namelist()), 1)
+            self.assertTrue(bundle.namelist()[0].endswith('.xlsx'))
+        with application.app.app_context():
+            saved_pi = db.session.get(PI, self.alice_pi)
+            self.assertEqual(saved_pi.exchange_rate, 8.25)
+            self.assertEqual(saved_pi.supplier_freight_cost, 1.5)
+
+        confirmed = self.client.post(
+            f'/api/procurement/{self.alice_pi}/confirm',
+            headers={'X-CSRFToken': self.token(f'/procurement/{self.alice_pi}')},
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertEqual(confirmed.get_json()['procurement_status'], '采购完成')
+
+        confirmed_procurement_html = self.client.get(
+            f'/procurement/{self.alice_pi}'
+        ).get_data(as_text=True)
+        self.assertIn('发货由业务员在 PI 列表登记', confirmed_procurement_html)
+        self.assertNotIn('setShippingCompleted(', confirmed_procurement_html)
+
+        self.client.get('/logout')
+        self.login('bob')
+        bob_read = self.client.get(f'/api/pi/{self.alice_pi}/shipping-record')
+        self.assertEqual(bob_read.status_code, 403)
+        bob_write = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-record',
+            json={'shipping_date': '2026-09-07'},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(bob_write.status_code, 403)
+
+        self.client.get('/logout')
+        self.login('alice')
+        available_record = self.client.get(f'/api/pi/{self.alice_pi}/shipping-record')
+        self.assertEqual(available_record.status_code, 200)
+        self.assertTrue(available_record.get_json()['can_ship'])
+        missing_date = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-record',
+            json={'tracking_no': 'SF123456'},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(missing_date.status_code, 400)
+
+        shipped = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-record',
+            json={
+                'shipping_date': '2026-09-07',
+                'tracking_no': 'SF123456',
+                'note': '已交付物流',
+            },
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(shipped.status_code, 200)
+        self.assertEqual(shipped.get_json()['procurement_status'], '发货完成')
+        self.assertEqual(shipped.get_json()['shipping_date'], '2026-09-07')
+        self.assertEqual(shipped.get_json()['tracking_no'], 'SF123456')
+        self.assertEqual(shipped.get_json()['recorded_by'], 'alice')
+        self.assertIn('发货完成', self.client.get('/pi/list').get_data(as_text=True))
+
+        duplicate = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-record',
+            json={'shipping_date': '2026-09-08'},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(duplicate.status_code, 409)
+
+        self.client.get('/logout')
+        self.login('admin-test')
+        admin_record = self.client.get(f'/api/pi/{self.alice_pi}/shipping-record')
+        self.assertEqual(admin_record.status_code, 200)
+        self.assertTrue(admin_record.get_json()['shipping_completed'])
+        reverted = self.client.post(
+            f'/api/pi/{self.alice_pi}/shipping-complete',
+            json={'completed': False},
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(reverted.status_code, 200)
+        self.assertEqual(reverted.get_json()['procurement_status'], '采购完成')
+
+        with application.app.app_context():
+            Procurement.query.filter_by(pi_id=self.alice_pi).delete()
+            Payment.query.filter_by(pi_id=self.alice_pi).delete()
+            pi = db.session.get(PI, self.alice_pi)
+            pi.exchange_rate = 7
+            pi.supplier_freight_cost = 0
+            pi.shipping_date = None
+            pi.shipping_tracking_no = ''
+            pi.shipping_record_note = ''
+            pi.shipping_recorded_at = None
+            pi.shipping_recorded_by = ''
+            application._recalculate_pi_payments(pi)
+            Supplier.query.filter_by(id=supplier_id).delete()
+            db.session.commit()
+            self.assertEqual(pi.effective_procurement_status, '未回款')
+
+    def test_csrf_is_required_and_customer_owner_is_forced(self):
+        self.login()
+        salesperson_form = self.client.get('/pi/create').get_data(as_text=True)
+        self.assertIn('id="qa_cust_salesperson" value="Alice"', salesperson_form)
+        self.assertIn('value="Alice" readonly aria-label="当前业务员"', salesperson_form)
+        self.assertEqual(self.client.post('/api/customers/add', data={'name': 'Rejected'}).status_code, 400)
+        response = self.client.post('/api/customers/add', data={
+            'name': 'Owned Customer',
+            'salesperson': 'Bob',
+            'csrf_token': self.token('/customers'),
+        })
+        self.assertEqual(response.status_code, 200)
+        with application.app.app_context():
+            self.assertEqual(Customer.query.filter_by(name='Owned Customer').one().salesperson, 'Alice')
+        self.client.get('/logout')
+        self.login('admin-test')
+        admin_form = self.client.get('/pi/create').get_data(as_text=True)
+        self.assertIn('id="qa_cust_salesperson" required', admin_form)
+        missing_salesperson = self.client.post('/api/customers/add', data={
+            'name': 'No Owner',
+            'csrf_token': self.token('/pi/create'),
+        })
+        self.assertEqual(missing_salesperson.status_code, 400)
+        self.assertIn('必须指定业务员', missing_salesperson.get_json()['error'])
+
+    def test_profit_report_is_admin_only_and_sales_can_add_own_actual_cost(self):
+        with application.app.app_context():
+            original_grand_total = db.session.get(PI, self.alice_pi).grand_total
+            product = Product.query.filter_by(product_code='ORIG').one()
+            bob_pi = PI(
+                pi_number='PI-TEST-BOB-COST', customer_id=self.bob_customer,
+                salesperson='Bob', currency='USD', total_amount=10,
+            )
+            db.session.add(bob_pi)
+            db.session.flush()
+            db.session.add(PIItem(
+                pi_id=bob_pi.id, product_id=product.id,
+                quantity=1, unit_price=10, amount=10,
+            ))
+            db.session.commit()
+            bob_pi_id = bob_pi.id
+
+        self.login('admin-test')
+        page = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn(f'openExpense({self.alice_pi},', page)
+        self.assertIn('新增真实成本', page)
+        self.assertIn('利润表', page)
+        self.assertLess(page.index('采购'), page.index('利润表'))
+        self.assertEqual(self.client.get('/procurement').status_code, 200)
+        profit_page = self.client.get('/profit-report')
+        self.assertEqual(profit_page.status_code, 200)
+        profit_html = profit_page.get_data(as_text=True)
+        self.assertIn('管理员专属', profit_html)
+        self.assertIn('每单利润明细', profit_html)
+        self.assertIn('默认显示关键金额', profit_html)
+        self.assertIn('查看计算口径', profit_html)
+        self.assertIn('净利润 = 净收入 − 订单真实成本合计', profit_html)
+        self.assertIn('订单真实成本结构', profit_html)
+        self.assertIn('采购产品成本', profit_html)
+        invalid_amount = self.client.post('/api/expenses', data={
+            'pi_id': self.alice_pi,
+            'category': '实际运费',
+            'amount': 'nan',
+            'currency': 'RMB',
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(invalid_amount.status_code, 400)
+        invalid_currency = self.client.post('/api/expenses', data={
+            'pi_id': self.alice_pi,
+            'category': '实际运费',
+            'amount': '1',
+            'currency': 'EUR',
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(invalid_currency.status_code, 400)
+        response = self.client.post('/api/expenses', data={
+            'pi_id': self.alice_pi,
+            'category': '实际运费',
+            'amount': '25.50',
+            'currency': 'RMB',
+            'note': 'PI 列表快捷添加',
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(response.status_code, 200)
+        expense_id = response.get_json()['expense']['id']
+        with application.app.app_context():
+            expense = db.session.get(Expense, expense_id)
+            self.assertEqual(expense.pi_id, self.alice_pi)
+            self.assertEqual(expense.amount, 25.5)
+            self.assertEqual(db.session.get(PI, self.alice_pi).grand_total, original_grand_total)
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='expense', entity_id=expense_id, action='create').first())
+        self.client.get('/logout')
+        self.login('alice')
+        salesperson_page = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn('已登记（1笔）', salesperson_page)
+        self.assertIn('已登记记录', salesperson_page)
+        history_response = self.client.get(f'/api/expenses?pi_id={self.alice_pi}')
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(len(history_response.get_json()), 1)
+        self.assertNotIn('利润表', salesperson_page)
+        self.assertNotIn('>采购<', salesperson_page)
+        self.assertEqual(self.client.get('/profit-report').status_code, 403)
+        self.assertEqual(self.client.get('/fees').status_code, 403)
+        self.assertEqual(self.client.get('/procurement').status_code, 403)
+        self.assertEqual(self.client.get(f'/procurement/{self.alice_pi}').status_code, 403)
+        self.assertEqual(self.client.get(f'/api/procurement/{self.alice_pi}').status_code, 403)
+        from PIL import Image
+        receipt = BytesIO()
+        Image.new('RGB', (4, 4), '#ffffff').save(receipt, format='PNG')
+        receipt.seek(0)
+        own_response = self.client.post('/api/expenses', data={
+            'pi_id': self.alice_pi,
+            'category': '报关费',
+            'amount': '1',
+            'currency': 'RMB',
+            'attachment': (receipt, 'customs-receipt.png'),
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(own_response.status_code, 200)
+        own_expense = own_response.get_json()['expense']
+        own_expense_id = own_expense['id']
+        self.assertTrue(own_expense['has_attachment'])
+        history_response = self.client.get(f'/api/expenses?pi_id={self.alice_pi}')
+        self.assertEqual(len(history_response.get_json()), 2)
+        receipt_response = self.client.get(f'/expenses/{own_expense_id}/attachment')
+        self.assertEqual(receipt_response.status_code, 200)
+        self.assertEqual(receipt_response.mimetype, 'image/png')
+        self.assertIn('no-store', receipt_response.headers.get('Cache-Control', ''))
+        detail_html = self.client.get(f'/pi/{self.alice_pi}').get_data(as_text=True)
+        self.assertIn('订单真实成本（内部）', detail_html)
+        self.assertIn('查看图片', detail_html)
+        denied = self.client.post('/api/expenses', data={
+            'pi_id': bob_pi_id,
+            'category': '报关费',
+            'amount': '1',
+            'currency': 'RMB',
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(denied.status_code, 403)
+        invalid_image = self.client.post('/api/expenses', data={
+            'pi_id': self.alice_pi,
+            'category': '报关费',
+            'amount': '1',
+            'currency': 'RMB',
+            'attachment': (BytesIO(b'not-an-image'), 'fake.png'),
+            'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(invalid_image.status_code, 400)
+        self.client.get('/logout')
+        self.login('bob')
+        self.assertEqual(self.client.get(f'/expenses/{own_expense_id}/attachment').status_code, 403)
+        self.client.get('/logout')
+        self.login('admin-test')
+        with application.app.app_context():
+            receipt_name = db.session.get(Expense, own_expense_id).attachment
+            receipt_path = os.path.join(application.app.config['UPLOAD_DIR'], receipt_name)
+            self.assertTrue(os.path.isfile(receipt_path))
+        delete_response = self.client.delete(
+            f'/api/expenses/{own_expense_id}',
+            headers={'X-CSRFToken': self.token('/pi/list')},
+        )
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertFalse(os.path.exists(receipt_path))
+        with application.app.app_context():
+            db.session.delete(db.session.get(Expense, expense_id))
+            db.session.delete(db.session.get(PI, bob_pi_id))
+            db.session.commit()
+
+    def test_procurement_and_profit_reports_share_salesperson_and_date_filters(self):
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='ORIG').one()
+            filtered_pi = PI(
+                pi_number='PI-TEST-REPORT-FILTER',
+                customer_id=self.bob_customer,
+                salesperson='Bob',
+                issue_date=application.date(2024, 4, 15),
+                currency='USD',
+                total_amount=18,
+                received_amount=18,
+                paid=True,
+            )
+            db.session.add(filtered_pi)
+            db.session.flush()
+            db.session.add(PIItem(
+                pi_id=filtered_pi.id,
+                product_id=product.id,
+                quantity=1,
+                unit_price=18,
+                amount=18,
+            ))
+            db.session.commit()
+            filtered_pi_id = filtered_pi.id
+
+        self.login('admin-test')
+        query_string = '?salesperson=Bob&date_from=2024-04-01&date_to=2024-04-30'
+        for path in ('/procurement', '/profit-report'):
+            response = self.client.get(path + query_string)
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertIn('PI-TEST-REPORT-FILTER', html)
+            self.assertIn('name="salesperson"', html)
+            self.assertIn('name="date_from" value="2024-04-01"', html)
+            self.assertIn('name="date_to" value="2024-04-30"', html)
+            self.assertIn('value="this_month"', html)
+            self.assertIn('value="last_month"', html)
+            self.assertIn('value="this_year"', html)
+            self.assertIn('当前结果：<strong>1</strong> 份 PI', html)
+
+            excluded = self.client.get(
+                path + '?salesperson=Bob&date_from=2024-05-01&date_to=2024-05-31'
+            ).get_data(as_text=True)
+            self.assertNotIn('PI-TEST-REPORT-FILTER', excluded)
+            self.assertIn('当前结果：<strong>0</strong> 份 PI', excluded)
+
+        procurement_html = self.client.get(
+            '/procurement' + query_string
+        ).get_data(as_text=True)
+        self.assertIn('procurement-list-table', procurement_html)
+        self.assertIn('proc-products-col', procurement_html)
+        self.assertIn('width: 320px', procurement_html)
+        self.assertIn('white-space: nowrap', procurement_html)
+        self.assertIn('text-overflow: ellipsis', procurement_html)
+
+        with application.app.app_context():
+            db.session.delete(db.session.get(PI, filtered_pi_id))
+            db.session.commit()
+
+    def test_profit_report_calculates_complete_per_order_structure_in_rmb(self):
+        with application.app.app_context():
+            original_settings = application._load_settings().copy()
+            settings = original_settings.copy()
+            # The editable default is deliberately different from the PI's
+            # saved rate: historical profit must continue to use the PI rate.
+            settings['exchange_rate'] = '9'
+            application._save_settings(settings)
+
+            Procurement.query.filter_by(pi_id=self.alice_pi).delete()
+            Payment.query.filter_by(pi_id=self.alice_pi).delete()
+            Expense.query.filter_by(pi_id=self.alice_pi).delete()
+            pi = db.session.get(PI, self.alice_pi)
+            pi.currency = 'USD'
+            pi.exchange_rate = 7
+            pi.total_amount = 10
+            pi.shipping_cost = 2
+            pi.actual_shipping_cost = 3
+            pi.procurement_confirmed = True
+            item = PIItem.query.filter_by(pi_id=self.alice_pi).one()
+            supplier = Supplier(name='Profit Test Supplier')
+            db.session.add(supplier)
+            db.session.flush()
+            db.session.add_all([
+                Procurement(
+                    pi_id=pi.id, pi_item_id=item.id, supplier_id=supplier.id,
+                    unit_price=60, quantity=1, total=60,
+                ),
+                Payment(
+                    pi_id=pi.id, amount=10, fee=1,
+                    order_no='PROFIT-TEST-001', order_no_normalized='profit-test-001',
+                    idempotency_key='profit-test-idempotency',
+                    receiving_account_id=self.approved_account,
+                    receiving_account_name='Approved', receiving_account_currency='USD',
+                ),
+                Expense(pi_id=pi.id, category='报关费', amount=7, currency='RMB'),
+            ])
+            application._recalculate_pi_payments(pi)
+            db.session.commit()
+            supplier_id = supplier.id
+
+        self.login('admin-test')
+        response = self.client.get('/profit-report')
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        # Order total: (USD 10 + USD 2) × 7 = RMB 84.
+        # Net income: 84 - payment fee 7 = RMB 77.
+        # Cost: procurement 60 + freight 3 + expense 7 = RMB 70.
+        # Profit: RMB 7.
+        self.assertIn('¥84.00', html)
+        self.assertIn('¥60.00', html)
+        self.assertIn('¥77.00', html)
+        self.assertIn('¥70.00', html)
+        self.assertIn('¥7.00', html)
+        self.assertNotIn('正式利润', html)
+        self.assertIn('收款手续费', html)
+        self.assertIn('供应商采购运费', html)
+        self.assertIn('业务员登记的真实成本', html)
+        self.assertIn('采购产品成本', html)
+        self.assertIn('订单真实成本合计', html)
+        self.assertIn('订单总金额', html)
+        self.assertIn('$12.00', html)
+        self.assertIn('净收入', html)
+        self.assertIn('净利润', html)
+        self.assertIn('1 笔登记成本', html)
+        self.assertIn('查看明细', html)
+        self.assertNotIn('成本记录（1）', html)
+        self.assertIn(f'id="profitDetail{self.alice_pi}"', html)
+        self.assertNotIn('<th class="text-end">采购成本</th>', html)
+        self.assertIn('本单汇率：1 USD = ¥7.0000', html)
+        self.assertIn('新单默认汇率：1 USD = ¥9.0000', html)
+
+        with application.app.app_context():
+            Procurement.query.filter_by(pi_id=self.alice_pi).delete()
+            Payment.query.filter_by(pi_id=self.alice_pi).delete()
+            Expense.query.filter_by(pi_id=self.alice_pi).delete()
+            pi = db.session.get(PI, self.alice_pi)
+            pi.currency = 'USD'
+            pi.total_amount = 10
+            pi.shipping_cost = 0
+            pi.actual_shipping_cost = 0
+            pi.procurement_confirmed = False
+            pi.shipping_completed = False
+            application._recalculate_pi_payments(pi)
+            Supplier.query.filter_by(id=supplier_id).delete()
+            db.session.commit()
+            application._save_settings(original_settings)
+
+    def test_sqlite_safety_pragmas(self):
+        with application.app.app_context():
+            self.assertEqual(db.session.execute(db.text('PRAGMA journal_mode')).scalar(), 'wal')
+            self.assertEqual(db.session.execute(db.text('PRAGMA foreign_keys')).scalar(), 1)
+
+    def test_disabled_user_existing_session_is_rejected(self):
+        self.login()
+        with application.app.app_context():
+            user = User.query.filter_by(username='alice').one()
+            user.active = False
+            user.auth_version += 1
+            db.session.commit()
+        response = self.client.get('/customers')
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.location.endswith('/login'))
+        with application.app.app_context():
+            user = User.query.filter_by(username='alice').one()
+            user.active = True
+            user.auth_version += 1
+            db.session.commit()
+
+    def test_authenticated_responses_are_not_cached(self):
+        self.login()
+        response = self.client.get('/customers')
+        self.assertIn('no-store', response.headers.get('Cache-Control', ''))
+
+    def test_authenticated_static_assets_are_cacheable(self):
+        self.login()
+        response = self.client.get('/static/style.css')
+        self.assertEqual(response.status_code, 200)
+        cache_control = response.headers.get('Cache-Control', '')
+        self.assertIn('public', cache_control)
+        self.assertIn('max-age=3600', cache_control)
+        self.assertNotIn('no-store', cache_control)
+
+    def test_product_thumbnail_is_small_and_privately_cacheable(self):
+        from PIL import Image
+
+        filename = 'thumbnail-test.png'
+        upload_dir = application.app.config['UPLOAD_DIR']
+        source_path = os.path.join(upload_dir, filename)
+        Image.new('RGB', (1200, 800), '#225588').save(source_path, format='PNG')
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='ORIG').one()
+            previous_image = product.image
+            product.image = filename
+            db.session.commit()
+        try:
+            self.login()
+            response = self.client.get(f'/uploads/thumb/{filename}')
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('private', response.headers.get('Cache-Control', ''))
+            self.assertIn('max-age=604800', response.headers.get('Cache-Control', ''))
+            with Image.open(BytesIO(response.data)) as thumbnail:
+                self.assertLessEqual(thumbnail.width, 320)
+                self.assertLessEqual(thumbnail.height, 320)
+        finally:
+            with application.app.app_context():
+                product = Product.query.filter_by(product_code='ORIG').one()
+                product.image = previous_image
+                db.session.commit()
+            if os.path.exists(source_path):
+                os.remove(source_path)
+            thumb_path = os.path.join(upload_dir, '.thumbs', 'thumbnail-test.webp')
+            if os.path.exists(thumb_path):
+                os.remove(thumb_path)
+
+    def test_salesperson_live_edit_cannot_change_protected_fields(self):
+        with application.app.test_request_context('/pi/test'):
+            user = User.query.filter_by(username='alice').one()
+            application.session['user_id'] = user.id
+            application.session['auth_version'] = user.auth_version
+            pi = db.session.get(PI, self.alice_pi)
+            item = pi.items[0]
+            form = MultiDict({
+                'pi_number': 'FORGED-001',
+                'salesperson': 'Bob',
+                'bank_info': 'ATTACKER BANK',
+                'currency': 'USD',
+                'issue_date': pi.issue_date.strftime('%Y-%m-%d'),
+                'shipping_cost': '0',
+                'cust_name': 'Forged Customer',
+                'cust_country': 'Forged Country',
+                f'qty_{item.id}': '2',
+                f'price_{item.id}': '12.50',
+                f'prod_name_{item.id}': 'Forged Product',
+                f'prod_code_{item.id}': 'FORGED',
+                f'prod_spec_{item.id}': 'Forged spec',
+            })
+            application._apply_form_to_pi(form, pi)
+            self.assertEqual(pi.pi_number, 'PI-TEST-001')
+            self.assertEqual(pi.salesperson, 'Alice')
+            self.assertNotEqual(pi.bank_info, 'ATTACKER BANK')
+            self.assertEqual(pi.customer.name, 'Alice Customer')
+            self.assertEqual(item.product.name, 'Original Product')
+            self.assertEqual(item.quantity, 2)
+            db.session.rollback()
+
+    def test_payment_history_does_not_build_user_input_as_html(self):
+        template_path = os.path.join(os.path.dirname(application.__file__), 'templates', 'pi_list.html')
+        with open(template_path, encoding='utf-8') as handle:
+            source = handle.read()
+        self.assertNotIn("histHtml +=", source)
+        self.assertIn("cell.textContent = value", source)
+
+    def test_order_total_includes_charges_and_discounts(self):
+        self.login()
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            pi.total_amount = 100
+            pi.shipping_cost = -10
+            db.session.commit()
+            self.assertEqual(pi.product_subtotal, 100)
+            self.assertEqual(pi.other_charges, -10)
+            self.assertEqual(pi.grand_total, 90)
+        dashboard = self.client.get('/').get_data(as_text=True)
+        self.assertIn('$90.00', dashboard)
+        self.assertIn('lang="zh-CN"', dashboard)
+        self.assertIn('<meta name="google" content="notranslate">', dashboard)
+        self.assertIn('<span translate="no" class="notranslate">$90.00</span>', dashboard)
+        preview = self.client.get(f'/pi/{self.alice_pi}/preview').get_data(as_text=True)
+        self.assertIn('$100.00', preview)
+        self.assertIn('$-10.00', preview)
+        self.assertIn('$90.00', preview)
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            pi.received_amount = 40
+            pi.paid = False
+            db.session.commit()
+        stats = self.client.get('/sales-stats').get_data(as_text=True)
+        self.assertIn('订单总金额', stats)
+        self.assertIn('实际回款金额', stats)
+        self.assertIn('$90.00', stats)
+        self.assertIn('$40.00', stats)
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            pi.total_amount = 10
+            pi.shipping_cost = 0
+            pi.received_amount = 0
+            pi.paid = False
+            db.session.commit()
+
+    def test_migration_normalizes_legacy_empty_deleted_dates(self):
+        with application.app.app_context():
+            db.session.execute(db.text(
+                "UPDATE customers SET deleted_at = '' WHERE id = :customer_id"
+            ), {'customer_id': self.alice_customer})
+            db.session.commit()
+            application._migrate_db()
+            raw_value = db.session.execute(db.text(
+                "SELECT deleted_at FROM customers WHERE id = :customer_id"
+            ), {'customer_id': self.alice_customer}).scalar()
+            self.assertIsNone(raw_value)
+
+    def test_customer_delete_is_recoverable_and_audited(self):
+        self.login()
+        customer_page = self.client.get('/customers').get_data(as_text=True)
+        self.assertIn(
+            "onsubmit='return typedConfirm(this, \"Alice Customer\",",
+            customer_page,
+        )
+        with application.app.app_context():
+            customer = Customer(name='Recoverable Customer', salesperson='Alice')
+            db.session.add(customer)
+            db.session.commit()
+            customer_id = customer.id
+        response = self.client.post(f'/customers/{customer_id}/delete', data={
+            'confirm_value': 'Recoverable Customer',
+            'csrf_token': self.token('/customers'),
+        })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            self.assertIsNotNone(db.session.get(Customer, customer_id).deleted_at)
+            self.assertIsNotNone(AuditLog.query.filter_by(entity_type='customer', entity_id=customer_id, action='soft_delete').first())
+        self.client.get('/logout')
+        self.login('admin-test')
+        self.client.post(f'/recycle-bin/customer/{customer_id}/restore', data={
+            'csrf_token': self.token('/recycle-bin'),
+        })
+        with application.app.app_context():
+            self.assertIsNone(db.session.get(Customer, customer_id).deleted_at)
+
+    def test_stale_customer_form_cannot_overwrite_newer_data(self):
+        self.login()
+        with application.app.app_context():
+            customer = Customer(name='Concurrent Customer', salesperson='Alice')
+            db.session.add(customer)
+            db.session.commit()
+            customer_id = customer.id
+            stale_version = customer.version
+            customer.name = 'Newer Server Value'
+            db.session.commit()
+        response = self.client.post(f'/customers/{customer_id}/edit', data={
+            'name': 'Stale Browser Value', 'salesperson': 'Alice',
+            'version': stale_version, 'csrf_token': self.token(f'/customers/{customer_id}/edit'),
+        })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, customer_id).name, 'Newer Server Value')
+
+    def test_payment_reference_is_globally_unique_and_idempotent(self):
+        self.login()
+        with application.app.app_context():
+            audit_count_before = AuditLog.query.filter_by(entity_type='payment', action='create').count()
+        first_token = 'a' * 32
+        response = self.client.post(f'/pi/{self.alice_pi}/toggle-paid', data={
+            'received_amount': '2', 'fee': '0', 'order_no': ' BANK-REF-001 ',
+            'receiving_account_id': self.approved_account,
+            'attachment': self.image_upload('bank-ref.png'),
+            'idempotency_key': first_token, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(f'/pi/{self.alice_pi}/toggle-paid', data={
+            'received_amount': '2', 'fee': '0', 'order_no': 'bank-ref-001',
+            'receiving_account_id': self.approved_account,
+            'idempotency_key': 'b' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            self.assertEqual(Payment.query.filter_by(order_no_normalized='bank-ref-001').count(), 1)
+            self.assertEqual(
+                AuditLog.query.filter_by(entity_type='payment', action='create').count(),
+                audit_count_before + 1,
+            )
+
+    def test_payment_requires_matching_account_and_allows_same_currency_switch(self):
+        self.login()
+        with application.app.app_context():
+            usd_alternate = Account(name='USD Alternate', currency='USD')
+            rmb_account = Account(name='RMB Account', currency='RMB')
+            pi = PI(
+                pi_number='PI-PAYMENT-ACCOUNT-001',
+                customer_id=self.alice_customer,
+                salesperson='Alice',
+                bank_info='SAFE BANK\nA/C: 123\nSWIFT: SAFE',
+                currency='USD',
+                total_amount=10,
+            )
+            db.session.add_all([usd_alternate, rmb_account, pi])
+            db.session.commit()
+            pi_id = pi.id
+            usd_alternate_id = usd_alternate.id
+            rmb_account_id = rmb_account.id
+
+        missing = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'NO-ACCOUNT',
+            'idempotency_key': 'd' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(missing.status_code, 302)
+        wrong_currency = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'WRONG-CURRENCY',
+            'receiving_account_id': rmb_account_id,
+            'idempotency_key': 'e' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(wrong_currency.status_code, 302)
+        first = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '4', 'fee': '0', 'order_no': 'USD-PRIMARY',
+            'receiving_account_id': self.approved_account,
+            'attachment': self.image_upload('primary.png'),
+            'idempotency_key': 'f' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(first.status_code, 302)
+        switched = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'USD-ALTERNATE',
+            'receiving_account_id': usd_alternate_id,
+            'attachment': self.image_upload('alternate.png'),
+            'idempotency_key': 'g' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(switched.status_code, 302)
+
+        with application.app.app_context():
+            payments = Payment.query.filter_by(pi_id=pi_id).order_by(Payment.id).all()
+            self.assertEqual(len(payments), 2)
+            self.assertEqual(payments[0].receiving_account_name, 'Approved')
+            self.assertEqual(payments[1].receiving_account_name, 'USD Alternate')
+            self.assertEqual(payments[1].receiving_account_currency, 'USD')
+
+        payment_data = self.client.get(f'/api/pi/{pi_id}/payments').get_json()
+        self.assertEqual(payment_data['default_account_id'], usd_alternate_id)
+        self.assertEqual(
+            [payment['receiving_account_name'] for payment in payment_data['payments']],
+            ['Approved', 'USD Alternate'],
+        )
+        list_html = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn('name="receiving_account_id"', list_html)
+        self.assertIn('name="attachment" id="payAttachment" required', list_html)
+        self.assertIn('onsubmit="return preparePaymentSubmit(this);"', list_html)
+        self.assertNotIn("Processing...';return true;\">", list_html)
+
+    def test_payment_receipt_is_required_validated_and_access_controlled(self):
+        self.login()
+        with application.app.app_context():
+            pi = PI(
+                pi_number='PI-PAYMENT-RECEIPT-001',
+                customer_id=self.alice_customer,
+                salesperson='Alice',
+                currency='USD',
+                total_amount=10,
+            )
+            db.session.add(pi)
+            db.session.commit()
+            pi_id = pi.id
+
+        missing = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-MISSING',
+            'receiving_account_id': self.approved_account,
+            'idempotency_key': 'h' * 32, 'csrf_token': self.token('/pi/list'),
+        }, follow_redirects=True)
+        self.assertIn('请上传回款凭证图片', missing.get_data(as_text=True))
+
+        invalid = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-INVALID',
+            'receiving_account_id': self.approved_account,
+            'attachment': (BytesIO(b'not-an-image'), 'fake.png'),
+            'idempotency_key': 'i' * 32, 'csrf_token': self.token('/pi/list'),
+        }, follow_redirects=True)
+        self.assertIn('必须是有效的 JPG', invalid.get_data(as_text=True))
+
+        saved = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-VALID',
+            'receiving_account_id': self.approved_account,
+            'attachment': self.image_upload('receipt.png'),
+            'idempotency_key': 'j' * 32, 'csrf_token': self.token('/pi/list'),
+        })
+        self.assertEqual(saved.status_code, 302)
+        with application.app.app_context():
+            payment = Payment.query.filter_by(order_no='RECEIPT-VALID').one()
+            payment_id = payment.id
+            receipt_path = os.path.join(application.app.config['UPLOAD_DIR'], payment.attachment)
+            self.assertTrue(os.path.isfile(receipt_path))
+
+        payment_data = self.client.get(f'/api/pi/{pi_id}/payments').get_json()
+        self.assertTrue(payment_data['payments'][0]['has_attachment'])
+        receipt_response = self.client.get(f'/payments/{payment_id}/attachment')
+        self.assertEqual(receipt_response.status_code, 200)
+        self.assertEqual(receipt_response.mimetype, 'image/png')
+        self.assertIn('no-store', receipt_response.headers.get('Cache-Control', ''))
+
+        self.client.get('/logout')
+        self.login('bob')
+        self.assertEqual(self.client.get(f'/payments/{payment_id}/attachment').status_code, 403)
+
+    def test_payment_delete_requires_typed_reference(self):
+        self.login()
+        with application.app.app_context():
+            payment = Payment(pi_id=self.alice_pi, amount=1, order_no='DELETE-ME',
+                              order_no_normalized='delete-me', idempotency_key='c' * 32)
+            db.session.add(payment)
+            db.session.commit()
+            payment_id = payment.id
+        self.client.post(f'/pi/{self.alice_pi}/payment/{payment_id}/delete', data={
+            'confirm_value': 'wrong', 'csrf_token': self.token('/pi/list'),
+        })
+        with application.app.app_context():
+            self.assertIsNone(db.session.get(Payment, payment_id).deleted_at)
+        self.client.post(f'/pi/{self.alice_pi}/payment/{payment_id}/delete', data={
+            'confirm_value': 'DELETE-ME', 'csrf_token': self.token('/pi/list'),
+        })
+        with application.app.app_context():
+            self.assertIsNotNone(db.session.get(Payment, payment_id).deleted_at)
+
+    def test_bank_account_change_requires_current_admin_password(self):
+        self.login('admin-test')
+        token = self.token('/accounts/add')
+        denied = self.client.post('/accounts/add', data={
+            'name': 'Protected Account', 'current_password': 'wrong', 'csrf_token': token,
+        })
+        self.assertEqual(denied.status_code, 403)
+        with application.app.app_context():
+            self.assertIsNone(Account.query.filter_by(name='Protected Account').first())
+        allowed = self.client.post('/accounts/add', data={
+            'name': 'Protected Account', 'current_password': 'AdminPass123!',
+            'csrf_token': self.token('/accounts/add'),
+        })
+        self.assertEqual(allowed.status_code, 302)
+        with application.app.app_context():
+            account = Account.query.filter_by(name='Protected Account').one()
+            self.assertIsNotNone(AuditLog.query.filter_by(entity_type='account', entity_id=account.id, action='create').first())
+
+    def test_field_management_controls_pi_note_choices(self):
+        self.login('admin-test')
+        page = self.client.get('/field-management')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('字段管理', html)
+        self.assertIn('客户费用 / 折扣类型（对外）', html)
+        self.assertIn('订单真实成本类别（内部）', html)
+        self.assertIn('英文名称（对外单据）', html)
+        self.assertIn('收款账户', html)
+        self.assertIn('<th>币种</th>', html)
+        self.assertIn('账户币种', self.client.get('/accounts/add').get_data(as_text=True))
+
+        response = self.client.post('/field-options/add', data={
+            'field_key': 'shipping_note',
+            'value': '测试附加费',
+            'english_value': 'Test Surcharge',
+            'csrf_token': self.token('/field-management'),
+        })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            option = FieldOption.query.filter_by(
+                field_key='shipping_note', value='测试附加费'
+            ).one()
+            self.assertEqual(option.english_value, 'Test Surcharge')
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='field_option', entity_id=option.id, action='create'
+            ).first())
+
+        create_html = self.client.get('/pi/create').get_data(as_text=True)
+        self.assertIn('name="shipping_note" id="shipping_note"', create_html)
+        self.assertIn('测试附加费', create_html)
+        self.assertIn('Test Surcharge', create_html)
+        with application.app.app_context():
+            self.assertEqual(
+                application._managed_field_value('shipping_note', '测试附加费'),
+                '测试附加费',
+            )
+            self.assertEqual(
+                application._managed_field_english('shipping_note', '测试附加费'),
+                'Test Surcharge',
+            )
+            pi = db.session.get(PI, self.alice_pi)
+            old_note, old_note_en, old_cost = pi.shipping_note, pi.shipping_note_en, pi.shipping_cost
+            pi.shipping_note = '测试附加费'
+            pi.shipping_note_en = 'Test Surcharge'
+            pi.shipping_cost = 2
+            self.assertEqual(_fixed_values(pi, {})['shipping_note'], 'Test Surcharge')
+            self.assertEqual(_fixed_values(pi, {})['shipping_note_zh'], '测试附加费')
+            pi.shipping_note, pi.shipping_note_en, pi.shipping_cost = old_note, old_note_en, old_cost
+            with self.assertRaises(ValueError):
+                application._managed_field_value('shipping_note', '未配置备注')
+
+        cost_response = self.client.post('/field-options/add', data={
+            'field_key': 'expense_category',
+            'value': '测试真实成本',
+            'csrf_token': self.token('/field-management'),
+        })
+        self.assertEqual(cost_response.status_code, 302)
+        self.assertIn('测试真实成本', self.client.get('/pi/list').get_data(as_text=True))
+
+        self.client.get('/logout')
+        self.login('alice')
+        self.assertEqual(self.client.get('/field-management').status_code, 403)
+        denied = self.client.post('/field-options/add', data={
+            'field_key': 'shipping_note',
+            'value': '越权选项',
+            'english_value': 'Unauthorized Option',
+            'csrf_token': self.token('/pi/create'),
+        })
+        self.assertEqual(denied.status_code, 403)
+        with application.app.app_context():
+            self.assertIsNone(FieldOption.query.filter_by(value='越权选项').first())
+
+    def test_export_workbench_uses_copy_and_keeps_original_pi_unchanged(self):
+        self.login('alice')
+        page = self.client.get(f'/pi/{self.alice_pi}/export')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('PI 导出工作台', html)
+        self.assertIn('原始 PI 不会被修改', html)
+        self.assertNotIn('保存并重新生成 PDF', html)
+        self.assertIn('系统默认 PI 模板', html)
+        list_html = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn('> 预览\n', list_html)
+        self.assertIn('bi-box-arrow-up-right text-primary"></i>导出', list_html)
+        self.assertNotIn('在线编辑', list_html)
+        self.assertIn('业务处理', list_html)
+        self.assertIn('更多', list_html)
+        self.assertNotIn('<th class="text-center">装箱单</th>', list_html)
+        self.assertNotIn('<th class="text-center">报关</th>', list_html)
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            item = pi.items[0]
+            template_id = DocumentTemplate.query.filter_by(code='system-default').one().id
+            original = {
+                'issue_date': pi.issue_date,
+                'payment_terms': pi.payment_terms,
+                'shipping_cost': pi.shipping_cost,
+                'total_amount': pi.total_amount,
+                'contact': pi.customer.contact_person,
+                'quantity': item.quantity,
+                'price': item.unit_price,
+            }
+            item_id = item.id
+
+        response = self.client.post(f'/pi/{self.alice_pi}/export', data={
+            'template_id': template_id,
+            'output_format': 'xlsx',
+            'mode': 'download',
+            'pi_number': 'FORGED-EXPORT-PI',
+            'salesperson': 'Bob',
+            'currency': 'RMB',
+            'issue_date': '2026-12-31',
+            'payment_terms': '仅用于本次导出',
+            'shipping_address': 'Temporary export address',
+            'shipping_note': '运费',
+            'shipping_cost': '5.50',
+            'notes': 'Temporary export note',
+            'cust_contact': 'Temporary Contact',
+            'cust_email': 'temporary@example.com',
+            'cust_phone': '+86 10000',
+            'cust_address': 'Temporary customer address',
+            f'qty_{item_id}': '2',
+            f'price_{item_id}': '12.50',
+            'csrf_token': self.token(f'/pi/{self.alice_pi}/export'),
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.mimetype,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        payload = response.data
+        response.close()
+        workbook = load_workbook(BytesIO(payload), data_only=False)
+        rendered_values = [
+            cell.value for row in workbook.active.iter_rows() for cell in row
+            if cell.value is not None
+        ]
+        self.assertTrue(any('仅用于本次导出' in str(value) for value in rendered_values))
+        self.assertTrue(any('Freight' in str(value) for value in rendered_values))
+        self.assertIn(25, rendered_values)
+        self.assertTrue(any('PI-TEST-001' in str(value) for value in rendered_values))
+        self.assertFalse(any('FORGED-EXPORT-PI' in str(value) for value in rendered_values))
+        workbook.close()
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            item = db.session.get(PIItem, item_id)
+            self.assertEqual(pi.issue_date, original['issue_date'])
+            self.assertEqual(pi.payment_terms, original['payment_terms'])
+            self.assertEqual(pi.shipping_cost, original['shipping_cost'])
+            self.assertEqual(pi.total_amount, original['total_amount'])
+            self.assertEqual(pi.customer.contact_person, original['contact'])
+            self.assertEqual(item.quantity, original['quantity'])
+            self.assertEqual(item.unit_price, original['price'])
+            audit = AuditLog.query.filter_by(
+                entity_type='pi', entity_id=self.alice_pi, action='export'
+            ).order_by(AuditLog.id.desc()).first()
+            self.assertIsNotNone(audit)
+            self.assertIn('original_pi_unchanged', audit.after_json)
+
+    def test_multiple_custom_excel_templates_can_be_selected(self):
+        self.login('admin-test')
+        self.assertEqual(self.client.get('/document-templates').status_code, 200)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = 'PI'
+        sheet['A1'] = 'PI {{pi_number}}'
+        sheet['F1'] = '{{grand_total}}'
+        sheet['A3'] = 'No.'
+        sheet['B3'] = 'Product'
+        sheet['C3'] = 'Qty'
+        sheet['D3'] = 'Amount'
+        sheet['A4'] = '{{item.no}}'
+        sheet['B4'] = '{{item.name}}'
+        sheet['C4'] = '{{item.quantity}}'
+        sheet['D4'] = '{{item.amount}}'
+        sheet['A6'] = 'Notes:'
+        sheet['B6'] = '{{notes}}'
+        sheet.merge_cells('B6:D6')
+        sheet.print_area = 'A1:F6'
+        sheet['B4'].font = Font(bold=True, color='FFFFFF')
+        sheet['B4'].fill = PatternFill('solid', fgColor='1A3A5C')
+        buffer = BytesIO()
+        workbook.save(buffer)
+        workbook.close()
+        buffer.seek(0)
+
+        upload = self.client.post('/document-templates/add', data={
+            'name': '测试客户专用模板',
+            'notes': '多模板切换测试',
+            'current_password': 'AdminPass123!',
+            'template_file': (buffer, 'custom-template.xlsx'),
+            'csrf_token': self.token('/document-templates'),
+        }, content_type='multipart/form-data')
+        self.assertEqual(upload.status_code, 302)
+
+        with application.app.app_context():
+            custom_template = DocumentTemplate.query.filter_by(name='测试客户专用模板').one()
+            template_id = custom_template.id
+            second_product = Product(name='Second Product', product_code='SECOND', unit_price=3)
+            db.session.add(second_product)
+            db.session.flush()
+            second_item = PIItem(
+                pi_id=self.alice_pi, product_id=second_product.id,
+                quantity=3, unit_price=3, amount=9,
+            )
+            db.session.add(second_item)
+            db.session.commit()
+            second_item_id = second_item.id
+
+        self.client.get('/logout')
+        self.login('alice')
+        export_html = self.client.get(f'/pi/{self.alice_pi}/export').get_data(as_text=True)
+        self.assertIn('测试客户专用模板', export_html)
+        self.assertEqual(self.client.get('/document-templates').status_code, 403)
+
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            item_ids = [item.id for item in pi.items]
+        data = {
+            'template_id': template_id,
+            'output_format': 'xlsx',
+            'mode': 'download',
+            'issue_date': '2026-01-01',
+            'payment_terms': 'TT',
+            'shipping_address': '',
+            'shipping_note': '',
+            'shipping_cost': '0',
+            'notes': '',
+            'cust_contact': '',
+            'cust_email': '',
+            'cust_phone': '',
+            'cust_address': '',
+            'csrf_token': self.token(f'/pi/{self.alice_pi}/export'),
+        }
+        for item_id in item_ids:
+            with application.app.app_context():
+                item = db.session.get(PIItem, item_id)
+                data[f'qty_{item_id}'] = str(item.quantity)
+                data[f'price_{item_id}'] = str(item.unit_price)
+        response = self.client.post(f'/pi/{self.alice_pi}/export', data=data)
+        self.assertEqual(response.status_code, 200)
+        payload = response.data
+        response.close()
+        rendered = load_workbook(BytesIO(payload), data_only=False)
+        sheet = rendered['PI']
+        self.assertEqual(sheet['A1'].value, 'PI PI-TEST-001')
+        self.assertEqual(sheet['A4'].value, 1)
+        self.assertEqual(sheet['A5'].value, 2)
+        self.assertEqual(sheet['B4'].value, 'Original Product')
+        self.assertEqual(sheet['B5'].value, 'Second Product')
+        self.assertEqual(sheet['C5'].value, 3)
+        self.assertEqual(sheet['B5'].font.bold, True)
+        self.assertEqual(sheet['B5'].fill.fgColor.rgb, sheet['B4'].fill.fgColor.rgb)
+        self.assertEqual(sheet['A7'].value, 'Notes:')
+        self.assertIn('B7:D7', {str(cell_range) for cell_range in sheet.merged_cells.ranges})
+        self.assertTrue(str(sheet.print_area).endswith('$A$1:$F$7'))
+        rendered.close()
+
+        with application.app.app_context():
+            db.session.delete(db.session.get(PIItem, second_item_id))
+            db.session.commit()
+
+    def test_system_default_excel_source_can_be_downloaded_and_replaced(self):
+        self.login('admin-test')
+        page = self.client.get('/document-templates')
+        self.assertEqual(page.status_code, 200)
+        html = page.get_data(as_text=True)
+        self.assertIn('系统默认 Excel', html)
+        self.assertIn('替换 Excel 源文件（可选）', html)
+        self.assertIn('id="packingDocumentTemplates"', html)
+        self.assertIn('标准完整装箱单', html)
+        self.assertIn('精简 100×150 装箱单', html)
+        self.assertIn('100×150 mm', html)
+        self.assertIn('白底黑字', html)
+        self.assertIn('/packing-lists', html)
+
+        with application.app.app_context():
+            template = DocumentTemplate.query.filter_by(code='system-default').one()
+            self.assertEqual(template.template_type, 'xlsx')
+            original_filename = template.filename
+            original_name = template.name
+            original_notes = template.notes
+            template_id = template.id
+            self.assertTrue(os.path.isfile(os.path.join(
+                application.app.config['DOCUMENT_TEMPLATE_DIR'], original_filename,
+            )))
+
+        source = self.client.get(f'/document-templates/{template_id}/source')
+        self.assertEqual(source.status_code, 200)
+        downloaded = load_workbook(BytesIO(source.data), data_only=False)
+        self.assertEqual(downloaded['PI Template']['A1'].value, '{{company_name}}')
+        downloaded.close()
+        source.close()
+
+        replacement = Workbook()
+        sheet = replacement.active
+        sheet.title = 'PI Template'
+        sheet['A1'] = 'Replacement {{pi_number}}'
+        sheet['A3'] = '{{item.no}}'
+        sheet['B3'] = '{{item.name}}'
+        sheet['C3'] = '{{item.quantity}}'
+        replacement_buffer = BytesIO()
+        replacement.save(replacement_buffer)
+        replacement.close()
+        replacement_buffer.seek(0)
+
+        response = self.client.post(
+            f'/document-templates/{template_id}/edit',
+            data={
+                'name': original_name,
+                'notes': '管理员替换测试',
+                'current_password': 'AdminPass123!',
+                'template_file': (replacement_buffer, 'replacement.xlsx'),
+                'csrf_token': self.token('/document-templates'),
+            },
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(response.status_code, 302)
+
+        with application.app.app_context():
+            template = db.session.get(DocumentTemplate, template_id)
+            self.assertNotEqual(template.filename, original_filename)
+            self.assertTrue(template.active)
+            self.assertEqual(template.notes, '管理员替换测试')
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='document_template', entity_id=template_id, action='update'
+            ).first())
+            template.filename = original_filename
+            template.name = original_name
+            template.notes = original_notes
+            db.session.commit()
+
+    def test_packing_list_permissions_validation_and_excel_export(self):
+        second_product_id = None
+        second_item_id = None
+        second_admin_id = None
+        packing_list_id = None
+        original_paid = None
+
+        def client_token(client, path):
+            html = client.get(path).get_data(as_text=True)
+            match = re.search(r'<meta name="csrf-token" content="([^"]+)"', html)
+            self.assertIsNotNone(match)
+            return match.group(1)
+
+        def login_client(account, password):
+            client = application.app.test_client()
+            response = client.post('/login', data={
+                'account': account,
+                'password': password,
+                'csrf_token': client_token(client, '/login'),
+            })
+            self.assertEqual(response.status_code, 302)
+            return client
+
+        try:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                original_paid = bool(pi.paid)
+                pi.paid = False
+                second_product = Product(
+                    name='Packing Product', product_code='PACK',
+                    specification='Packing spec', unit_price=4,
+                )
+                second_admin = User(
+                    account='admin-two-login', username='admin-two',
+                    password_hash=generate_password_hash('AdminTwoPass123!'),
+                    role='admin', salesperson_name='', must_change_password=False,
+                )
+                db.session.add_all([second_product, second_admin])
+                db.session.flush()
+                second_item = PIItem(
+                    pi_id=self.alice_pi, product_id=second_product.id,
+                    quantity=2, unit_price=4, amount=8,
+                )
+                db.session.add(second_item)
+                db.session.commit()
+                first_item_id = PIItem.query.filter_by(
+                    pi_id=self.alice_pi,
+                ).filter(PIItem.id != second_item.id).one().id
+                second_product_id = second_product.id
+                second_item_id = second_item.id
+                second_admin_id = second_admin.id
+
+            self.login('admin-test')
+            index = self.client.get('/packing-lists')
+            self.assertEqual(index.status_code, 200)
+            self.assertNotIn('PI-TEST-001', index.get_data(as_text=True))
+            self.assertEqual(
+                self.client.get(f'/packing-list/{self.alice_pi}').status_code, 302,
+            )
+
+            overpacked = {
+                'action': 'draft',
+                'version': 0,
+                'packing_date': '2026-09-07',
+                'boxes': [
+                    {
+                        'box_no': '1', 'net_weight': 1, 'gross_weight': 2,
+                        'length_cm': 10, 'width_cm': 10, 'height_cm': 10,
+                        'shipping_mark': 'MARK-A', 'note': '',
+                        'items': [
+                            {'pi_item_id': second_item_id, 'quantity': 2, 'note': ''},
+                        ],
+                    },
+                    {
+                        'box_no': '2', 'net_weight': 1, 'gross_weight': 2,
+                        'length_cm': 10, 'width_cm': 10, 'height_cm': 10,
+                        'shipping_mark': 'MARK-B', 'note': '',
+                        'items': [
+                            {'pi_item_id': second_item_id, 'quantity': 1, 'note': ''},
+                        ],
+                    },
+                ],
+            }
+            response = self.client.post(
+                f'/api/packing-list/{self.alice_pi}', json=overpacked,
+                headers={'X-CSRFToken': self.token('/packing-lists')},
+            )
+            self.assertEqual(response.status_code, 409)
+            self.assertIn('尚未付清', response.get_json()['error'])
+
+            with application.app.app_context():
+                db.session.get(PI, self.alice_pi).paid = True
+                db.session.commit()
+
+            index = self.client.get('/packing-lists')
+            self.assertIn('PI-TEST-001', index.get_data(as_text=True))
+            self.assertEqual(
+                self.client.get(f'/packing-list/{self.alice_pi}').status_code, 200,
+            )
+
+            response = self.client.post(
+                f'/api/packing-list/{self.alice_pi}', json=overpacked,
+                headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('超过 PI 数量', response.get_json()['error'])
+
+            valid = {
+                'action': 'complete',
+                'version': 0,
+                'packing_date': '2026-09-07',
+                'boxes': [
+                    {
+                        'box_no': '1', 'net_weight': 1.25, 'gross_weight': 1.5,
+                        'length_cm': 10, 'width_cm': 10, 'height_cm': 10,
+                        'shipping_mark': 'MARK-A', 'note': 'Mixed carton',
+                        'items': [
+                            {'pi_item_id': first_item_id, 'quantity': 1, 'note': ''},
+                            {'pi_item_id': second_item_id, 'quantity': 1, 'note': 'Part one'},
+                        ],
+                    },
+                    {
+                        'box_no': '2', 'net_weight': 2, 'gross_weight': 2.5,
+                        'length_cm': 10, 'width_cm': 20, 'height_cm': 30,
+                        'shipping_mark': 'MARK-B', 'note': 'Split carton',
+                        'items': [
+                            {'pi_item_id': second_item_id, 'quantity': 1, 'note': 'Part two'},
+                        ],
+                    },
+                ],
+            }
+            saved = self.client.post(
+                f'/api/packing-list/{self.alice_pi}', json=valid,
+                headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(saved.status_code, 200)
+            saved_json = saved.get_json()
+            self.assertEqual(saved_json['data']['status'], 'completed')
+            first_version = saved_json['data']['version']
+
+            # A completed packing list opens read-only. Administrators must
+            # explicitly enter edit mode; the editor still supports saving a
+            # draft or saving and completing again.
+            completed_detail = self.client.get(
+                f'/packing-list/{self.alice_pi}',
+            ).get_data(as_text=True)
+            self.assertIn('当前为只读查看', completed_detail)
+            self.assertIn('编辑装箱单', completed_detail)
+            self.assertNotIn('id="packingBoxes"', completed_detail)
+            completed_editor = self.client.get(
+                f'/packing-list/{self.alice_pi}?edit=1',
+            ).get_data(as_text=True)
+            self.assertIn('id="packingBoxes"', completed_editor)
+            self.assertIn('保存草稿', completed_editor)
+            self.assertIn('保存并完成', completed_editor)
+            self.assertIn('精简 100×150', completed_detail)
+            self.assertIn('compact-100x150.xlsx', completed_detail)
+            self.assertIn('compact-100x150.pdf', completed_detail)
+
+            packing_index = self.client.get('/packing-lists').get_data(as_text=True)
+            self.assertIn('<i class="bi bi-eye"></i> 预览', packing_index)
+            self.assertIn('选择 Excel 模板', packing_index)
+            self.assertIn('选择 PDF 模板', packing_index)
+            self.assertIn('完整 A4', packing_index)
+            self.assertIn('精简 100×150（每箱一页）', packing_index)
+            self.assertIn(
+                f'/packing-list/{self.alice_pi}/compact-100x150.xlsx', packing_index,
+            )
+            self.assertIn(
+                f'/packing-list/{self.alice_pi}/compact-100x150.pdf', packing_index,
+            )
+
+            with application.app.app_context():
+                db.session.get(PI, self.alice_pi).shipping_completed = True
+                db.session.commit()
+            shipped_detail = self.client.get(
+                f'/packing-list/{self.alice_pi}',
+            ).get_data(as_text=True)
+            self.assertIn('该订单已经登记发货，确认仍要编辑装箱单吗？', shipped_detail)
+            with application.app.app_context():
+                db.session.get(PI, self.alice_pi).shipping_completed = False
+                db.session.commit()
+
+            with application.app.app_context():
+                packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
+                packing_list_id = packing_list.id
+                self.assertEqual(len(packing_list.boxes), 2)
+                self.assertEqual([len(box.items) for box in packing_list.boxes], [2, 1])
+                self.assertAlmostEqual(packing_list.boxes[0].volume_cbm, 0.001)
+                self.assertAlmostEqual(packing_list.boxes[1].volume_cbm, 0.006)
+
+            excel = self.client.get(
+                f'/packing-list/{self.alice_pi}/export.xlsx',
+            )
+            self.assertEqual(excel.status_code, 200)
+            workbook = load_workbook(BytesIO(excel.data), data_only=False)
+            self.assertIn('装箱单', workbook.sheetnames)
+            values = [
+                cell.value for row in workbook['装箱单'].iter_rows() for cell in row
+                if cell.value is not None
+            ]
+            self.assertTrue(any('PI-TEST-001' in str(value) for value in values))
+            self.assertIn('Original Product', values)
+            self.assertIn('Packing Product', values)
+            self.assertTrue(str(workbook['装箱单'].print_area))
+            workbook.close()
+            excel.close()
+
+            compact_excel = self.client.get(
+                f'/packing-list/{self.alice_pi}/compact-100x150.xlsx',
+            )
+            self.assertEqual(compact_excel.status_code, 200)
+            compact_workbook = load_workbook(BytesIO(compact_excel.data), data_only=False)
+            self.assertEqual(len(compact_workbook.sheetnames), 2)
+            for sheet in compact_workbook.worksheets:
+                compact_values = [
+                    cell.value for row in sheet.iter_rows() for cell in row
+                    if cell.value is not None
+                ]
+                self.assertIn('PACKING LIST / 装箱单', compact_values)
+                self.assertTrue(str(sheet.print_area))
+                self.assertEqual(str(sheet.page_setup.paperWidth), '100mm')
+                self.assertEqual(str(sheet.page_setup.paperHeight), '150mm')
+                self.assertNotIn('Exporter / 出口商', compact_values)
+                self.assertNotIn('Buyer / 客户', compact_values)
+                self.assertIn('Sales / 业务员', compact_values)
+                self.assertEqual(sheet['A1'].fill.fgColor.rgb, '00FFFFFF')
+                self.assertEqual(sheet['A1'].font.color.rgb, '00000000')
+                self.assertEqual(sheet['A8'].fill.fgColor.rgb, '00FFFFFF')
+                self.assertEqual(sheet['A8'].font.color.rgb, '00000000')
+            compact_workbook.close()
+            compact_excel.close()
+
+            compact_pdf = self.client.get(
+                f'/packing-list/{self.alice_pi}/compact-100x150.pdf',
+            )
+            self.assertEqual(compact_pdf.status_code, 200)
+            self.assertEqual(compact_pdf.mimetype, 'application/pdf')
+            self.assertTrue(compact_pdf.data.startswith(b'%PDF-'))
+            self.assertEqual(len(re.findall(rb'/Type\s*/Page\b', compact_pdf.data)), 2)
+            self.assertRegex(
+                compact_pdf.data,
+                rb'/MediaBox\s*\[\s*0\s+0\s+283\.[0-9]+\s+425\.[0-9]+\s*\]',
+            )
+            compact_pdf.close()
+
+            # Any administrator can edit a packing list, even when another
+            # administrator created it.
+            second_admin_client = login_client('admin-two-login', 'AdminTwoPass123!')
+            second_admin_detail = second_admin_client.get(
+                f'/packing-list/{self.alice_pi}',
+            )
+            self.assertEqual(second_admin_detail.status_code, 200)
+            self.assertIn('编辑装箱单', second_admin_detail.get_data(as_text=True))
+            second_admin_payload = dict(valid)
+            second_admin_payload['version'] = first_version
+            second_admin_payload['action'] = 'draft'
+            second_admin_payload['boxes'] = [dict(box) for box in valid['boxes']]
+            second_admin_payload['boxes'][0]['shipping_mark'] = 'EDITED-BY-SECOND-ADMIN'
+            updated = second_admin_client.post(
+                f'/api/packing-list/{self.alice_pi}', json=second_admin_payload,
+                headers={
+                    'X-CSRFToken': client_token(
+                        second_admin_client, f'/packing-list/{self.alice_pi}',
+                    ),
+                },
+            )
+            self.assertEqual(updated.status_code, 200)
+            updated_json = updated.get_json()
+            self.assertEqual(updated_json['data']['status'], 'draft')
+            self.assertGreater(updated_json['data']['version'], first_version)
+            with application.app.app_context():
+                packing_list = db.session.get(PackingList, packing_list_id)
+                self.assertEqual(packing_list.updated_by, 'admin-two')
+                self.assertIsNotNone(packing_list.updated_at)
+
+            second_admin_payload['action'] = 'complete'
+            second_admin_payload['version'] = updated_json['data']['version']
+            recompleted = second_admin_client.post(
+                f'/api/packing-list/{self.alice_pi}', json=second_admin_payload,
+                headers={
+                    'X-CSRFToken': client_token(
+                        second_admin_client, f'/packing-list/{self.alice_pi}?edit=1',
+                    ),
+                },
+            )
+            self.assertEqual(recompleted.status_code, 200)
+            self.assertEqual(recompleted.get_json()['data']['status'], 'completed')
+
+            stale = self.client.post(
+                f'/api/packing-list/{self.alice_pi}', json=valid,
+                headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(stale.status_code, 409)
+
+            # If a previously-paid PI is later marked unpaid, retain its
+            # historical packing list for read/export but lock all changes.
+            with application.app.app_context():
+                db.session.get(PI, self.alice_pi).paid = False
+                db.session.commit()
+            history_detail = self.client.get(f'/packing-list/{self.alice_pi}')
+            self.assertEqual(history_detail.status_code, 200)
+            self.assertIn('历史装箱单仅允许查看和导出', history_detail.get_data(as_text=True))
+            self.assertIn(
+                'PI-TEST-001', self.client.get('/packing-lists').get_data(as_text=True),
+            )
+            locked = self.client.post(
+                f'/api/packing-list/{self.alice_pi}', json=second_admin_payload,
+                headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(locked.status_code, 409)
+            self.assertIn('尚未付清', locked.get_json()['error'])
+            with application.app.app_context():
+                db.session.get(PI, self.alice_pi).paid = True
+                db.session.commit()
+
+            bob = login_client('bob-login', 'StrongPass123!')
+            bob_index = bob.get('/packing-lists')
+            self.assertEqual(bob_index.status_code, 200)
+            self.assertNotIn('PI-TEST-001', bob_index.get_data(as_text=True))
+            self.assertEqual(bob.get(f'/packing-list/{self.alice_pi}').status_code, 403)
+            self.assertEqual(
+                bob.get(f'/packing-list/{self.alice_pi}/export.xlsx').status_code,
+                403,
+            )
+            self.assertEqual(
+                bob.post(
+                    f'/api/packing-list/{self.alice_pi}', json=valid,
+                    headers={'X-CSRFToken': client_token(bob, '/packing-lists')},
+                ).status_code,
+                403,
+            )
+
+            alice = login_client('alice-login', 'StrongPass123!')
+            alice_detail = alice.get(f'/packing-list/{self.alice_pi}')
+            self.assertEqual(alice_detail.status_code, 200)
+            self.assertIn('当前为只读查看', alice_detail.get_data(as_text=True))
+            self.assertNotIn('编辑装箱单', alice_detail.get_data(as_text=True))
+            self.assertNotIn(
+                'id="packingBoxes"',
+                alice.get(f'/packing-list/{self.alice_pi}?edit=1').get_data(as_text=True),
+            )
+            self.assertEqual(
+                alice.get(f'/packing-list/{self.alice_pi}/export.xlsx').status_code,
+                200,
+            )
+            self.assertEqual(
+                alice.post(
+                    f'/api/packing-list/{self.alice_pi}', json=valid,
+                    headers={
+                        'X-CSRFToken': client_token(
+                            alice, f'/packing-list/{self.alice_pi}',
+                        ),
+                    },
+                ).status_code,
+                403,
+            )
+        finally:
+            with application.app.app_context():
+                db.session.rollback()
+                if packing_list_id:
+                    packing_list = db.session.get(PackingList, packing_list_id)
+                    if packing_list:
+                        db.session.delete(packing_list)
+                        db.session.flush()
+                if second_item_id:
+                    second_item = db.session.get(PIItem, second_item_id)
+                    if second_item:
+                        db.session.delete(second_item)
+                        db.session.flush()
+                if second_product_id:
+                    second_product = db.session.get(Product, second_product_id)
+                    if second_product:
+                        db.session.delete(second_product)
+                if second_admin_id:
+                    AuditLog.query.filter_by(user_id=second_admin_id).update(
+                        {'user_id': None}, synchronize_session=False,
+                    )
+                    second_admin = db.session.get(User, second_admin_id)
+                    if second_admin:
+                        db.session.delete(second_admin)
+                if original_paid is not None:
+                    pi = db.session.get(PI, self.alice_pi)
+                    if pi:
+                        pi.paid = original_paid
+                db.session.commit()
+
+    @unittest.skipUnless(find_soffice(), 'LibreOffice is only required on the production server')
+    def test_server_can_convert_custom_excel_template_to_pdf(self):
+        work_dir = tempfile.mkdtemp(prefix='pi-template-convert-test-')
+        try:
+            excel_path = os.path.join(work_dir, 'template.xlsx')
+            pdf_path = os.path.join(work_dir, 'template.pdf')
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet['A1'] = 'PI template conversion test'
+            workbook.save(excel_path)
+            workbook.close()
+            convert_excel_to_pdf(excel_path, pdf_path)
+            with open(pdf_path, 'rb') as pdf_file:
+                self.assertEqual(pdf_file.read(4), b'%PDF')
+        finally:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

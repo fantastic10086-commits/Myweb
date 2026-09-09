@@ -1,305 +1,324 @@
 {% extends "base.html" %}
-{% block title %}Edit {{ pi.pi_number }}{% endblock %}
+{% block title %}导出 {{ pi.pi_number }}{% endblock %}
 
 {% block content %}
 <div class="row mb-3 align-items-center">
-    <div class="col-md-6">
-        <h2><i class="bi bi-pencil-square me-2"></i>Online PDF Editor — {{ pi.pi_number }}</h2>
+    <div class="col-md-7">
+        <h2><i class="bi bi-box-arrow-up-right me-2"></i>PI 导出工作台 — {{ pi.pi_number }}</h2>
+        <p class="text-muted mb-0">选择模板和文件格式；需要时可先调整本次导出副本。</p>
     </div>
-    <div class="col-md-6 text-md-end">
-        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to PI List</a>
+    <div class="col-md-5 text-md-end">
+        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> 返回 PI 列表
+        </a>
     </div>
 </div>
 
-<form method="post" id="liveEditForm" target="_blank">
-<!-- PDF-like layout -->
-<div class="card shadow-sm">
-    <div class="card-body p-4" style="max-width:800px;margin:0 auto;font-family:Arial,sans-serif;">
+<div class="alert alert-success d-flex align-items-start" role="alert">
+    <i class="bi bi-shield-check fs-4 me-2"></i>
+    <div>
+        <strong>原始 PI 不会被修改。</strong>
+        本页所有调整只用于这一次预览或下载；重新打开页面时会恢复为数据库中的原始内容。
+    </div>
+</div>
 
-        <!-- Header -->
+<form method="post" id="exportForm">
+<div class="card shadow-sm mb-3 border-primary">
+    <div class="card-header bg-primary text-white"><strong><i class="bi bi-sliders me-1"></i>导出设置</strong></div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-5">
+                <label class="form-label fw-bold" for="template_id">PI 模板</label>
+                <select class="form-select" name="template_id" id="template_id" required>
+                    {% for template in templates %}
+                    <option value="{{ template.id }}" {% if template.id == selected_template.id %}selected{% endif %}>
+                        {{ template.name }}{% if template.is_default %}（默认）{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">不同模板可以使用不同版式、公司抬头和字段位置。</div>
+            </div>
+            <div class="col-lg-3">
+                <label class="form-label fw-bold" for="output_format">下载格式</label>
+                <select class="form-select" name="output_format" id="output_format">
+                    <option value="pdf">PDF 文件</option>
+                    <option value="xlsx">Excel 文件</option>
+                </select>
+                <div class="form-text">预览始终以 PDF 形式打开。</div>
+            </div>
+            <div class="col-lg-4 text-lg-end">
+                <button type="button" class="btn btn-outline-primary" id="previewButton" onclick="exportDocument('preview')">
+                    <i class="bi bi-eye"></i> 预览
+                </button>
+                <button type="button" class="btn btn-primary" id="downloadButton" onclick="exportDocument('download')">
+                    <i class="bi bi-download"></i> 导出下载
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="restoreOriginal()">
+                    <i class="bi bi-arrow-counterclockwise"></i> 恢复原始数据
+                </button>
+            </div>
+        </div>
+        <div id="exportStatus" class="small mt-3" aria-live="polite"></div>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong><i class="bi bi-pencil-square me-1"></i>本次导出副本</strong>
+        <span class="badge bg-light text-dark border">不保存到原始 PI</span>
+    </div>
+    <div class="card-body p-4" style="max-width:1050px;margin:0 auto;width:100%;">
         <div class="text-center mb-3 pb-3" style="border-bottom:2px solid #1a3a5c;">
-            <input type="text" class="form-control-plaintext text-center fw-bold text-uppercase" style="font-size:16px;color:#1a3a5c;" name="company_name"
-                value="{% if pi.company == 'qisuo' %}Changzhou QISUO Welding and Cutting Equipment Co., Ltd.{% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}">
-            <input type="text" class="form-control-plaintext text-center text-muted" style="font-size:9px;" name="company_addr"
-                value="No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China">
+            <input type="text" class="form-control-plaintext text-center fw-bold" name="company_name"
+                   value="{% if pi.company == 'qisuo' %}Changzhou Qisuo welding and cutting Equipment Co., LTD{% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}"
+                   {% if not is_admin %}readonly{% endif %}>
+            <input type="text" class="form-control-plaintext text-center text-muted small" name="company_addr"
+                   value="{% if pi.company == 'qisuo' %}No. 158, Jingchuang Road, Yaoguan Town, Changzhou District, Jiangsu Province{% else %}No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China{% endif %}"
+                   {% if not is_admin %}readonly{% endif %}>
         </div>
 
-        <!-- Title -->
-        <h4 class="text-center fw-bold mb-3" style="color:#1a3a5c;">PROFORMA INVOICE</h4>
-
-        <!-- PI Info & Customer Info (side-by-side) -->
         <div class="row g-3 mb-3">
             <div class="col-md-6">
-                <table class="table table-sm table-borderless mb-0" style="font-size:13px;">
-                    <tr>
-                        <td style="width:90px;" class="fw-bold text-end pe-2">PI Number:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi.pi_number }}" style="width:180px;"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Date:</td>
-                        <td><input type="date" class="form-control form-control-sm" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}" style="width:150px;"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Salesperson:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="salesperson" value="{{ pi.salesperson or '' }}" style="width:150px;"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Currency:</td>
-                        <td>
-                            <select class="form-select form-select-sm" name="currency" style="width:120px;" onchange="onCurrencyChange()">
-                                <option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option>
-                                <option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option>
-                            </select>
-                        </td>
-                    </tr>
-                </table>
+                <div class="row g-2">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">PI 编号（已锁定）</label>
+                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.pi_number }}" readonly>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">开单日期</label>
+                        <input type="date" class="form-control form-control-sm" name="issue_date"
+                               value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">业务员（已锁定）</label>
+                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.salesperson or '' }}" readonly>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">币种（已锁定）</label>
+                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.currency or 'USD' }}" readonly>
+                    </div>
+                </div>
             </div>
             <div class="col-md-6">
-                <table class="table table-sm table-borderless mb-0" style="font-size:13px;">
-                    <tr>
-                        <td style="width:80px;" class="fw-bold text-end pe-2">To / Buyer:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="cust_name" value="{{ pi.customer.name if pi.customer else '' }}"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Contact:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="cust_contact" value="{{ pi.customer.contact_person if pi.customer else '' }}"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Country:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="cust_country" value="{{ pi.customer.country if pi.customer else '' }}"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Email:</td>
-                        <td><input type="email" class="form-control form-control-sm" name="cust_email" value="{{ pi.customer.email if pi.customer else '' }}"></td>
-                    </tr>
-                    <tr>
-                        <td class="fw-bold text-end pe-2">Phone:</td>
-                        <td><input type="text" class="form-control form-control-sm" name="cust_phone" value="{{ pi.customer.phone if pi.customer else '' }}"></td>
-                    </tr>
-                </table>
+                <div class="row g-2">
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">买方</label>
+                        <input type="text" class="form-control form-control-sm" name="cust_name"
+                               value="{{ pi.customer.name if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">联系人</label>
+                        <input type="text" class="form-control form-control-sm" name="cust_contact"
+                               value="{{ pi.customer.contact_person if pi.customer else '' }}">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">国家</label>
+                        <input type="text" class="form-control form-control-sm" name="cust_country"
+                               value="{{ pi.customer.country if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}>
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">邮箱</label>
+                        <input type="email" class="form-control form-control-sm" name="cust_email"
+                               value="{{ pi.customer.email if pi.customer else '' }}">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">电话</label>
+                        <input type="text" class="form-control form-control-sm" name="cust_phone"
+                               value="{{ pi.customer.phone if pi.customer else '' }}">
+                    </div>
+                    <div class="col-sm-6">
+                        <label class="form-label fw-bold small">客户地址</label>
+                        <input type="text" class="form-control form-control-sm" name="cust_address"
+                               value="{{ pi.customer.address if pi.customer else '' }}">
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Product Table -->
-        <h6 class="fw-bold mb-2" style="color:#1a3a5c;">ITEM DETAILS</h6>
+        <h6 class="fw-bold mb-2" style="color:#1a3a5c;">产品明细</h6>
         <div class="table-responsive mb-3">
-            <table class="table table-sm table-bordered mb-0 align-middle" style="font-size:12px;">
-                <thead style="background:#1a3a5c;color:#fff;">
+            <table class="table table-sm table-bordered mb-0 align-middle">
+                <thead class="table-dark">
                     <tr>
-                        <th class="text-center" style="width:30px;">No.</th>
-                        <th>Product / Description</th>
-                        <th>Code</th>
-                        <th>Spec</th>
-                        <th class="text-end" style="width:60px;">Qty</th>
-                        <th class="text-end" style="width:80px;">Unit Price</th>
-                        <th class="text-end" style="width:80px;">Amount</th>
+                        <th class="text-center">序号</th>
+                        <th>产品 / 描述</th>
+                        <th>编码</th>
+                        <th>规格</th>
+                        <th class="text-end">数量</th>
+                        <th class="text-end">单价</th>
+                        <th class="text-end">金额</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for item in pi.items %}
                     <tr>
                         <td class="text-center">{{ loop.index }}</td>
-                        <td>
-                            <input type="text" class="form-control form-control-sm" name="prod_name_{{ item.id }}" value="{{ item.product.name if item.product else '' }}">
-                        </td>
-                        <td>
-                            <input type="text" class="form-control form-control-sm" name="prod_code_{{ item.id }}" value="{{ item.product.product_code if item.product else '' }}" style="width:90px;">
-                        </td>
-                        <td>
-                            <input type="text" class="form-control form-control-sm" name="prod_spec_{{ item.id }}" value="{{ item.product.specification if item.product else '' }}" style="width:80px;">
-                        </td>
-                        <td class="text-end">
-                            <input type="number" class="form-control form-control-sm text-end" name="qty_{{ item.id }}" value="{{ item.quantity }}" min="0" style="width:60px;display:inline-block;" onchange="recalcRow(this)">
-                        </td>
-                        <td class="text-end">
-                            <input type="number" step="0.01" class="form-control form-control-sm text-end" name="price_{{ item.id }}" value="{{ '%.2f'|format(item.unit_price) }}" min="0" style="width:80px;display:inline-block;" onchange="recalcRow(this)">
-                        </td>
-                        <td class="text-end fw-bold total-cell" data-base="{{ item.amount }}">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(item.amount) }}</td>
+                        <td><input type="text" class="form-control form-control-sm" name="prod_name_{{ item.id }}" value="{{ item.product.name if item.product else '' }}" {% if not is_admin %}readonly{% endif %}></td>
+                        <td><input type="text" class="form-control form-control-sm" name="prod_code_{{ item.id }}" value="{{ item.product.product_code if item.product else '' }}" {% if not is_admin %}readonly{% endif %}></td>
+                        <td><input type="text" class="form-control form-control-sm" name="prod_spec_{{ item.id }}" value="{{ item.product.specification if item.product else '' }}" {% if not is_admin %}readonly{% endif %}></td>
+                        <td><input type="number" class="form-control form-control-sm text-end item-quantity" name="qty_{{ item.id }}" value="{{ item.quantity }}" min="1" required oninput="recalculateExport()"></td>
+                        <td><input type="number" step="0.01" class="form-control form-control-sm text-end item-price" name="price_{{ item.id }}" value="{{ '%.2f'|format(item.unit_price) }}" min="0" required oninput="recalculateExport()"></td>
+                        <td class="text-end fw-bold item-total">{{ '%.2f'|format(item.amount) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
-                <tfoot style="background:#f8f9fa;">
-                    <tr>
-                        <th colspan="4" class="text-end">Adj. / Cost:</th>
-                        <th colspan="2"><input type="text" class="form-control form-control-sm" name="shipping_note" placeholder="e.g. DHL, by sea..." value="{{ pi.shipping_note or '' }}"></th>
-                        <th class="text-end">
-                            <div class="input-group input-group-sm" style="width:130px;float:right;">
-                                <span class="input-group-text" id="shipping_sym">{{ '¥' if pi.currency == 'RMB' else '$' }}</span>
-                                <input type="number" step="0.01" min="0" class="form-control form-control-sm text-end" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format(pi.shipping_cost) if pi.shipping_cost else '0.00' }}" onchange="recalcGrand()">
-                            </div>
-                        </th>
-                    </tr>
-                    <tr>
-                        <th colspan="6" class="text-end">TOTAL:</th>
-                        <th class="text-end" style="font-size:14px;color:#1a3a5c;" id="grand_total">
-                            {{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.total_amount + (pi.shipping_cost or 0)) }}
-                        </th>
-                    </tr>
-                </tfoot>
             </table>
         </div>
 
-        <!-- Payment / Bank / Address -->
         <div class="row g-3 mb-3">
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">Payment Terms</label>
-                <textarea class="form-control form-control-sm" name="payment_terms" rows="2">{{ pi.payment_terms or '100% TT before shipment' }}</textarea>
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">客户费用 / 折扣类型</label>
+                <select class="form-select form-select-sm" name="shipping_note">
+                    <option value="" {% if not pi.shipping_note %}selected{% endif %}>— 请选择 —</option>
+                    {% if pi.shipping_note and not shipping_note_options|selectattr('value', 'equalto', pi.shipping_note)|list %}<option value="{{ pi.shipping_note }}" selected>{{ pi.shipping_note }}（{{ pi.shipping_note_en or '历史值' }}）</option>{% endif %}
+                    {% for option in shipping_note_options %}<option value="{{ option.value }}" {% if option.value == pi.shipping_note %}selected{% endif %}>{{ option.value }}（{{ option.english_value or option.value }}）</option>{% endfor %}
+                </select>
             </div>
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">Bank Information</label>
-                <textarea class="form-control form-control-sm" name="bank_info" rows="4">{{ pi.bank_info or '' }}</textarea>
+            <div class="col-md-3">
+                <label class="form-label fw-bold small">客户费用 / 折扣金额</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">{{ '¥' if pi.currency == 'RMB' else '$' }}</span>
+                    <input type="number" step="0.01" class="form-control text-end" name="shipping_cost" id="shipping_cost"
+                           value="{{ '%.2f'|format(pi.shipping_cost or 0) }}" oninput="recalculateExport()">
+                </div>
+                <div class="form-text">正数为向客户加收，负数为折扣；计入订单总金额。</div>
+            </div>
+            <div class="col-md-5">
+                <div class="border rounded p-3 bg-light h-100 text-end">
+                    <div>产品总金额：<strong id="subtotalAmount">{{ '%.2f'|format(pi.total_amount) }}</strong></div>
+                    <div>客户费用 / 折扣：<strong id="adjustmentAmount">{{ '%.2f'|format(pi.shipping_cost or 0) }}</strong></div>
+                    <div class="fs-5 mt-1">订单总金额（{{ pi.currency or 'USD' }}）：
+                        <strong class="text-primary" id="grandTotal">{{ '%.2f'|format(pi.grand_total) }}</strong>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="row g-3 mb-3">
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">付款条款</label>
+                <input class="form-control form-control-sm" name="payment_terms" value="{{ pi.payment_terms or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">价格条款</label>
+                <input class="form-control form-control-sm" name="price_terms" list="export_price_terms_options" value="{{ pi.price_terms or '' }}" placeholder="请选择或临时输入……">
+                <datalist id="export_price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">交货期</label>
+                <input class="form-control form-control-sm" name="delivery_time" list="export_delivery_time_options" value="{{ pi.delivery_time or '' }}" placeholder="请选择或临时输入……">
+                <datalist id="export_delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
+            </div>
+            {% if is_admin %}
+            <div class="col-md-4">
+                <label class="form-label fw-bold small">收款账户（整组切换）</label>
+                <select class="form-select form-select-sm" name="account_id" id="export_account_select" onchange="onExportAccountChange()">
+                    <option value="" selected>— 保留当前快照 —</option>
+                    {% for a in all_accounts %}
+                    <option value="{{ a.id }}" data-bank="{{ a.bank_info() }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">仅影响本次导出副本。</div>
+            </div>
+            {% endif %}
+            <div class="{% if is_admin %}col-md-8{% else %}col-md-12{% endif %}">
+                <label class="form-label fw-bold small">银行信息快照{% if not is_admin %}（只读）{% endif %}</label>
+                <textarea class="form-control form-control-sm" id="export_bank_info" name="bank_info" rows="6" {% if not is_admin %}readonly{% endif %}>{{ pi.bank_info or '' }}</textarea>
+            </div>
             <div class="col-md-6">
-                <label class="form-label fw-bold small">Shipping Address</label>
+                <label class="form-label fw-bold small">收货地址</label>
                 <textarea class="form-control form-control-sm" name="shipping_address" rows="3">{{ pi.shipping_address or '' }}</textarea>
             </div>
             <div class="col-md-6">
-                <label class="form-label fw-bold small">PI Notes</label>
+                <label class="form-label fw-bold small">PI 备注</label>
                 <textarea class="form-control form-control-sm" name="notes" rows="3">{{ pi.notes or '' }}</textarea>
             </div>
         </div>
-
-        <!-- Signature -->
-        <div class="row mt-4 pt-3" style="border-top:1px solid #ddd;">
-            <div class="col-6">
-                <small class="fw-bold">Issued By:</small><br><br><br>
-                <div style="border-top:1px solid #000;width:200px;"></div>
-                <small>
-                    <input type="text" class="form-control-plaintext" name="company_short" value="{% if pi.company == 'qisuo' %}QISUO{% else %}KLISTA{% endif %}" style="font-size:12px;">
-                </small><br>
-                <small>Date: <span id="sig_date"></span></small>
-            </div>
-            <div class="col-6 text-end">
-                <small class="fw-bold">Buyer:</small><br><br><br>
-                <div style="border-top:1px solid #000;width:200px;display:inline-block;"></div><br>
-                <small class="text-muted"><i>(Signature / Stamp)</i></small>
-            </div>
-        </div>
-
-        <!-- Buttons -->
-        <div class="text-center mt-4">
-            <button type="button" class="btn btn-primary btn-lg px-5" onclick="exportPDF()">
-                <i class="bi bi-file-pdf"></i> Export PDF (No Save)
-            </button>
-            <button type="submit" class="btn btn-success btn-lg px-5 ms-2">
-                <i class="bi bi-save"></i> Save & Regenerate PDF
-            </button>
-            <div id="saveStatus" class="mt-2"></div>
-        </div>
-
     </div>
 </div>
 </form>
 
 <script>
-document.getElementById('sig_date').textContent = new Date().toISOString().slice(0,10);
-
-function getSym() {
-    var sel = document.querySelector('[name="currency"]');
-    return sel && sel.value === 'RMB' ? '¥' : '$';
-}
-
-function recalcRow(input) {
-    var row = input.closest('tr');
-    var qtyEl = row.querySelector('[name^="qty_"]');
-    var priceEl = row.querySelector('[name^="price_"]');
-    var totalCell = row.querySelector('.total-cell');
-    if (!qtyEl || !priceEl || !totalCell) return;
-    var qty = parseInt(qtyEl.value) || 0;
-    var price = parseFloat(priceEl.value) || 0;
-    var amt = qty * price;
-    totalCell.textContent = getSym() + amt.toFixed(2);
-    recalcGrand();
-}
-
-function recalcGrand() {
-    var grand = 0;
-    document.querySelectorAll('.total-cell').forEach(function(cell) {
-        var v = parseFloat(cell.textContent.replace(/[^0-9.]/g, '')) || 0;
-        grand += v;
+function recalculateExport() {
+    let subtotal = 0;
+    document.querySelectorAll('#exportForm tbody tr').forEach(function(row) {
+        const quantity = parseInt(row.querySelector('.item-quantity').value, 10) || 0;
+        const price = parseFloat(row.querySelector('.item-price').value) || 0;
+        const amount = quantity * price;
+        row.querySelector('.item-total').textContent = amount.toFixed(2);
+        subtotal += amount;
     });
-    var shippingEl = document.getElementById('shipping_cost');
-    grand += parseFloat(shippingEl ? shippingEl.value : '0') || 0;
-    document.getElementById('grand_total').textContent = getSym() + grand.toFixed(2);
+    const adjustment = parseFloat(document.getElementById('shipping_cost').value) || 0;
+    document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2);
+    document.getElementById('adjustmentAmount').textContent = adjustment.toFixed(2);
+    document.getElementById('grandTotal').textContent = (subtotal + adjustment).toFixed(2);
 }
 
-function onCurrencyChange() {
-    document.querySelectorAll('.total-cell').forEach(function(cell) {
-        var v = parseFloat(cell.textContent.replace(/[^0-9.]/g, '')) || 0;
-        cell.textContent = getSym() + v.toFixed(2);
-    });
-    var shippingSym = document.getElementById('shipping_sym');
-    if (shippingSym) shippingSym.textContent = getSym();
-    recalcGrand();
+function onExportAccountChange() {
+    const select = document.getElementById('export_account_select');
+    const bankInfo = document.getElementById('export_bank_info');
+    if (!select || !bankInfo || !select.value) return;
+    const option = select.options[select.selectedIndex];
+    bankInfo.value = option.getAttribute('data-bank') || '';
 }
 
-// Export PDF without saving to DB
-function exportPDF() {
-    var form = document.getElementById('liveEditForm');
-    var fd = new FormData(form);
-    fd.append('action', 'export_pdf');
-
-    var status = document.getElementById('saveStatus');
-    status.innerHTML = '<span class="text-info"><span class="spinner-border spinner-border-sm me-1"></span>Generating PDF...</span>';
-
-    fetch(window.location.href, { method: 'POST', body: fd })
-        .then(function(r) {
-            if (r.ok) return r.blob();
-            throw new Error('Failed');
-        })
-        .then(function(blob) {
-            var url = window.URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = '{{ pi.pi_number }}_edited.pdf';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> PDF exported!</span>';
-        })
-        .catch(function() {
-            status.innerHTML = '<span class="text-danger">Export failed.</span>';
-        });
+function restoreOriginal() {
+    if (confirm('确定恢复本页原始数据吗？尚未下载的临时调整将被清除。')) {
+        window.location.reload();
+    }
 }
 
-// Save form (original behavior)
-document.getElementById('liveEditForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    var btn = this.querySelector('button[type="submit"]');
-    var status = document.getElementById('saveStatus');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
-    status.innerHTML = '';
+function responseFilename(response, fallback) {
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8) return decodeURIComponent(utf8[1]);
+    const regular = disposition.match(/filename="?([^";]+)"?/i);
+    return regular ? regular[1] : fallback;
+}
 
-    var fd = new FormData(this);
-    fd.append('action', 'save');
-    fetch(window.location.href, { method: 'POST', body: fd })
-        .then(function(r) {
-            if (r.ok) return r.blob();
-            throw new Error('Save failed');
-        })
-        .then(function(blob) {
-            var url = window.URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = '{{ pi.pi_number }}.pdf';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            window.URL.revokeObjectURL(url);
-            status.innerHTML = '<span class="text-success"><i class="bi bi-check-circle"></i> Saved & PDF downloaded!</span>';
-        })
-        .catch(function(err) {
-            status.innerHTML = '<span class="text-danger">' + err.message + '</span>';
-        })
-        .finally(function() {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-save"></i> Save & Regenerate PDF';
-        });
-});
+function setExportBusy(busy, message, error) {
+    document.getElementById('previewButton').disabled = busy;
+    document.getElementById('downloadButton').disabled = busy;
+    const status = document.getElementById('exportStatus');
+    status.className = 'small mt-3 ' + (error ? 'text-danger' : (busy ? 'text-primary' : 'text-success'));
+    status.textContent = message || '';
+}
+
+async function exportDocument(mode) {
+    const form = document.getElementById('exportForm');
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    data.set('mode', mode);
+    setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false);
+    try {
+        const response = await fetch(window.location.href, {method: 'POST', body: data});
+        if (!response.ok) {
+            let message = '导出失败。';
+            try { message = (await response.json()).error || message; } catch (_error) {}
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        if (mode === 'preview') {
+            const previewWindow = window.open(url, '_blank', 'noopener');
+            if (!previewWindow) throw new Error('浏览器阻止了预览窗口，请允许弹出窗口后重试。');
+            setTimeout(function() { URL.revokeObjectURL(url); }, 300000);
+            setExportBusy(false, '预览已在新窗口打开；原始 PI 未被修改。', false);
+        } else {
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = responseFilename(response, '{{ pi.pi_number }}.' + document.getElementById('output_format').value);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+            setExportBusy(false, '文件已导出；原始 PI 未被修改。', false);
+        }
+    } catch (error) {
+        setExportBusy(false, error.message || '导出失败。', true);
+    }
+}
+
+recalculateExport();
 </script>
 {% endblock %}

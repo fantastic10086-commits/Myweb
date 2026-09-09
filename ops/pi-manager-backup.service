@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up PI Manager data
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/pi-manager/current/ops/backup.sh

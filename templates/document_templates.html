@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}单据模板{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-8">
+        <h2><i class="bi bi-file-earmark-text me-2"></i>单据模板</h2>
+        <p class="text-muted mb-0">统一查看 PI 和装箱单模板；PI Excel 母版可在此维护，装箱单在导出时选择版式。</p>
+    </div>
+</div>
+
+<div class="alert alert-warning">
+    <i class="bi bi-shield-lock me-1"></i>
+    PI 模板可能包含公司抬头、银行信息和金额字段，所有 PI 模板变更均需验证当前管理员密码并写入操作审计。
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><strong><i class="bi bi-receipt me-1"></i>PI 模板</strong></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>模板名称</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                        <th>创建信息</th>
+                        <th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for template in templates %}
+                    <tr>
+                        <td>
+                            <strong>{{ template.name }}</strong>
+                            {% if template.is_default %}<span class="badge bg-primary ms-1">默认</span>{% endif %}
+                            {% if template.notes %}<div class="small text-muted mt-1">{{ template.notes }}</div>{% endif %}
+                        </td>
+                        <td>
+                            {% if template.code == 'system-default' %}
+                            <span class="badge bg-secondary">系统默认 Excel</span>
+                            {% else %}
+                            <span class="badge bg-success">Excel 模板</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if template.active %}<span class="text-success"><i class="bi bi-check-circle-fill"></i> 已启用</span>
+                            {% else %}<span class="text-muted"><i class="bi bi-pause-circle"></i> 已停用</span>{% endif %}
+                        </td>
+                        <td class="small text-muted">
+                            {{ template.created_by or 'system' }}<br>
+                            {{ template.created_at.strftime('%Y-%m-%d %H:%M') if template.created_at else '' }}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            {% if template.template_type == 'xlsx' %}
+                            <a class="btn btn-sm btn-outline-success" href="{{ url_for('document_template_source', id=template.id) }}">
+                                <i class="bi bi-download"></i> 源文件
+                            </a>
+                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#editTemplate{{ template.id }}">
+                                <i class="bi bi-pencil-square"></i> 编辑
+                            </button>
+                            {% endif %}
+                            {% if not template.is_default %}
+                            <form method="post" action="{{ url_for('document_template_default', id=template.id) }}" class="d-inline template-action-form" data-action="设为默认模板">
+                                <input type="hidden" name="current_password">
+                                <button class="btn btn-sm btn-outline-primary" type="submit">设为默认</button>
+                            </form>
+                            {% endif %}
+                            {% if template.code != 'system-default' %}
+                            <form method="post" action="{{ url_for('document_template_toggle', id=template.id) }}" class="d-inline template-action-form" data-action="{% if template.active %}停用模板{% else %}启用模板{% endif %}">
+                                <input type="hidden" name="current_password">
+                                <button class="btn btn-sm btn-outline-secondary" type="submit">{% if template.active %}停用{% else %}启用{% endif %}</button>
+                            </form>
+                            <form method="post" action="{{ url_for('document_template_delete', id=template.id) }}" class="d-inline template-delete-form" data-template-name="{{ template.name }}">
+                                <input type="hidden" name="current_password">
+                                <input type="hidden" name="confirm_value">
+                                <button class="btn btn-sm btn-outline-danger" type="submit">删除</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4" id="packingDocumentTemplates">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong><i class="bi bi-box-seam me-1"></i>装箱单模板</strong>
+        <span class="small text-muted">系统内置，在装箱单页面选择 Excel 或 PDF</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>模板名称</th>
+                        <th>导出格式</th>
+                        <th>页面尺寸</th>
+                        <th>状态</th>
+                        <th>说明</th>
+                        <th class="text-end">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>标准完整装箱单</strong><span class="badge bg-secondary ms-1">系统内置</span></td>
+                        <td><span class="badge bg-success">Excel</span> <span class="badge bg-danger">PDF</span></td>
+                        <td>A4</td>
+                        <td><span class="text-success"><i class="bi bi-check-circle-fill"></i> 已启用</span></td>
+                        <td class="small text-muted">完整字段版式，适合归档和常规打印。</td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('packing_list_index') }}"><i class="bi bi-box-arrow-up-right"></i> 前往装箱单</a></td>
+                    </tr>
+                    <tr>
+                        <td><strong>精简 100×150 装箱单</strong><span class="badge bg-secondary ms-1">系统内置</span></td>
+                        <td><span class="badge bg-success">Excel</span> <span class="badge bg-danger">PDF</span></td>
+                        <td>100×150 mm</td>
+                        <td><span class="text-success"><i class="bi bi-check-circle-fill"></i> 已启用</span></td>
+                        <td class="small text-muted">每箱一页，白底黑字，显示 PI、业务员、箱内产品和尺寸重量。</td>
+                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('packing_list_index') }}"><i class="bi bi-box-arrow-up-right"></i> 前往装箱单</a></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% for template in templates if template.template_type == 'xlsx' %}
+<div class="modal fade" id="editTemplate{{ template.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{{ url_for('document_template_edit', id=template.id) }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑模板：{{ template.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% if template.code == 'system-default' %}
+                    <div class="alert alert-info small">
+                        这是系统默认母版。可先下载源文件修改，再在这里替换；该模板会始终保持启用且不能删除。
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="form-label">模板名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" maxlength="200" value="{{ template.name }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">替换 Excel 源文件（可选）</label>
+                        <input type="file" class="form-control" name="template_file" accept=".xlsx">
+                        <div class="form-text">不选择文件时只修改名称和说明；替换后，Excel 与 PDF 都会使用新母版。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">说明</label>
+                        <textarea class="form-control" name="notes" rows="2" maxlength="1000">{{ template.notes or '' }}</textarea>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">当前管理员密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> 保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<div class="row g-4">
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-cloud-upload me-1"></i>上传新 PI 模板</strong>
+                <a href="{{ url_for('document_template_example') }}" class="btn btn-sm btn-outline-success">
+                    <i class="bi bi-download"></i> 下载示例模板
+                </a>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('document_template_add') }}" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label">模板名称 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" maxlength="200" required placeholder="例如：KLISTA 标准 PI">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Excel 模板文件 <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" name="template_file" accept=".xlsx" required>
+                        <div class="form-text">仅接受 .xlsx；不会执行宏和外部脚本。</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">说明</label>
+                        <textarea class="form-control" name="notes" rows="2" maxlength="1000" placeholder="适用客户、品牌或场景"></textarea>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" value="1" name="is_default" id="newTemplateDefault">
+                        <label class="form-check-label" for="newTemplateDefault">上传后设为默认模板</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">当前管理员密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> 验证并添加模板</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header"><strong><i class="bi bi-braces me-1"></i>模板占位符说明</strong></div>
+            <div class="card-body">
+                <p class="small text-muted">
+                    在 Excel 单元格中填写下列占位符。模板必须包含 <code>{{ '{{pi_number}}' }}</code>，并至少包含一行
+                    <code>{{ '{{item.name}}' }}</code> 等产品明细占位符；系统会按产品数量复制这一整行并保留格式。
+                </p>
+                <div class="accordion" id="placeholderHelp">
+                    {% for group_name, placeholders in placeholder_groups.items() %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button {% if not loop.first %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#placeholder{{ loop.index }}">
+                                {{ group_name }}
+                            </button>
+                        </h2>
+                        <div id="placeholder{{ loop.index }}" class="accordion-collapse collapse {% if loop.first %}show{% endif %}" data-bs-parent="#placeholderHelp">
+                            <div class="accordion-body py-2">
+                                <div class="row g-2">
+                                    {% for key, label in placeholders %}
+                                    <div class="col-md-6"><code>{{ '{{' }}{{ key }}{{ '}}' }}</code><span class="small text-muted ms-1">{{ label }}</span></div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="alert alert-light border small mt-3 mb-0">
+                    金额、数量、单价等占位符如果独占一个单元格，会写成可计算的数值；与其他文字混排时会写成文本。
+                    产品图片请使用独占单元格的 <code>{{ '{{item.image}}' }}</code>。
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="templatePasswordModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">验证管理员身份</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p id="templateActionText" class="mb-3"></p>
+            <label class="form-label" for="templateActionPassword">当前管理员密码</label>
+            <input type="password" class="form-control" id="templateActionPassword" autocomplete="current-password">
+            <div class="text-danger small mt-2 d-none" id="templatePasswordError">请输入当前管理员密码。</div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-primary" id="templateActionConfirm">确认</button></div>
+    </div></div>
+</div>
+
+<script>
+let pendingTemplateForm = null;
+function requestTemplatePassword(form, actionText) {
+    pendingTemplateForm = form;
+    document.getElementById('templateActionText').textContent = '即将执行：' + actionText + '。';
+    document.getElementById('templateActionPassword').value = '';
+    document.getElementById('templatePasswordError').classList.add('d-none');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('templatePasswordModal')).show();
+    document.getElementById('templatePasswordModal').addEventListener('shown.bs.modal', function focusPassword() {
+        document.getElementById('templateActionPassword').focus();
+    }, {once: true});
+}
+document.querySelectorAll('.template-action-form').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+        event.preventDefault();
+        requestTemplatePassword(form, form.dataset.action);
+    });
+});
+document.querySelectorAll('.template-delete-form').forEach(function(form) {
+    form.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const name = form.dataset.templateName;
+        const typed = prompt('请输入模板名称以确认删除：\n\n' + name);
+        if (typed !== name) return;
+        form.querySelector('[name="confirm_value"]').value = typed;
+        requestTemplatePassword(form, '删除模板“' + name + '”');
+    });
+});
+document.getElementById('templateActionConfirm').addEventListener('click', function() {
+    const password = document.getElementById('templateActionPassword').value;
+    if (!password || !pendingTemplateForm) {
+        document.getElementById('templatePasswordError').classList.remove('d-none');
+        return;
+    }
+    pendingTemplateForm.querySelector('[name="current_password"]').value = password;
+    pendingTemplateForm.submit();
+});
+</script>
+{% endblock %}

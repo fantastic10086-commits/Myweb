@@ -1,0 +1,47 @@
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <form method="get" action="{{ url_for(filter_endpoint) }}" class="row g-2 align-items-end">
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">业务员</label>
+                <select class="form-select form-select-sm" name="salesperson">
+                    <option value="">— 全部 —</option>
+                    {% for salesperson in all_salespersons %}
+                    <option value="{{ salesperson.name }}" {% if salesperson_filter == salesperson.name %}selected{% endif %}>{{ salesperson.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">开始日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1">结束日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+            </div>
+            <div class="col-md-3 col-xl-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100" title="应用筛选">
+                    <i class="bi bi-funnel"></i><span class="visually-hidden">应用筛选</span>
+                </button>
+            </div>
+            <div class="col-md-6 col-xl-auto">
+                <div class="btn-group btn-group-sm" role="group" aria-label="快捷日期筛选">
+                    <button type="submit" name="preset" value="this_month" class="btn btn-outline-secondary {% if preset == 'this_month' %}active{% endif %}">本月</button>
+                    <button type="submit" name="preset" value="last_month" class="btn btn-outline-secondary {% if preset == 'last_month' %}active{% endif %}">上月</button>
+                    <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
+                </div>
+            </div>
+            {% if salesperson_filter or date_from or date_to or preset %}
+            <div class="col-md-3 col-xl-auto">
+                <a href="{{ url_for(filter_endpoint) }}" class="btn btn-sm btn-outline-danger">清除</a>
+            </div>
+            {% endif %}
+        </form>
+        {% if salesperson_filter or date_from or date_to or preset %}
+        <div class="border-top mt-2 pt-2 small text-muted">
+            当前结果：<strong>{{ filtered_count }}</strong> 份 PI
+            {% if salesperson_filter %} · 业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
+            {% if date_from or date_to %} · 开单日期：<strong>{{ date_from or '不限' }}</strong> 至 <strong>{{ date_to or '不限' }}</strong>{% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>

@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}{% if editing %}Edit{% else %}Add{% endif %} Salesperson{% endblock %}
+{% block title %}{% if editing %}编辑{% else %}新增{% endif %}业务员{% endblock %}
 
 {% block content %}
 <div class="row mb-3">
     <div class="col">
         <h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>
-            {% if editing %}Edit Salesperson{% else %}Add New Salesperson{% endif %}
+            {% if editing %}编辑业务员{% else %}新增业务员{% endif %}
         </h2>
         <a href="{{ url_for('salesperson_list') }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> Back
+            <i class="bi bi-arrow-left"></i> 返回
         </a>
     </div>
 </div>
@@ -18,37 +18,37 @@
         <form method="post">
             <div class="row g-3">
                 <div class="col-md-6">
-                    <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
+                    <label for="name" class="form-label">姓名 <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="name" name="name" required
-                           value="{{ sp.name if sp else '' }}" placeholder="Salesperson name">
+                           value="{{ sp.name if sp else '' }}" placeholder="业务员姓名">
                 </div>
                 <div class="col-md-6">
-                    <label for="phone" class="form-label">Phone</label>
+                    <label for="phone" class="form-label">电话</label>
                     <input type="text" class="form-control" id="phone" name="phone"
                            value="{{ sp.phone if sp else '' }}" placeholder="+86 138xxxx">
                 </div>
                 <div class="col-md-6">
-                    <label for="email" class="form-label">Email</label>
+                    <label for="email" class="form-label">邮箱</label>
                     <input type="email" class="form-control" id="email" name="email"
                            value="{{ sp.email if sp else '' }}" placeholder="email@example.com">
                 </div>
                 <div class="col-md-6">
-                    <label for="dingtalk_user_id" class="form-label">DingTalk User ID</label>
+                    <label for="dingtalk_user_id" class="form-label">钉钉用户 ID</label>
                     <input type="text" class="form-control" id="dingtalk_user_id" name="dingtalk_user_id"
-                           value="{{ sp.dingtalk_user_id if sp else '' }}" placeholder="DingTalk user ID for task assignment">
-                    <small class="text-muted">Find in DingTalk Admin → Members → User ID. Needed for auto task creation.</small>
+                           value="{{ sp.dingtalk_user_id if sp else '' }}" placeholder="用于分配待办的钉钉用户 ID">
+                    <small class="text-muted">可在钉钉管理后台的成员资料中查找，用于自动创建待办。</small>
                 </div>
                 <div class="col-md-6">
-                    <label for="notes" class="form-label">Notes</label>
+                    <label for="notes" class="form-label">备注</label>
                     <input type="text" class="form-control" id="notes" name="notes"
-                           value="{{ sp.notes if sp else '' }}" placeholder="Optional notes">
+                           value="{{ sp.notes if sp else '' }}" placeholder="选填备注">
                 </div>
             </div>
             <div class="mt-4">
                 <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Save{% endif %}
+                    <i class="bi bi-check-lg"></i> {% if editing %}更新{% else %}保存{% endif %}
                 </button>
-                <a href="{{ url_for('salesperson_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+                <a href="{{ url_for('salesperson_list') }}" class="btn btn-outline-secondary ms-2">取消</a>
             </div>
         </form>
     </div>

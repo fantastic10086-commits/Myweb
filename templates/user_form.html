@@ -1,34 +1,40 @@
 {% extends "base.html" %}
-{% block title %}{% if editing %}Edit{% else %}Add{% endif %} User{% endblock %}
+{% block title %}{% if editing %}编辑{% else %}新增{% endif %}用户{% endblock %}
 
 {% block content %}
 <div class="row mb-3">
-    <div class="col"><h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>{% if editing %}Edit User{% else %}Add New User{% endif %}</h2>
-        <a href="{{ url_for('user_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back</a></div>
+    <div class="col"><h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>{% if editing %}编辑用户{% else %}新增用户{% endif %}</h2>
+        <a href="{{ url_for('user_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回</a></div>
 </div>
 
 <div class="card"><div class="card-body">
     <form method="post">
         <div class="row g-3">
             <div class="col-md-6">
-                <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                <input type="text" class="form-control" id="username" name="username" required value="{{ u.username if u else '' }}" placeholder="Login username">
+                <label for="account" class="form-label">账号 <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="account" name="account" required maxlength="64" value="{{ u.account if u else '' }}" placeholder="用于登录，例如工号或英文账号" autocomplete="off">
+                <div class="form-text">账号必须唯一，用于登录；不建议使用姓名。</div>
             </div>
             <div class="col-md-6">
-                <label for="password" class="form-label">Password {% if not editing %}<span class="text-danger">*</span>{% endif %}{% if editing and pw_hint %} <small class="text-muted">({{ pw_hint }})</small>{% endif %}</label>
-                <input type="password" class="form-control" id="password" name="password" value="" {% if not editing %}required{% endif %} autocomplete="new-password" placeholder="{% if editing %}Leave blank to keep current password{% else %}Set password{% endif %}">
+                <label for="username" class="form-label">用户名 <span class="text-danger">*</span></label>
+                <input type="text" class="form-control" id="username" name="username" required value="{{ u.username if u else '' }}" placeholder="人员显示名称">
+                <div class="form-text">用于系统内显示，登录页会根据账号自动填入。</div>
             </div>
             <div class="col-md-6">
-                <label for="role" class="form-label">Role</label>
+                <label for="password" class="form-label">密码 {% if not editing %}<span class="text-danger">*</span>{% endif %}{% if editing and pw_hint %} <small class="text-muted">({{ pw_hint }})</small>{% endif %}</label>
+                <input type="password" class="form-control" id="password" name="password" value="" minlength="10" {% if not editing %}required{% endif %} autocomplete="new-password" placeholder="{% if editing %}留空则保持当前密码{% else %}设置登录密码{% endif %}">
+            </div>
+            <div class="col-md-6">
+                <label for="role" class="form-label">角色</label>
                 <select class="form-select" id="role" name="role" onchange="document.getElementById('sp_group').style.display=this.value==='salesperson'?'':'none'">
-                    <option value="admin" {% if u and u.role == 'admin' %}selected{% endif %}>Admin</option>
-                    <option value="salesperson" {% if u and u.role == 'salesperson' %}selected{% endif %}>Salesperson</option>
+                    <option value="admin" {% if u and u.role == 'admin' %}selected{% endif %}>管理员</option>
+                    <option value="salesperson" {% if u and u.role == 'salesperson' %}selected{% endif %}>业务员</option>
                 </select>
             </div>
             <div class="col-md-6" id="sp_group" style="{% if u and u.role != 'salesperson' %}display:none{% endif %}">
-                <label for="salesperson_name" class="form-label">Linked Salesperson</label>
+                <label for="salesperson_name" class="form-label">关联业务员</label>
                 <select class="form-select" id="salesperson_name" name="salesperson_name">
-                    <option value="">— Select —</option>
+                    <option value="">— 请选择 —</option>
                     {% for sp in all_salespersons %}
                     <option value="{{ sp.name }}" {% if u and u.salesperson_name == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                     {% endfor %}
@@ -36,8 +42,8 @@
             </div>
         </div>
         <div class="mt-4">
-            <button type="button" class="btn btn-primary" onclick="var f=document.querySelector('form'); if(f)f.submit();"><i class="bi bi-check-lg"></i> {% if editing %}Update{% else %}Create{% endif %} User</button>
-            <a href="{{ url_for('user_list') }}" class="btn btn-outline-secondary ms-2">Cancel</a>
+            <button type="button" class="btn btn-primary" onclick="var f=document.querySelector('form'); if(f)f.submit();"><i class="bi bi-check-lg"></i> {% if editing %}更新用户{% else %}创建用户{% endif %}</button>
+            <a href="{{ url_for('user_list') }}" class="btn btn-outline-secondary ms-2">取消</a>
         </div>
     </form>
 </div></div>

@@ -1,23 +1,46 @@
 {% extends "base.html" %}
-{% block title %}Create PI{% endblock %}
+{% block title %}新建 PI{% endblock %}
 
 {% block extra_scripts %}
-<div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS: waiting...</div>
+<div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS：等待中……</div>
 <script>
-document.getElementById('js_status').textContent='JS: RUNNING ✓';
+document.getElementById('js_status').textContent='脚本运行正常 ✓';
 document.getElementById('js_status').style.background='#e0ffe0';
 document.getElementById('js_status').style.borderColor='green';
 var selectedProducts = {};
-    var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
+var selectedProductOrder = [];
+var pickerSelections = {};
+var pickerSelectionOrder = [];
+var pickerItems = {};
+var pickerPage = 1;
+var pickerPages = 1;
+var pickerPageSize = 40;
+var pickerLoading = false;
+var adjustmentUsd = 0;
+    var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
-    function getSymbol() {
+    function getCurrency() {
         var cs = document.getElementById('currency_select');
-        return cs && cs.value === 'RMB' ? '¥' : '$';
+        return cs && cs.value === 'RMB' ? 'RMB' : 'USD';
+    }
+    function getBusinessRate() {
+        var el = document.getElementById('exchange_rate');
+        var rate = parseFloat(el ? el.value : '');
+        return isFinite(rate) && rate > 0 ? rate : 7;
+    }
+    function fromUsd(value) {
+        return getCurrency() === 'RMB' ? value * getBusinessRate() : value;
+    }
+    function toUsd(value) {
+        return getCurrency() === 'RMB' ? value / getBusinessRate() : value;
+    }
+    function getSymbol() {
+        return getCurrency() === 'RMB' ? '¥' : '$';
     }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
         var total = 0, sym = getSymbol();
-        var keys = Object.keys(selectedProducts);
+        var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) {
             var p = selectedProducts[keys[i]];
             total += (p.price || 0) * (p.qty || 0);
@@ -34,22 +57,43 @@ var selectedProducts = {};
     }
 
     function showHideEmpty() {
-        if (Object.keys(selectedProducts).length === 0) {
+        if (selectedProductOrder.length === 0) {
             noProductMsg.style.display = '';
         } else {
             noProductMsg.style.display = 'none';
         }
     }
 
-    function imgTag(img) { return img ? '<img src="/uploads/' + img + '" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">' : ''; }
+    function imgTag(img, size) {
+        if (!img) return '';
+        size = size || 36;
+        return '<img src="/uploads/thumb/' + encodeURIComponent(String(img)) + '" alt="" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:4px;">';
+    }
+    function normalizeProduct(p) {
+        var currentPrice = Number(p.price) || 0;
+        var usdPrice = Number(p.priceUsd != null ? p.priceUsd : p.price_usd);
+        if (!isFinite(usdPrice)) usdPrice = toUsd(currentPrice);
+        return {
+            id: Number(p.id),
+            name: String(p.name || ''),
+            chinese_name: String(p.chinese_name || ''),
+            code: String(p.code || p.product_code || ''),
+            spec: String(p.spec || ''),
+            priceUsd: usdPrice,
+            price: fromUsd(usdPrice),
+            qty: Math.max(1, Number(p.qty) || 1),
+            img: String(p.img || '')
+        };
+    }
     function makeRow(p) {
+        p = normalizeProduct(p);
         var tr = document.createElement('tr');
         tr.id = 'product_row_' + p.id;
         var sym = getSymbol();
         tr.innerHTML =
             '<td class="row-num"></td>' +
-            '<td>' + imgTag(p.img) + '<strong>' + p.name + '</strong>' + (p.spec ? '<br><small class="text-muted">' + p.spec + '</small>' : '') + '</td>' +
-            '<td>' + p.code + '</td>' +
+            '<td><span class="d-inline-flex align-items-center gap-2">' + imgTag(p.img) + '<span><strong>' + escHtml(p.name) + '</strong>' + (p.spec ? '<br><small class="text-muted">' + escHtml(p.spec) + '</small>' : '') + '</span></span></td>' +
+            '<td>' + escHtml(p.code) + '</td>' +
             '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="width:90px;"></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
             '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
@@ -70,6 +114,7 @@ var selectedProducts = {};
             var price = parseFloat(this.value) || 0;
             var qty = parseInt(tr.querySelector('.sel-qty').value) || 1;
             selectedProducts[p.id].price = price;
+            selectedProducts[p.id].priceUsd = toUsd(price);
             tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
             tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2);
             updateTotal();
@@ -77,6 +122,7 @@ var selectedProducts = {};
         // Remove button
         tr.querySelector('button').addEventListener('click', function() {
             delete selectedProducts[p.id];
+            selectedProductOrder = selectedProductOrder.filter(function(id) { return id !== p.id; });
             tr.remove();
             renumberRows();
             showHideEmpty();
@@ -90,55 +136,199 @@ var selectedProducts = {};
         for (var i = 0; i < rows.length; i++) {
             rows[i].querySelector('.row-num').textContent = i + 1;
         }
+        var orderInput = document.getElementById('product_order');
+        if (orderInput) orderInput.value = selectedProductOrder.join(',');
     }
 
     function addProductObj(p) {
+        p = normalizeProduct(p);
         if (selectedProducts[p.id]) return;
-        selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: 1, img: p.img||''};
-        selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', price: p.price, qty: 1, img: p.img||''}));
+        selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
+        selectedProductOrder.push(p.id);
+        selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
         renumberRows(); showHideEmpty(); updateTotal();
-        productSearch.value = ''; productDropdown.classList.remove('show'); productSearch.focus();
     }
 
-    function renderDropdown(filter) {
-        filter = (filter || '').trim();
-        if (!filter) { productDropdown.classList.remove('show'); return; }
-        productDropdown.innerHTML = '<span class="dropdown-item text-muted">Searching...</span>';
-        productDropdown.classList.add('show');
-        fetch('/api/products/search?q=' + encodeURIComponent(filter))
-        .then(function(r){return r.json();})
-        .then(function(data){
-            var html = '';
-            for (var i = 0; i < data.length; i++) {
-                var p = data[i];
-                if (selectedProducts[p.id]) continue;
-                html += '<button type="button" class="dropdown-item" data-p=\'' + JSON.stringify(p).replace(/'/g,'&#39;') + '\'>' + imgTag(p.img) + '<strong>' + p.name + '</strong>  <small class="text-muted">' + p.code + '</small>  <span class="float-end">$' + p.price.toFixed(2) + '</span></button>';
-            }
-            if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
-            productDropdown.innerHTML = html;
-        });
+    function repriceForCurrency() {
+        var keys = selectedProductOrder;
+        for (var i = 0; i < keys.length; i++) {
+            var p = selectedProducts[keys[i]];
+            p.price = fromUsd(Number(p.priceUsd) || 0);
+            var row = document.getElementById('product_row_' + keys[i]);
+            if (!row) continue;
+            row.querySelector('.sel-price').value = p.price.toFixed(2);
+            row.querySelector('input[name="unit_price_' + keys[i] + '"]').value = p.price.toFixed(2);
+            row.querySelector('.sel-amt').textContent = getSymbol() + (p.price * p.qty).toFixed(2);
+        }
+        var shippingEl = document.getElementById('shipping_cost');
+        if (shippingEl) shippingEl.value = fromUsd(adjustmentUsd).toFixed(2);
+        updateTotal();
+    }
+
+    function applyCurrency() {
+        var currency = getCurrency();
+        document.getElementById('currency_hidden').value = currency;
+        document.getElementById('total_label').textContent = '订单总金额 (' + currency + ')';
+        document.getElementById('shipping_sym').textContent = currency === 'RMB' ? '¥' : '$';
+        repriceForCurrency();
+    }
+
+    function updatePickerSelectionState() {
+        var count = pickerSelectionOrder.length;
+        var countEl = document.getElementById('picker_selected_count');
+        var addBtn = document.getElementById('picker_add_selected');
+        if (countEl) countEl.textContent = '已选 ' + count + ' 项';
+        if (addBtn) {
+            addBtn.disabled = count === 0;
+            addBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>加入已选产品' + (count ? '（' + count + '）' : '');
+        }
+        var selectAll = document.getElementById('picker_select_page');
+        var body = document.getElementById('product_picker_body');
+        if (selectAll && body) {
+            var available = body.querySelectorAll('.picker-check:not(:disabled)');
+            var checkedAvailable = body.querySelectorAll('.picker-check:not(:disabled):checked');
+            selectAll.disabled = available.length === 0;
+            selectAll.checked = available.length > 0 && available.length === checkedAvailable.length;
+            selectAll.indeterminate = checkedAvailable.length > 0 && checkedAvailable.length < available.length;
+        }
+    }
+
+    function renderPickerRows(items, total) {
+        var body = document.getElementById('product_picker_body');
+        var empty = document.getElementById('product_picker_empty');
+        var totalEl = document.getElementById('picker_total_count');
+        var selectAll = document.getElementById('picker_select_page');
+        pickerItems = {};
+        body.innerHTML = '';
+        totalEl.textContent = '共 ' + total + ' 个产品';
+        empty.classList.toggle('d-none', items.length !== 0);
+        for (var i = 0; i < items.length; i++) {
+            var p = normalizeProduct(items[i]);
+            pickerItems[p.id] = p;
+            var alreadyAdded = !!selectedProducts[p.id];
+            var checked = !!pickerSelections[p.id];
+            var tr = document.createElement('tr');
+            tr.dataset.productId = String(p.id);
+            tr.className = alreadyAdded ? 'table-light text-muted' : '';
+            tr.innerHTML =
+                '<td class="text-center"><input type="checkbox" class="form-check-input picker-check" aria-label="选择产品"' + (checked ? ' checked' : '') + (alreadyAdded ? ' disabled' : '') + '></td>' +
+                '<td>' + (p.img ? imgTag(p.img, 52) : '<span class="d-inline-flex align-items-center justify-content-center bg-light text-muted rounded" style="width:52px;height:52px;"><i class="bi bi-box"></i></span>') + '</td>' +
+                '<td><div class="fw-semibold">' + escHtml(p.name) + '</div>' + (p.chinese_name ? '<small class="text-muted">' + escHtml(p.chinese_name) + '</small>' : '') + '</td>' +
+                '<td><span class="font-monospace">' + escHtml(p.code || '—') + '</span></td>' +
+                '<td class="text-muted">' + escHtml(p.spec || '—') + '</td>' +
+                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(2) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(2) + '</small>' : '') + '</td>' +
+                '<td class="text-center">' + (alreadyAdded ? '<span class="badge bg-secondary">已加入</span>' : '') + '</td>';
+            body.appendChild(tr);
+        }
+        var available = body.querySelectorAll('.picker-check:not(:disabled)');
+        var checkedAvailable = body.querySelectorAll('.picker-check:not(:disabled):checked');
+        selectAll.disabled = available.length === 0;
+        selectAll.checked = available.length > 0 && available.length === checkedAvailable.length;
+        selectAll.indeterminate = checkedAvailable.length > 0 && checkedAvailable.length < available.length;
+        document.getElementById('picker_page_info').textContent = '第 ' + pickerPage + ' / ' + pickerPages + ' 页';
+        document.getElementById('picker_prev').disabled = pickerPage <= 1;
+        document.getElementById('picker_next').disabled = pickerPage >= pickerPages;
+        updatePickerSelectionState();
+    }
+
+    function loadPickerProducts(page) {
+        if (pickerLoading) return;
+        pickerLoading = true;
+        pickerPage = page || 1;
+        var body = document.getElementById('product_picker_body');
+        var error = document.getElementById('product_picker_error');
+        var query = document.getElementById('picker_search').value.trim();
+        error.classList.add('d-none');
+        body.innerHTML = '<tr><td colspan="7" class="text-center py-5"><span class="spinner-border text-primary" role="status"></span><div class="mt-2 text-muted">正在加载产品……</div></td></tr>';
+        fetch('/api/products/search?picker=1&page=' + pickerPage + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
+            headers: {'Accept': 'application/json'}
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('加载产品失败');
+            return response.json();
+        })
+        .then(function(data) {
+            pickerPage = data.page || 1;
+            pickerPages = data.pages || 1;
+            renderPickerRows(data.items || [], data.total || 0);
+        })
+        .catch(function(err) {
+            body.innerHTML = '';
+            error.textContent = err.message || '加载产品失败，请稍后重试。';
+            error.classList.remove('d-none');
+        })
+        .finally(function() { pickerLoading = false; });
+    }
+
+    function openProductPicker() {
+        pickerSelections = {};
+        pickerSelectionOrder = [];
+        document.getElementById('picker_search').value = productSearch.value.trim();
+        updatePickerSelectionState();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('productPickerModal')).show();
+        loadPickerProducts(1);
     }
 
     document.addEventListener('DOMContentLoaded', function() {
         productSearch = document.getElementById('product_search');
-        productDropdown = document.getElementById('product_dropdown');
         selectedTableBody = document.querySelector('#selected_products_table tbody');
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
 
-        productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
-        productSearch.addEventListener('input', function() { renderDropdown(this.value); });
-        productSearch.addEventListener('blur', function() { setTimeout(function() { productDropdown.classList.remove('show'); }, 200); });
-        productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); renderDropdown(this.value); } });
-        productDropdown.addEventListener('mousedown', function(e) {
-            var item = e.target.closest('.dropdown-item');
-            if (item && item.dataset.p) {
-                try { addProductObj(JSON.parse(item.dataset.p)); } catch(ex) {}
-            }
+        productSearch.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); openProductPicker(); }
         });
-        document.getElementById('add_product_btn').addEventListener('click', function() {
-            renderDropdown(productSearch.value);
+        document.getElementById('add_product_btn').addEventListener('click', openProductPicker);
+
+        document.getElementById('picker_search_btn').addEventListener('click', function() { loadPickerProducts(1); });
+        document.getElementById('picker_search').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); loadPickerProducts(1); }
+        });
+        document.getElementById('picker_prev').addEventListener('click', function() { if (pickerPage > 1) loadPickerProducts(pickerPage - 1); });
+        document.getElementById('picker_next').addEventListener('click', function() { if (pickerPage < pickerPages) loadPickerProducts(pickerPage + 1); });
+        document.getElementById('product_picker_body').addEventListener('change', function(e) {
+            if (!e.target.classList.contains('picker-check')) return;
+            var row = e.target.closest('tr');
+            var id = Number(row.dataset.productId);
+            if (e.target.checked) {
+                if (!pickerSelections[id]) pickerSelectionOrder.push(id);
+                pickerSelections[id] = pickerItems[id];
+            } else {
+                delete pickerSelections[id];
+                pickerSelectionOrder = pickerSelectionOrder.filter(function(selectedId) { return selectedId !== id; });
+            }
+            updatePickerSelectionState();
+        });
+        document.getElementById('picker_select_page').addEventListener('change', function() {
+            var checked = this.checked;
+            var boxes = document.querySelectorAll('#product_picker_body .picker-check:not(:disabled)');
+            for (var i = 0; i < boxes.length; i++) {
+                boxes[i].checked = checked;
+                var id = Number(boxes[i].closest('tr').dataset.productId);
+                if (checked) {
+                    if (!pickerSelections[id]) pickerSelectionOrder.push(id);
+                    pickerSelections[id] = pickerItems[id];
+                } else {
+                    delete pickerSelections[id];
+                    pickerSelectionOrder = pickerSelectionOrder.filter(function(selectedId) { return selectedId !== id; });
+                }
+            }
+            updatePickerSelectionState();
+        });
+        document.getElementById('picker_add_selected').addEventListener('click', function() {
+            var ids = pickerSelectionOrder.slice();
+            for (var i = 0; i < ids.length; i++) addProductObj(pickerSelections[ids[i]]);
+            productSearch.value = '';
+            pickerSelections = {};
+            pickerSelectionOrder = [];
+            updatePickerSelectionState();
+            bootstrap.Modal.getInstance(document.getElementById('productPickerModal')).hide();
+            var status = document.getElementById('submit_status');
+            if (status && ids.length) status.textContent = '已加入 ' + ids.length + ' 个产品，可以继续填写 PI。';
+        });
+        document.getElementById('productPickerModal').addEventListener('shown.bs.modal', function() {
+            document.getElementById('picker_search').focus();
         });
 
         window.onAccountChange = function() {
@@ -154,9 +344,7 @@ var selectedProducts = {};
                 curSel.value = currency;
                 curSel.disabled = true;
                 curSel.style.background = '#e9ecef';
-                document.getElementById('currency_hidden').value = currency;
-                document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + currency + ')';
-                document.getElementById('shipping_sym').textContent = currency === 'RMB' ? '¥' : '$';
+                applyCurrency();
             } else {
                 var curSel = document.getElementById('currency_select');
                 curSel.disabled = false;
@@ -165,33 +353,30 @@ var selectedProducts = {};
         };
 
         var curSel = document.getElementById('currency_select');
-        curSel.addEventListener('change', function() {
-            var sym = getSymbol();
-            document.getElementById('currency_hidden').value = this.value;
-            document.getElementById('total_label').textContent = 'TOTAL AMOUNT (' + this.value + ')';
-            document.getElementById('shipping_sym').textContent = this.value === 'RMB' ? '¥' : '$';
+        curSel.addEventListener('change', applyCurrency);
+        document.getElementById('exchange_rate').addEventListener('change', function() {
+            if (!(parseFloat(this.value) > 0)) this.value = '7.0000';
+            if (getCurrency() === 'RMB') repriceForCurrency();
+        });
+        document.getElementById('shipping_cost').addEventListener('input', function() {
+            adjustmentUsd = toUsd(parseFloat(this.value) || 0);
             updateTotal();
-            // Redraw all rows with correct symbol
-            var rows = selectedTableBody.querySelectorAll('tr');
-            rows.forEach(function(row) {
-                var amt = row.querySelector('.sel-amt');
-                if (amt) amt.textContent = sym + amt.textContent.replace(/^[¥\$]/, '');
-            });
         });
 
         var form = document.getElementById('pi-form');
         if (form) {
             form.addEventListener('submit', function(e) {
                 var st = document.getElementById('submit_status');
-                if (st) { st.style.display='block'; st.textContent='Submit handler FIRED'; st.style.background='#cce5ff'; }
+                if (st) { st.style.display='block'; st.textContent='正在检查并提交……'; st.style.background='#cce5ff'; }
                 var cust = document.getElementById('customer_id');
                 var sp = document.getElementById('pi_salesperson');
-                var np = Object.keys(selectedProducts).length;
-                if (st) st.textContent += ' | cust=' + (cust?cust.value:'?') + ' sp=' + (sp?sp.value:'?') + ' items=' + np;
-                if (!cust.value) { e.preventDefault(); if(st)st.textContent+=' FAIL: no customer'; alert('Please select a customer.'); return; }
-                if (!sp.value) { e.preventDefault(); if(st)st.textContent+=' FAIL: no salesperson'; alert('Please select a salesperson.'); return; }
-                if (np === 0) { e.preventDefault(); if(st)st.textContent+=' FAIL: no products'; alert('Please add at least one product.'); return; }
-                if (st) { st.textContent += ' OK, submitting...'; st.style.background='#d4edda'; }
+                var rate = document.getElementById('exchange_rate');
+                var np = selectedProductOrder.length;
+                if (!cust.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择客户。'; alert('请选择客户。'); return; }
+                if (!sp.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择业务员。'; alert('请选择业务员。'); return; }
+                if (!(parseFloat(rate.value) > 0)) { e.preventDefault(); if(st)st.textContent='提交失败：本单业务汇率必须大于 0。'; alert('本单业务汇率必须大于 0。'); return; }
+                if (np === 0) { e.preventDefault(); if(st)st.textContent='提交失败：请至少添加一个产品。'; alert('请至少添加一个产品。'); return; }
+                if (st) { st.textContent = '检查完成，正在提交……'; st.style.background='#d4edda'; }
                 updateTotal();
             });
         }
@@ -203,13 +388,14 @@ var selectedProducts = {};
         var custSelect = document.getElementById('customer_id');
         if (custSelect && custSelect.value) {
             var selOpt = custSelect.querySelector('option[value="' + custSelect.value + '"]');
-            if (selOpt) {
+                if (selOpt) {
                 var addr = selOpt.getAttribute('data-address') || '';
                 var addrEl = document.getElementById('shipping_address');
                 if (addrEl) { addrEl.value = addr; }
             }
         }
-        updateTotal();
+        adjustmentUsd = toUsd(parseFloat(document.getElementById('shipping_cost').value) || 0);
+        applyCurrency();
     });
 
     function escHtml(s) {
@@ -228,7 +414,7 @@ var selectedProducts = {};
                     html += '<button type="button" class="dropdown-item" data-val="' + escHtml(opts[i].value) + '" data-label="' + escHtml(label) + '">' + escHtml(label) + '</button>';
                 }
             }
-            if (!html) html = '<span class="dropdown-item text-muted">No match</span>';
+            if (!html) html = '<span class="dropdown-item text-muted">没有匹配结果</span>';
             dropdown.innerHTML = html; dropdown.classList.add('show');
         }
         input.addEventListener('focus', function() { render(input.value); });
@@ -253,6 +439,8 @@ var selectedProducts = {};
                     var addr = opt.getAttribute('data-address') || '';
                     var addrEl = document.getElementById('shipping_address');
                     if (addrEl) { addrEl.value = addr; }
+                    var noteEl = document.getElementById('customer_notes_display');
+                    if (noteEl) { noteEl.textContent = opt.getAttribute('data-notes') || '—'; }
                 }
             }
         });
@@ -263,57 +451,66 @@ var selectedProducts = {};
 {% block content %}
 <div class="row mb-3">
     <div class="col">
-        <h2><i class="bi bi-file-earmark-plus me-2"></i>Create Proforma Invoice</h2>
-        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to PI List</a>
+        <h2><i class="bi bi-file-earmark-plus me-2"></i>新建形式发票</h2>
+        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回 PI 列表</a>
     </div>
 </div>
 
 {% if not customers %}
-<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> No customers found. <a href="{{ url_for('customer_add') }}" class="alert-link">Add a customer first</a>.</div>
+<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> 暂无客户。 <a href="{{ url_for('customer_add') }}" class="alert-link">请先添加客户</a>.</div>
 {% endif %}
 
-<div id="submit_status" style="background:#fff3cd;border:2px solid #ffc107;padding:8px 10px;margin:8px 0;font-size:14px;font-weight:bold;">📋 Form loaded. Ready to create PI. (v2)</div>
+<div id="submit_status" style="background:#fff3cd;border:2px solid #ffc107;padding:8px 10px;margin:8px 0;font-size:14px;font-weight:bold;">📋 表单已加载，可以创建 PI。</div>
 {% if customers %}
 <form method="post" action="{{ url_for('pi_create') }}" id="pi-form">
+    <input type="hidden" name="product_order" id="product_order" value="">
     <div class="row g-4">
         <div class="col-lg-5">
             <div class="card mb-3">
-                <div class="card-header"><h5 class="mb-0">Customer & PI Info</h5></div>
+                <div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div>
                 <div class="card-body">
                     <div class="mb-3">
-                        <label class="form-label">Customer <span class="text-danger">*</span></label>
+                        <label class="form-label">客户 <span class="text-danger">*</span></label>
                         <div class="input-group">
-                            <input type="text" class="form-control searchable-input" id="cust_search" placeholder="Type to search..." autocomplete="off"
+                            <input type="text" class="form-control searchable-input" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off"
                                    value="{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% endif %}{% endfor %}{% endif %}">
                             <select class="form-select d-none" id="customer_id" name="customer_id" required>
-                                <option value="">— Select Customer —</option>
+                                <option value="">— 请选择客户 —</option>
                                 {% for c in customers %}
-                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
+                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="Quick Add Customer"><i class="bi bi-plus-lg"></i></button>
+                            <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button>
                         </div>
                         <div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
+                    <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.notes or '—' }}{% endif %}{% endfor %}{% else %}—{% endif %}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
                     <div class="mb-3">
-                        <label class="form-label">Salesperson <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control searchable-input" id="sp_search" placeholder="Type to search..." autocomplete="off" value="{{ preselected_salesperson }}">
+                        <label class="form-label">业务员 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control searchable-input" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ preselected_salesperson }}">
                         <select class="form-select d-none" id="pi_salesperson" name="salesperson" required>
-                            <option value="">— Select —</option>
+                            <option value="">— 请选择 —</option>
                             {% for sp in all_salespersons %}
                             <option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if preselected_salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>
                             {% endfor %}
                         </select>
                         <div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
-                    <div class="mb-3"><label class="form-label">Account</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— Select Account —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_name }}\nA/C: {{ a.account_no }}\nSWIFT: {{ a.swift_code }}" data-currency="{{ a.currency or '' }}">{{ a.name }}</option>{% endfor %}</select></div>
-                    <div class="mb-3"><label class="form-label">Currency</label><select class="form-select" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value="USD"></div>
-                    <div class="mb-3"><label for="issue_date" class="form-label">Issue Date</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ today }}"></div>
-                    <div class="mb-3"><label for="payment_terms" class="form-label">Payment Terms</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
-                    <div class="mb-3"><label class="form-label">Bank Information</label><textarea class="form-control" id="bank_info" name="bank_info" rows="4" placeholder="Select an account above or type bank info..."></textarea></div>
-                    <div class="mb-3"><label class="form-label">Shipping Address</label><textarea class="form-control" id="shipping_address" name="shipping_address" rows="3" placeholder="Auto-filled from customer...">{{ pi.shipping_address if pi else '' }}</textarea></div>
+                    <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="该 PI 的其他备注……"></textarea></div>
+                    <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— 选择收款账户 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">选择后会整组带入收款人、账号、银行地址、SWIFT、Bank Code、Branch Code 和币种。</div></div>
+                    <div class="mb-3"><label class="form-label">币种</label><select class="form-select" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value="USD"></div>
+                    <div class="mb-3">
+                        <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>
+                        <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ request.form.get('exchange_rate', exchange_rate) }}" required><span class="input-group-text">RMB</span></div>
+                        <small class="text-muted">默认使用系统业务汇率，可单独调整；保存后用于本单报价、采购成本和利润核算，不随以后系统汇率变化。</small>
+                    </div>
+                    <div class="mb-3"><label for="issue_date" class="form-label">开单日期</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ today }}"></div>
+                    <div class="mb-3"><label for="payment_terms" class="form-label">付款条款</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
+                    <div class="mb-3"><label for="price_terms" class="form-label">价格条款</label><input type="text" class="form-control" id="price_terms" name="price_terms" list="price_terms_options" placeholder="请选择或临时输入……"><datalist id="price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist><div class="form-text">管理员可在“字段管理”维护常用选项。</div></div>
+                    <div class="mb-3"><label for="delivery_time" class="form-label">交货期</label><input type="text" class="form-control" id="delivery_time" name="delivery_time" list="delivery_time_options" placeholder="请选择或临时输入……"><datalist id="delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist></div>
+                    <div class="mb-3"><label class="form-label">银行信息快照</label><textarea class="form-control" id="bank_info" name="bank_info" rows="9" placeholder="{% if is_admin %}选择上方账户或输入完整银行信息……{% else %}请选择上方已审核账户{% endif %}" {% if not is_admin %}readonly{% endif %}></textarea><div class="form-text">保存后作为本单历史快照，不随账户资料后续修改。</div></div>
+                    <div class="mb-3"><label class="form-label">收货地址</label><textarea class="form-control" id="shipping_address" name="shipping_address" rows="3" placeholder="从客户资料自动填写……">{{ pi.shipping_address if pi else '' }}</textarea></div>
                     <input type="hidden" name="company" id="company_hidden" value="klista">
-                    <div class="mb-3"><label for="notes" class="form-label">PI Notes</label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Additional notes on this PI..."></textarea></div>
                 </div>
             </div>
         </div>
@@ -321,43 +518,46 @@ var selectedProducts = {};
         <div class="col-lg-7">
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Products</h5>
-                    <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> Quick Add</button>
+                    <h5 class="mb-0">产品</h5>
+                    <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button>
                 </div>
                 <div class="card-body">
                     <div class="input-group mb-2">
-                        <input type="text" class="form-control" id="product_search" placeholder="Search product by name or code..." autocomplete="off">
-                        <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> Add</button>
+                        <input type="text" class="form-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off">
+                        <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button>
                     </div>
-                    <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     <div class="table-responsive mt-2" id="selected_products_area">
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table">
-                            <thead class="table-light"><tr><th>#</th><th>Product</th><th>Code</th><th class="text-end">Unit Price</th><th style="width:80px;">Qty</th><th class="text-end">Amount</th><th style="width:40px;"></th></tr></thead>
+                            <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
                             <tbody></tbody>
                         </table>
-                        <div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> No products selected. Search and add above.</div>
+                        <div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div>
                     </div>
                 </div>
             </div>
             <div class="card mb-3">
                 <div class="card-body">
-                    <div class="row align-items-end">
+                    <div class="row align-items-start">
                         <div class="col-md-4">
-                            <label class="form-label">Adjustment / Cost</label>
+                            <label class="form-label">客户费用 / 折扣</label>
                             <div class="input-group">
                                 <span class="input-group-text" id="shipping_sym">$</span>
                                 <input type="number" step="0.01" class="form-control" name="shipping_cost" id="shipping_cost" value="0.00" oninput="updateTotal()">
                             </div>
-                            <small class="text-muted">Positive=cost, negative=discount</small>
+                            <small class="text-muted">正数为向客户加收，负数为折扣；计入订单总金额</small>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Note</label>
-                            <input type="text" class="form-control" name="shipping_note" id="shipping_note" placeholder="Freight, discount, adjustment...">
+                            <label class="form-label">客户费用 / 折扣类型</label>
+                            <select class="form-select" name="shipping_note" id="shipping_note">
+                                <option value="">— 请选择客户费用 / 折扣类型 —</option>
+                                {% for option in shipping_note_options %}<option value="{{ option.value }}">{{ option.value }}（{{ option.english_value or option.value }}）</option>{% endfor %}
+                            </select>
+                            {% if is_admin %}<small><a href="{{ url_for('account_list', _anchor='shipping_note') }}">管理选项</a></small>{% endif %}
                         </div>
                         <div class="col-md-4 text-end">
-                            <small class="text-muted">Product Subtotal: <strong id="subtotal_display">$0.00</strong></small><br>
-                            <small class="text-muted">Adj. / Cost: <strong id="shipping_display">$0.00</strong></small>
-                            <h6 class="text-muted mb-1 mt-2" id="total_label">TOTAL AMOUNT (USD)</h6>
+                            <small class="text-muted">产品小计: <strong id="subtotal_display">$0.00</strong></small><br>
+                            <small class="text-muted">客户费用 / 折扣： <strong id="shipping_display">$0.00</strong></small>
+                            <h6 class="text-muted mb-1 mt-2" id="total_label">总金额 (USD)</h6>
                             <h2 class="text-primary fw-bold mb-0" id="total_display">$0.00</h2>
                             <input type="hidden" name="total_amount" id="total_input" value="0.00">
                         </div>
@@ -365,25 +565,87 @@ var selectedProducts = {};
                 </div>
             </div>
             <div class="mt-3 text-end">
-                <button type="button" class="btn btn-primary btn-lg" onclick="var st=document.getElementById('submit_status');if(st){st.style.display='block';st.textContent='Submitting via JS...';st.style.background='#cce5ff';} var f=document.getElementById('pi-form'); if(f){ var cust=f.querySelector('#customer_id'); var sp=f.querySelector('#pi_salesperson'); var np=Object.keys(selectedProducts).length; if(!cust.value){alert('Please select a customer.');return;} if(!sp.value){alert('Please select a salesperson.');return;} if(np===0){alert('Please add at least one product.');return;} st.textContent+=' OK'; updateTotal(); f.submit(); } else { alert('Form not found!'); }"><i class="bi bi-file-earmark-pdf me-1"></i> Generate PI & PDF</button>
+                <button type="button" class="btn btn-primary btn-lg" onclick="var st=document.getElementById('submit_status');if(st){st.style.display='block';st.textContent='正在提交……';st.style.background='#cce5ff';} var f=document.getElementById('pi-form'); if(f){ var cust=f.querySelector('#customer_id'); var sp=f.querySelector('#pi_salesperson'); var np=selectedProductOrder.length; if(!cust.value){alert('请选择客户。');return;} if(!sp.value){alert('请选择业务员。');return;} if(np===0){alert('请至少添加一个产品。');return;} st.textContent='正在提交……'; updateTotal(); f.submit(); } else { alert('未找到表单！'); }"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
             </div>
         </div>
     </div>
 </form>
 {% endif %}
 
+<div class="modal fade" id="productPickerModal" tabindex="-1" aria-labelledby="productPickerTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h4 class="modal-title" id="productPickerTitle"><i class="bi bi-grid-3x3-gap me-2"></i>选择产品</h4>
+                    <div class="text-muted small mt-1">可搜索、翻页并跨页多选，最后一次加入 PI。</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 border-bottom bg-light sticky-top" style="z-index:2;">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-8">
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="search" class="form-control" id="picker_search" placeholder="搜索产品名称、中文名称、编码或规格……" autocomplete="off">
+                                <button type="button" class="btn btn-primary" id="picker_search_btn">搜索</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <span class="badge bg-secondary fs-6 me-2" id="picker_total_count">共 0 个产品</span>
+                            <span class="badge bg-primary fs-6" id="picker_selected_count">已选 0 项</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="product_picker_error" class="alert alert-danger m-3 d-none" role="alert"></div>
+                <div class="table-responsive" style="min-height:420px;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top" style="top:0;z-index:1;">
+                            <tr>
+                                <th class="text-center" style="width:52px;"><input type="checkbox" class="form-check-input" id="picker_select_page" aria-label="全选本页"></th>
+                                <th style="width:76px;">图片</th>
+                                <th style="min-width:220px;">产品名称</th>
+                                <th style="min-width:150px;">编码</th>
+                                <th style="min-width:200px;">规格</th>
+                                <th class="text-end" style="width:120px;">单价（USD）</th>
+                                <th class="text-center" style="width:90px;">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="product_picker_body"></tbody>
+                    </table>
+                    <div id="product_picker_empty" class="text-center text-muted py-5 d-none">
+                        <i class="bi bi-search fs-1 d-block mb-2"></i>没有找到匹配的产品
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex flex-wrap justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-secondary" id="picker_prev"><i class="bi bi-chevron-left"></i> 上一页</button>
+                    <span class="text-muted" id="picker_page_info">第 1 / 1 页</span>
+                    <button type="button" class="btn btn-outline-secondary" id="picker_next">下一页 <i class="bi bi-chevron-right"></i></button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-success" id="picker_add_selected" disabled><i class="bi bi-plus-circle me-1"></i>加入已选产品</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="quickAddProductModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-1"></i>Quick Add Product</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-1"></i>快速新增产品</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div id="quickAddError" class="alert alert-danger d-none"></div>
-            <div class="mb-3"><label class="form-label">Product Name <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_name" placeholder="Product name"></div>
-            <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Product Code</label><input type="text" class="form-control" id="qa_product_code" placeholder="SKU"></div><div class="col-md-6"><label class="form-label">Specification</label><input type="text" class="form-control" id="qa_specification" placeholder="Size, etc."></div></div>
-            <div class="mb-3"><label class="form-label">Unit Price (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.01" min="0" class="form-control" id="qa_unit_price" value="0.00"></div></div>
-            <div class="mb-3"><label class="form-label">Image</label><input type="file" class="form-control" id="qa_image" accept="image/*"><small class="text-muted">Click or <strong>Ctrl+V</strong> paste</small><img id="qa_img_preview" src="#" style="display:none;max-height:60px;max-width:150px;margin-top:4px;border-radius:4px;border:1px solid #ddd;"></div>
-            <div class="mb-3"><label class="form-label">Notes</label><input type="text" class="form-control" id="qa_notes" placeholder="Optional"></div>
+            <div class="mb-3"><label class="form-label">产品名称 <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_name" placeholder="产品名称"></div>
+            <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">产品编码</label><input type="text" class="form-control" id="qa_product_code" placeholder="SKU"></div><div class="col-md-6"><label class="form-label">规格</label><input type="text" class="form-control" id="qa_specification" placeholder="尺寸、颜色、材质等"></div></div>
+            <div class="mb-3"><label class="form-label">单价 (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.01" min="0" class="form-control" id="qa_unit_price" value="0.00"></div></div>
+            <div class="mb-3"><label class="form-label">图片</label><input type="file" class="form-control" id="qa_image" accept="image/*"><small class="text-muted">点击选择或 <strong>Ctrl+V</strong> 粘贴</small><img id="qa_img_preview" src="#" style="display:none;max-height:60px;max-width:150px;margin-top:4px;border-radius:4px;border:1px solid #ddd;"></div>
+            <div class="mb-3"><label class="form-label">备注</label><input type="text" class="form-control" id="qa_notes" placeholder="选填"></div>
         </div>
-        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" id="quickAddSubmit"><i class="bi bi-check-lg"></i> Add Product</button></div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-success" id="quickAddSubmit"><i class="bi bi-check-lg"></i> 添加产品</button></div>
     </div></div>
 </div>
 <script>
@@ -396,14 +658,14 @@ var selectedProducts = {};
     function clear() { document.getElementById('qa_name').value=''; document.getElementById('qa_product_code').value=''; document.getElementById('qa_specification').value=''; document.getElementById('qa_unit_price').value='0.00'; document.getElementById('qa_notes').value=''; document.getElementById('qa_image').value=''; document.getElementById('qa_img_preview').style.display='none'; errorEl.classList.add('d-none'); }
     btn.addEventListener('click', function() {
         errorEl.classList.add('d-none'); var name = document.getElementById('qa_name').value.trim();
-        if (!name) { errorEl.textContent='Product name is required.'; errorEl.classList.remove('d-none'); return; }
-        btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Adding...';
+        if (!name) { errorEl.textContent='产品名称不能为空。'; errorEl.classList.remove('d-none'); return; }
+        btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>正在添加……';
         var fd=new FormData(); fd.append('name',name); fd.append('product_code',document.getElementById('qa_product_code').value.trim()); fd.append('specification',document.getElementById('qa_specification').value.trim()); fd.append('unit_price',document.getElementById('qa_unit_price').value); fd.append('notes',document.getElementById('qa_notes').value.trim()); var imgFile=document.getElementById('qa_image').files[0]; if(imgFile)fd.append('image',imgFile);
         fetch('{{ url_for("api_product_add") }}',{method:'POST',body:fd})
         .then(function(r){return r.json();})
-        .then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'Failed.';errorEl.classList.remove('d-none');}})
-        .catch(function(){errorEl.textContent='Network error.';errorEl.classList.remove('d-none');})
-        .finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> Add Product';});
+        .then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
+        .catch(function(){errorEl.textContent='网络错误。';errorEl.classList.remove('d-none');})
+        .finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加产品';});
     });
     modalEl.addEventListener('show.bs.modal', function() { clear(); document.addEventListener('paste', handlePaste); });
     modalEl.addEventListener('hidden.bs.modal', function() { document.removeEventListener('paste', handlePaste); });
@@ -412,30 +674,59 @@ var selectedProducts = {};
 
 <div class="modal fade" id="quickAddCustomerModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-plus me-1"></i>Quick Add Customer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-plus me-1"></i>快速新增客户</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <div id="qaCustError" class="alert alert-danger d-none"></div>
-            <div class="mb-3"><label class="form-label">Customer Name <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_cust_name" placeholder="Company name"></div>
-            <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Country</label><input type="text" class="form-control" id="qa_cust_country" list="country_list" autocomplete="off" placeholder="Type Chinese or English..."></div><div class="col-md-6"><label class="form-label">Salesperson</label><select class="form-select" id="qa_cust_salesperson"><option value="">— Select —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" {% if preselected_salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select></div></div>
-            <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">Contact Person</label><input type="text" class="form-control" id="qa_cust_contact" placeholder="Contact name"></div><div class="col-md-6"><label class="form-label">Email</label><input type="email" class="form-control" id="qa_cust_email" placeholder="email@example.com"></div></div>
+            <div class="mb-3"><label class="form-label">客户名称 <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_cust_name" placeholder="公司名称"></div>
+            <div class="row g-2 mb-3">
+                <div class="col-md-6"><label class="form-label">国家</label><input type="text" class="form-control" id="qa_cust_country" list="country_list" autocomplete="off" placeholder="可输入中文或英文……"></div>
+                <div class="col-md-6">
+                    <label class="form-label">业务员 <span class="text-danger">*</span></label>
+                    {% if is_admin %}
+                    <select class="form-select" id="qa_cust_salesperson" required data-default="{{ preselected_salesperson }}">
+                        <option value="">— 请选择 —</option>
+                        {% for sp in all_salespersons %}<option value="{{ sp.name }}" {% if preselected_salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}
+                    </select>
+                    {% else %}
+                    <input type="text" class="form-control" value="{{ current_user.salesperson_name }}" readonly aria-label="当前业务员">
+                    <input type="hidden" id="qa_cust_salesperson" value="{{ current_user.salesperson_name }}" data-default="{{ current_user.salesperson_name }}">
+                    {% endif %}
+                </div>
+            </div>
+            <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">联系人</label><input type="text" class="form-control" id="qa_cust_contact" placeholder="联系人姓名"></div><div class="col-md-6"><label class="form-label">邮箱</label><input type="email" class="form-control" id="qa_cust_email" placeholder="email@example.com"></div></div>
         </div>
-        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" id="quickAddCustomerSubmit"><i class="bi bi-check-lg"></i> Add Customer</button></div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-primary" id="quickAddCustomerSubmit"><i class="bi bi-check-lg"></i> 添加客户</button></div>
     </div></div>
 </div>
 <script>
 (function() {
     var btn = document.getElementById('quickAddCustomerSubmit'), modalEl = document.getElementById('quickAddCustomerModal'), errorEl = document.getElementById('qaCustError');
-    function clear() { document.getElementById('qa_cust_name').value=''; document.getElementById('qa_cust_country').value=''; document.getElementById('qa_cust_salesperson').value=''; document.getElementById('qa_cust_contact').value=''; document.getElementById('qa_cust_email').value=''; errorEl.classList.add('d-none'); }
+    function clear() {
+        document.getElementById('qa_cust_name').value='';
+        document.getElementById('qa_cust_country').value='';
+        document.getElementById('qa_cust_contact').value='';
+        document.getElementById('qa_cust_email').value='';
+        var salesperson = document.getElementById('qa_cust_salesperson');
+        {% if is_admin %}
+        var piSalesperson = document.getElementById('pi_salesperson');
+        salesperson.value = (piSalesperson && piSalesperson.value) || salesperson.dataset.default || '';
+        {% else %}
+        salesperson.value = salesperson.dataset.default || '';
+        {% endif %}
+        errorEl.classList.add('d-none');
+    }
     btn.addEventListener('click', function() {
         errorEl.classList.add('d-none'); var name = document.getElementById('qa_cust_name').value.trim();
-        if (!name) { errorEl.textContent='Customer name is required.'; errorEl.classList.remove('d-none'); return; }
-        btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>Adding...';
-        var fd=new FormData(); fd.append('name',name); fd.append('country',document.getElementById('qa_cust_country').value.trim()); fd.append('contact_person',document.getElementById('qa_cust_contact').value.trim()); fd.append('email',document.getElementById('qa_cust_email').value.trim()); fd.append('salesperson',document.getElementById('qa_cust_salesperson').value);
+        if (!name) { errorEl.textContent='客户名称不能为空。'; errorEl.classList.remove('d-none'); return; }
+        var salesperson = document.getElementById('qa_cust_salesperson').value.trim();
+        if (!salesperson) { errorEl.textContent='请选择业务员。'; errorEl.classList.remove('d-none'); return; }
+        btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>正在添加……';
+        var fd=new FormData(); fd.append('name',name); fd.append('country',document.getElementById('qa_cust_country').value.trim()); fd.append('contact_person',document.getElementById('qa_cust_contact').value.trim()); fd.append('email',document.getElementById('qa_cust_email').value.trim()); fd.append('salesperson',salesperson);
         fetch('{{ url_for("api_customer_add") }}',{method:'POST',body:fd})
         .then(function(r){return r.json();})
-        .then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'Failed.';errorEl.classList.remove('d-none');}})
-        .catch(function(){errorEl.textContent='Network error.';errorEl.classList.remove('d-none');})
-        .finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> Add Customer';});
+        .then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
+        .catch(function(){errorEl.textContent='网络错误。';errorEl.classList.remove('d-none');})
+        .finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加客户';});
     });
     modalEl.addEventListener('show.bs.modal', clear);
 })();
