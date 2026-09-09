@@ -496,26 +496,28 @@ function openProcurementPreview() {
             (contacts.length ? '<div class="small text-muted mt-1">' + contacts.join('　') + '</div>' : '') + '</div>' +
             '<button type="button" class="btn btn-success btn-sm" onclick="downloadSupplierOrders(' + Number(supplier.id) + ', this)"><i class="bi bi-file-earmark-excel me-1"></i>导出该供应商采购单</button>' +
             '</div><div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-0">' +
-            '<thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th>规格</th><th class="text-end">采购单价</th><th class="text-end">数量</th><th class="text-end">合计</th><th>备注</th></tr></thead><tbody>';
+            '<thead class="table-light"><tr><th>#</th><th>照片</th><th>产品</th><th>编码</th><th>规格</th><th class="text-end">数量</th><th class="text-end">采购单价</th><th class="text-end">合计</th><th>备注</th></tr></thead><tbody>';
         group.items.forEach(function(entry, itemIndex) {
             var item = entry.data;
             var row = entry.row;
-            var productImage = row ? row.querySelector('td:first-child img') : null;
-            var productPreview = '<div class="d-flex align-items-center gap-2">';
+            var productImage = row ? row.querySelector('.proc-image-cell img') : null;
+            var productPreview = '';
             if (productImage) {
-                productPreview += '<img class="preview-product-image" src="' + escHtml(productImage.getAttribute('src')) + '" alt="" style="width:42px;height:42px;object-fit:cover;border-radius:4px;">';
+                productPreview = '<img class="preview-product-image" src="' + escHtml(productImage.getAttribute('src')) + '" alt="产品照片" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">';
+            } else {
+                productPreview = '<span class="text-muted">—</span>';
             }
-            productPreview += '<strong>' + escHtml(row ? row.dataset.productName : '未知产品') + '</strong></div>';
             html += '<tr><td>' + (itemIndex + 1) + '</td>' +
                 '<td>' + productPreview + '</td>' +
+                '<td><strong>' + escHtml(row ? row.dataset.productName : '未知产品') + '</strong></td>' +
                 '<td>' + escHtml(row ? row.dataset.productCode : '') + '</td>' +
                 '<td>' + escHtml(row ? row.dataset.productSpec : '') + '</td>' +
-                '<td class="text-end">¥' + Number(item.unit_price).toFixed(2) + '</td>' +
                 '<td class="text-end">' + Number(item.quantity) + '</td>' +
+                '<td class="text-end">¥' + Number(item.unit_price).toFixed(2) + '</td>' +
                 '<td class="text-end fw-bold">¥' + (item.unit_price * item.quantity).toFixed(2) + '</td>' +
                 '<td>' + escHtml(item.note || '—') + '</td></tr>';
         });
-        html += '</tbody><tfoot class="table-light"><tr><th colspan="6" class="text-end">该供应商采购合计</th>' +
+        html += '</tbody><tfoot class="table-light"><tr><th colspan="7" class="text-end">该供应商采购合计</th>' +
             '<th class="text-end text-danger">¥' + group.total.toFixed(2) + '</th><th></th></tr></tfoot>' +
             '</table></div></div>';
     });
@@ -689,7 +691,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     {% for item in pi.items %}
                     <tr data-item-id="{{ item.id }}" data-pi-unit-price="{{ item.unit_price }}" data-pi-quantity="{{ item.quantity }}" data-product-name="{{ (item.product.name if item.product else '未知产品')|e }}" data-product-code="{{ (item.product.product_code if item.product else '')|e }}" data-product-spec="{{ (item.product.specification if item.product else '')|e }}">
                         <td class="text-center proc-sequence">{{ loop.index }}</td>
-                        <td>
+                        <td class="proc-image-cell">
                             {% if item.product and item.product.image %}
                             <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">
                             {% endif %}
