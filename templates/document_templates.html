@@ -5,7 +5,7 @@
 <div class="row mb-3 align-items-center">
     <div class="col-md-8">
         <h2><i class="bi bi-file-earmark-text me-2"></i>单据模板</h2>
-        <p class="text-muted mb-0">统一查看 PI 和装箱单模板；PI Excel 母版可在此维护，装箱单在导出时选择版式。</p>
+        <p class="text-muted mb-0">统一查看和维护 PI、装箱单 Excel 母版；PDF 与 Excel 使用同一版式。</p>
     </div>
 </div>
 
@@ -105,22 +105,20 @@
                     </tr>
                 </thead>
                 <tbody>
+                    {% for template in packing_templates %}
                     <tr>
-                        <td><strong>标准完整装箱单</strong><span class="badge bg-secondary ms-1">系统内置</span></td>
+                        <td><strong>{{ template.name }}</strong><span class="badge bg-secondary ms-1">系统内置</span></td>
                         <td><span class="badge bg-success">Excel</span> <span class="badge bg-danger">PDF</span></td>
-                        <td>A4</td>
+                        <td>{{ '100×150 mm' if template.template_type == 'packing_compact' else 'A4' }}</td>
                         <td><span class="text-success"><i class="bi bi-check-circle-fill"></i> 已启用</span></td>
-                        <td class="small text-muted">完整字段版式，适合归档和常规打印。</td>
-                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('packing_list_index') }}"><i class="bi bi-box-arrow-up-right"></i> 前往装箱单</a></td>
+                        <td class="small text-muted">{{ template.notes }}</td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm btn-outline-success" href="{{ url_for('document_template_source', id=template.id) }}"><i class="bi bi-download"></i> 源文件</a>
+                            <button class="btn btn-sm btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#editPackingTemplate{{ template.id }}"><i class="bi bi-pencil-square"></i> 编辑</button>
+                            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('packing_list_index') }}"><i class="bi bi-box-arrow-up-right"></i> 装箱单</a>
+                        </td>
                     </tr>
-                    <tr>
-                        <td><strong>精简 100×150 装箱单</strong><span class="badge bg-secondary ms-1">系统内置</span></td>
-                        <td><span class="badge bg-success">Excel</span> <span class="badge bg-danger">PDF</span></td>
-                        <td>100×150 mm</td>
-                        <td><span class="text-success"><i class="bi bi-check-circle-fill"></i> 已启用</span></td>
-                        <td class="small text-muted">每箱一页，白底黑字，显示 PI、业务员、箱内产品和尺寸重量。</td>
-                        <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('packing_list_index') }}"><i class="bi bi-box-arrow-up-right"></i> 前往装箱单</a></td>
-                    </tr>
+                    {% endfor %}
                 </tbody>
             </table>
         </div>
@@ -163,6 +161,39 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle"></i> 保存修改</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{% for template in packing_templates %}
+<div class="modal fade" id="editPackingTemplate{{ template.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" action="{{ url_for('document_template_edit', id=template.id) }}" enctype="multipart/form-data">
+                <div class="modal-header">
+                    <h5 class="modal-title">编辑模板：{{ template.name }}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info small">先下载源文件，在 Excel 中调整标题、字体、颜色、边框、列宽和打印版式，再上传替换。系统会继续填入实时装箱数据。</div>
+                    <input type="hidden" name="name" value="{{ template.name }}">
+                    <input type="hidden" name="notes" value="{{ template.notes }}">
+                    <div class="mb-3">
+                        <label class="form-label">替换 Excel 源文件 <span class="text-danger">*</span></label>
+                        <input type="file" class="form-control" name="template_file" accept=".xlsx" required>
+                        <div class="form-text">替换后，后续 Excel 和 PDF 导出都会使用新母版。</div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label">当前管理员密码 <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">保存并立即启用</button>
                 </div>
             </form>
         </div>

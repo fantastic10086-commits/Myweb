@@ -1995,6 +1995,26 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('/packing-lists', html)
 
         with application.app.app_context():
+            packing_templates = DocumentTemplate.query.filter(
+                DocumentTemplate.template_type.in_(['packing_a4', 'packing_compact'])
+            ).all()
+            self.assertEqual(len(packing_templates), 2)
+            compact_template = next(
+                item for item in packing_templates
+                if item.template_type == 'packing_compact'
+            )
+            compact_template_id = compact_template.id
+        packing_source = self.client.get(
+            f'/document-templates/{compact_template_id}/source'
+        )
+        self.assertEqual(packing_source.status_code, 200)
+        source_workbook = load_workbook(BytesIO(packing_source.data), data_only=False)
+        self.assertEqual(str(source_workbook.active.page_setup.paperWidth), '100mm')
+        self.assertEqual(str(source_workbook.active.page_setup.paperHeight), '150mm')
+        source_workbook.close()
+        packing_source.close()
+
+        with application.app.app_context():
             template = DocumentTemplate.query.filter_by(code='system-default').one()
             self.assertEqual(template.template_type, 'xlsx')
             original_filename = template.filename
@@ -2276,6 +2296,9 @@ class SecuritySmokeTests(unittest.TestCase):
                 self.assertNotIn('Exporter / 出口商', compact_values)
                 self.assertNotIn('Buyer / 客户', compact_values)
                 self.assertIn('Sales / 业务员', compact_values)
+                self.assertTrue(any(
+                    'Packing spec' in str(value) for value in compact_values
+                ))
                 self.assertEqual(sheet['A1'].fill.fgColor.rgb, '00FFFFFF')
                 self.assertEqual(sheet['A1'].font.color.rgb, '00000000')
                 self.assertEqual(sheet['A8'].fill.fgColor.rgb, '00FFFFFF')

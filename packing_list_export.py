@@ -2,8 +2,9 @@
 
 from io import BytesIO
 from math import ceil
+from copy import copy
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.page import PageMargins
 from reportlab.lib.colors import HexColor
@@ -127,7 +128,9 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
         sheet.merge_cells(start_row=item_row, start_column=2, end_row=item_row, end_column=5)
         values = (
             item_index if item else "",
-            _text(item.product_name) if item else "No products / 暂无产品",
+            _text(
+                " / ".join(filter(None, [item.product_name, item.specification]))
+            ) if item else "No products / 暂无产品",
             int(item.quantity) if item else "",
         )
         for column, value in ((1, values[0]), (2, values[1]), (6, values[2])):
@@ -187,6 +190,105 @@ def generate_compact_packing_list_workbook(pi, packing_list):
     workbook.close()
     output.seek(0)
     return output.getvalue()
+
+
+def apply_packing_template_style(workbook_bytes, template_path, compact=False):
+    """Apply an administrator-maintained packing-list Excel master.
+
+    Business values always come from the freshly generated workbook. The master
+    controls headings, fonts, colours, borders, column widths, row heights and
+    print settings, so editing it affects both Excel and converted PDF exports.
+    """
+    if not template_path:
+        return workbook_bytes
+    output_book = load_workbook(BytesIO(workbook_bytes))
+    template_book = load_workbook(template_path)
+    source = template_book.active
+
+    for target in output_book.worksheets:
+        for key, dimension in source.column_dimensions.items():
+            target.column_dimensions[key].width = dimension.width
+            target.column_dimensions[key].hidden = dimension.hidden
+        target.page_setup = copy(source.page_setup)
+        target.page_margins = copy(source.page_margins)
+        target.print_options = copy(source.print_options)
+        target.sheet_properties = copy(source.sheet_properties)
+
+        if compact:
+            # Header/information area is fixed. Preserve live values in C3:C5.
+            live_cells = {'C3', 'C4', 'C5'}
+            for row in range(1, min(7, source.max_row) + 1):
+                if source.row_dimensions[row].height is not None:
+                    target.row_dimensions[row].height = source.row_dimensions[row].height
+                for column in range(1, min(6, source.max_column) + 1):
+                    src = source.cell(row, column)
+                    dst = target.cell(row, column)
+                    if dst.coordinate not in live_cells and src.value is not None:
+                        dst.value = src.value
+                    if src.has_style:
+                        dst._style = copy(src._style)
+                    dst.alignment = copy(src.alignment)
+            item_style_row = 8 if source.max_row >= 8 else None
+            metric_labels = {'Size / 尺寸', 'N.W. / 净重', 'G.W. / 毛重'}
+            metric_rows = {
+                str(source.cell(row, 1).value): row
+                for row in range(1, source.max_row + 1)
+                if str(source.cell(row, 1).value) in metric_labels
+            }
+            target_metric_rows = {
+                str(target.cell(row, 1).value): row
+                for row in range(1, target.max_row + 1)
+                if str(target.cell(row, 1).value) in metric_labels
+            }
+            first_metric = min(target_metric_rows.values()) if target_metric_rows else target.max_row + 1
+            if item_style_row:
+                for row in range(8, first_metric - 1):
+                    for column in range(1, 7):
+                        src = source.cell(item_style_row, column)
+                        dst = target.cell(row, column)
+                        if src.has_style:
+                            dst._style = copy(src._style)
+                        dst.alignment = copy(src.alignment)
+            for label, target_row in target_metric_rows.items():
+                source_row = metric_rows.get(label)
+                if not source_row:
+                    continue
+                for column in range(1, 7):
+                    src = source.cell(source_row, column)
+                    dst = target.cell(target_row, column)
+                    if column <= 2 and src.value is not None:
+                        dst.value = src.value
+                    if src.has_style:
+                        dst._style = copy(src._style)
+                    dst.alignment = copy(src.alignment)
+        else:
+            live_cells = {'B4', 'J4', 'B5', 'J5', 'B6', 'J6', 'B7', 'J7'}
+            for row in range(1, min(10, source.max_row) + 1):
+                if source.row_dimensions[row].height is not None:
+                    target.row_dimensions[row].height = source.row_dimensions[row].height
+                for column in range(1, min(14, source.max_column) + 1):
+                    src = source.cell(row, column)
+                    dst = target.cell(row, column)
+                    if dst.coordinate not in live_cells and src.value is not None:
+                        dst.value = src.value
+                    if src.has_style:
+                        dst._style = copy(src._style)
+                    dst.alignment = copy(src.alignment)
+            prototype_row = 11 if source.max_row >= 11 else None
+            if prototype_row:
+                for row in range(11, target.max_row):
+                    for column in range(1, 15):
+                        src = source.cell(prototype_row, column)
+                        dst = target.cell(row, column)
+                        if src.has_style:
+                            dst._style = copy(src._style)
+                        dst.alignment = copy(src.alignment)
+
+    result = BytesIO()
+    output_book.save(result)
+    output_book.close()
+    template_book.close()
+    return result.getvalue()
 
 
 def _ensure_compact_pdf_font():
@@ -283,7 +385,10 @@ def generate_compact_packing_list_pdf(pi, packing_list):
             document.setLineWidth(0.45)
             document.rect(x, y, cell_width, row_height, fill=0, stroke=1)
             if item:
-                item_text = f"{item_index + 1}. {item.product_name or ''}"
+                product_text = " / ".join(filter(None, [
+                    item.product_name or '', item.specification or '',
+                ]))
+                item_text = f"{item_index + 1}. {product_text}"
                 quantity_text = f"x {int(item.quantity)}"
             else:
                 item_text = "No products / 暂无产品"

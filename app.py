@@ -51,6 +51,7 @@ from document_export import (
 from supplier_statement_pdf import generate_supplier_statement
 from procurement_export import generate_supplier_purchase_order
 from packing_list_export import (
+    apply_packing_template_style,
     generate_compact_packing_list_pdf,
     generate_compact_packing_list_workbook,
     generate_packing_list_workbook,
@@ -67,6 +68,12 @@ QISUO_LEGACY_TEMPLATE_FILENAME = 'qisuo-legacy.xlsx'
 QISUO_LEGACY_TEMPLATE_SOURCE = os.path.join(
     APP_ROOT, 'assets', 'qisuo_legacy_pi_template.xlsx'
 )
+PACKING_TEMPLATE_DEFINITIONS = {
+    'packing-a4': ('标准完整装箱单', 'packing_a4.xlsx', 'packing_a4'),
+    'packing-compact-100x150': (
+        '精简 100×150 装箱单', 'packing_compact_100x150.xlsx', 'packing_compact'
+    ),
+}
 
 # Sales-performance reporting deliberately uses a stable rate so changing the
 # quotation/profit rate never rewrites a salesperson's historical performance.
@@ -789,6 +796,54 @@ def _ensure_qisuo_legacy_template(app_instance):
     return template
 
 
+def _validate_packing_template(path, compact=False):
+    """Validate a packing master without accepting macros or arbitrary files."""
+    from openpyxl import load_workbook
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=False)
+        sheet = workbook.active
+        if compact and (sheet.max_column < 6 or sheet.max_row < 11):
+            raise TemplateError('100×150 装箱单模板结构不完整。')
+        if not compact and (sheet.max_column < 14 or sheet.max_row < 12):
+            raise TemplateError('标准装箱单模板结构不完整。')
+        workbook.close()
+    except TemplateError:
+        raise
+    except Exception as exc:
+        raise TemplateError(f'无法读取装箱单模板：{exc}') from exc
+
+
+def _ensure_packing_templates(app_instance):
+    """Install editable packing masters while preserving admin replacements."""
+    template_dir = app_instance.config['DOCUMENT_TEMPLATE_DIR']
+    for code, (name, asset_name, template_type) in PACKING_TEMPLATE_DEFINITIONS.items():
+        source_path = os.path.join(APP_ROOT, 'assets', asset_name)
+        if not os.path.isfile(source_path):
+            raise RuntimeError(f'Built-in packing template is missing: {asset_name}')
+        compact = template_type == 'packing_compact'
+        _validate_packing_template(source_path, compact)
+        template = DocumentTemplate.query.filter_by(code=code).first()
+        if template and template.filename:
+            current_path = os.path.join(template_dir, os.path.basename(template.filename))
+            # Uploaded UUID filenames are administrator replacements and survive upgrades.
+            if os.path.isfile(current_path) and template.filename != asset_name:
+                continue
+        installed_path = os.path.join(template_dir, asset_name)
+        shutil.copy2(source_path, installed_path)
+        if not template:
+            template = DocumentTemplate(code=code, name=name, created_by='system')
+            db.session.add(template)
+        template.template_type = template_type
+        template.filename = asset_name
+        template.active = True
+        template.is_default = False
+        template.notes = (
+            '每箱一页，白底黑字，显示 PI、业务员、品名、规格和尺寸重量。'
+            if compact else '完整字段版式，适合归档和常规打印。'
+        )
+    db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
     secret_key = os.environ.get('SECRET_KEY', '').strip()
@@ -848,6 +903,7 @@ def create_app():
         # and PDF conversion both use this same file, so their layouts match.
         _ensure_system_default_template(app)
         _ensure_qisuo_legacy_template(app)
+        _ensure_packing_templates(app)
 
         # Seed default salespersons
         default_sp = [
@@ -4434,6 +4490,11 @@ def _packing_export(pi_id, output_format):
     workbook_bytes = generate_packing_list_workbook(
         pi, packing_list, company_name, company_address
     )
+    template = DocumentTemplate.query.filter_by(code='packing-a4', active=True).first()
+    if template:
+        workbook_bytes = apply_packing_template_style(
+            workbook_bytes, _template_file_path(template), compact=False
+        )
     suffix = '-DRAFT' if not packing_list.is_completed else ''
     base_name = secure_filename(f'Packing-List-{pi.pi_number}{suffix}') or 'packing-list'
     if output_format == 'xlsx':
@@ -4485,11 +4546,28 @@ def _packing_compact_export(pi_id, output_format):
     base_name = secure_filename(
         f'Packing-List-{pi.pi_number}-Compact-100x150{suffix}'
     ) or 'packing-list-compact-100x150'
-    if output_format == 'xlsx':
-        content = generate_compact_packing_list_workbook(pi, packing_list)
-        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    else:
-        content = generate_compact_packing_list_pdf(pi, packing_list)
+    content = generate_compact_packing_list_workbook(pi, packing_list)
+    template = DocumentTemplate.query.filter_by(
+        code='packing-compact-100x150', active=True
+    ).first()
+    if template:
+        content = apply_packing_template_style(
+            content, _template_file_path(template), compact=True
+        )
+    mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    if output_format == 'pdf':
+        with tempfile.TemporaryDirectory(prefix='packing-compact-') as work_dir:
+            excel_path = os.path.join(work_dir, f'{base_name}.xlsx')
+            pdf_path = os.path.join(work_dir, f'{base_name}.pdf')
+            with open(excel_path, 'wb') as output_file:
+                output_file.write(content)
+            try:
+                convert_excel_to_pdf(excel_path, pdf_path)
+            except TemplateError as exc:
+                flash(f'生成装箱单 PDF 失败：{exc}', 'danger')
+                return redirect(url_for('packing_list_detail', pi_id=pi.id))
+            with open(pdf_path, 'rb') as pdf_file:
+                content = pdf_file.read()
         mimetype = 'application/pdf'
     response = send_file(
         BytesIO(content), mimetype=mimetype, as_attachment=True,
@@ -5288,13 +5366,13 @@ def _template_file_path(template):
 
 
 def _active_export_templates():
-    return DocumentTemplate.query.filter_by(active=True).order_by(
+    return DocumentTemplate.query.filter_by(active=True, template_type='xlsx').order_by(
         DocumentTemplate.is_default.desc(), DocumentTemplate.id.asc()
     ).all()
 
 
 def _export_template(template_id=None):
-    query = DocumentTemplate.query.filter_by(active=True)
+    query = DocumentTemplate.query.filter_by(active=True, template_type='xlsx')
     template = query.filter_by(id=template_id).first() if template_id else None
     if not template:
         template = query.filter_by(is_default=True).first()
@@ -5543,11 +5621,15 @@ def _generate_default_pi_documents(pi):
 @app.route('/document-templates')
 @admin_required
 def document_template_list():
-    templates = DocumentTemplate.query.order_by(
+    templates = DocumentTemplate.query.filter_by(template_type='xlsx').order_by(
         DocumentTemplate.is_default.desc(), DocumentTemplate.id.asc()
     ).all()
+    packing_templates = DocumentTemplate.query.filter(
+        DocumentTemplate.template_type.in_(['packing_a4', 'packing_compact'])
+    ).order_by(DocumentTemplate.id.asc()).all()
     return render_template(
         'document_templates.html', templates=templates,
+        packing_templates=packing_templates,
         placeholder_groups=PLACEHOLDER_GROUPS,
     )
 
@@ -5605,7 +5687,7 @@ def document_template_edit(id):
     template = DocumentTemplate.query.get_or_404(id)
     if not _require_current_password():
         return redirect(url_for('document_template_list'))
-    if template.template_type != 'xlsx':
+    if template.template_type not in {'xlsx', 'packing_a4', 'packing_compact'}:
         flash('当前模板不是可编辑的 Excel 模板。', 'danger')
         return redirect(url_for('document_template_list'))
 
@@ -5626,7 +5708,12 @@ def document_template_edit(id):
         new_path = os.path.join(app.config['DOCUMENT_TEMPLATE_DIR'], new_filename)
         try:
             upload.save(new_path)
-            validate_template(new_path)
+            if template.template_type == 'xlsx':
+                validate_template(new_path)
+            else:
+                _validate_packing_template(
+                    new_path, template.template_type == 'packing_compact'
+                )
         except (TemplateError, OSError) as exc:
             if new_path and os.path.exists(new_path):
                 os.remove(new_path)
@@ -5730,7 +5817,7 @@ def document_template_delete(id):
 @admin_required
 def document_template_source(id):
     template = DocumentTemplate.query.get_or_404(id)
-    if template.template_type != 'xlsx':
+    if template.template_type not in {'xlsx', 'packing_a4', 'packing_compact'}:
         abort(404)
     path = _template_file_path(template)
     return send_file(path, as_attachment=True, download_name=f'{secure_filename(template.name) or "pi-template"}.xlsx')

@@ -14,6 +14,8 @@ outputs/
 *.xlsx
 !assets/system_default_pi_template.xlsx
 !assets/qisuo_legacy_pi_template.xlsx
+!assets/packing_a4.xlsx
+!assets/packing_compact_100x150.xlsx
 .run/
 /auth*
 /tmp/
