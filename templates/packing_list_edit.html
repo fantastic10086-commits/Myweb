@@ -18,6 +18,10 @@
     .packing-unallocated-panel, .packing-boxes-panel { position: sticky; top: 5.25rem; }
     .packing-pending-list, .packing-boxes-scroll { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
     .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .7rem; background: #fff; }
+    .packing-pending-item.is-complete { background:#f1f3f5; color:#868e96; border-color:#e1e5e9; }
+    .packing-pending-item.is-complete .text-muted { color:#9aa0a6 !important; }
+    .packing-product-thumb { width:44px; height:44px; object-fit:cover; border-radius:.35rem; border:1px solid #dee2e6; flex:0 0 auto; }
+    .packing-product-thumb-placeholder { width:44px; height:44px; border-radius:.35rem; background:#f1f3f5; color:#adb5bd; display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
     .packing-pending-item + .packing-pending-item { margin-top: .6rem; }
     .packing-product-name { font-weight: 600; }
     .packing-empty-state { border: 1px dashed #ced4da; border-radius: .55rem; padding: 1.25rem; text-align: center; color: #6c757d; }
@@ -118,7 +122,7 @@
     <div class="col-xl-7">
         <div class="card packing-unallocated-panel mb-3">
             <div class="card-header d-flex justify-content-between align-items-center gap-2">
-                <strong><i class="bi bi-box-arrow-in-down me-1"></i>待分配产品</strong>
+                <strong><i class="bi bi-card-checklist me-1"></i>PI 产品清单</strong>
                 <span id="packingPendingCount" class="badge bg-secondary">0 项</span>
             </div>
             <div class="card-body">
@@ -130,10 +134,7 @@
                 </div>
                 <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
                     <button type="button" id="selectVisibleProducts" class="btn btn-sm btn-link p-0">全选当前结果</button>
-                    <div class="form-check form-switch mb-0">
-                        <input class="form-check-input" type="checkbox" id="showAllPackingProducts">
-                        <label class="form-check-label small" for="showAllPackingProducts">显示全部</label>
-                    </div>
+                    <span class="small text-muted">完整 PI，不显示价格</span>
                 </div>
                 <div id="packingPendingProducts" class="packing-pending-list mb-3"></div>
                 <button type="button" id="batchAddProducts" class="btn btn-primary w-100 mb-2">
@@ -142,7 +143,7 @@
                 <button type="button" id="addAllRemainingProducts" class="btn btn-outline-primary w-100">
                     <i class="bi bi-box-arrow-in-down"></i> 全部剩余加入当前箱
                 </button>
-                <div class="small text-muted mt-2">仅显示尚未全部装箱的产品；可勾选多项后一次加入目标箱。</div>
+                <div class="small text-muted mt-2">全部产品始终保留；数量已全部分配的产品会变灰并禁止继续选择。</div>
             </div>
         </div>
     </div>
@@ -220,7 +221,6 @@
     const pendingProducts = document.getElementById('packingPendingProducts');
     const pendingCount = document.getElementById('packingPendingCount');
     const productSearch = document.getElementById('packingProductSearch');
-    const showAllProducts = document.getElementById('showAllPackingProducts');
 
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -311,6 +311,8 @@
             option.selected = index === selectedTargetBox;
             targetBoxSelect.append(option);
         });
+        const batchButton = document.getElementById('batchAddProducts');
+        if (batchButton && boxes[selectedTargetBox]) batchButton.innerHTML = `<i class="bi bi-arrow-right-circle"></i> 加入第 ${selectedTargetBox + 1} 箱`;
     }
 
     function renderPendingProducts() {
@@ -321,33 +323,36 @@
             packed: packed[Number(product.id)] || 0,
             remaining: integerValue(product.quantity) - (packed[Number(product.id)] || 0)
         }));
-        const remainingCount = allProducts.filter(product => product.remaining !== 0).length;
-        const remainingProducts = allProducts.filter(product => {
-            if (!showAllProducts.checked && product.remaining === 0) return false;
+        const remainingCount = allProducts.filter(product => product.remaining > 0).length;
+        const visibleProducts = allProducts.filter(product => {
             if (!query) return true;
             return [product.name, product.product_code, product.specification]
                 .some(value => String(value || '').toLocaleLowerCase().includes(query));
         });
-        pendingCount.textContent = `${remainingCount} 项`;
+        pendingCount.textContent = `待分配 ${remainingCount} / 共 ${allProducts.length} 项`;
         pendingCount.className = `badge ${allProducts.some(product => product.remaining < 0) ? 'bg-danger' : remainingCount ? 'bg-warning text-dark' : 'bg-success'}`;
         pendingProducts.replaceChildren();
-        if (!remainingProducts.length) {
+        if (!visibleProducts.length) {
             const complete = document.createElement('div');
-            complete.className = 'packing-empty-state text-success border-success';
-            complete.innerHTML = query ? '<i class="bi bi-search d-block mb-1"></i>没有匹配的产品' : '<i class="bi bi-check-circle fs-4 d-block mb-1"></i><strong>全部产品已分配</strong>';
+            complete.className = 'packing-empty-state';
+            complete.innerHTML = '<i class="bi bi-search d-block mb-1"></i>没有匹配的产品';
             pendingProducts.append(complete);
             return;
         }
-        remainingProducts.forEach(product => {
+        visibleProducts.forEach(product => {
             const card = document.createElement('div');
-            card.className = `packing-pending-item ${product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
+            card.className = `packing-pending-item ${product.remaining === 0 ? 'is-complete' : product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
             const top = document.createElement('div'); top.className = 'd-flex align-items-start gap-2';
             const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining <= 0;
+            const sequence = document.createElement('span'); sequence.className='small text-muted mt-1'; sequence.textContent=String(products.findIndex(row => Number(row.id) === Number(product.id)) + 1);
+            let thumb;
+            if (product.image) { thumb=document.createElement('img'); thumb.className='packing-product-thumb'; thumb.loading='lazy'; thumb.alt=''; thumb.src=`/uploads/thumb/${encodeURIComponent(product.image)}`; }
+            else { thumb=document.createElement('span'); thumb.className='packing-product-thumb-placeholder'; thumb.innerHTML='<i class="bi bi-image"></i>'; }
             const content = document.createElement('div'); content.className = 'packing-min-width-0 flex-grow-1';
             const name = document.createElement('div'); name.className = 'fw-bold text-truncate'; name.title = product.name || '未命名产品'; name.textContent = product.name || '未命名产品';
             const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = [product.product_code, product.specification].filter(Boolean).join(' · ') || '无编码和规格';
-            const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
-            content.append(name, code, state); top.append(check, content); card.append(top);
+            const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : product.remaining === 0 ? `PI ${product.quantity} · 已全部分配` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
+            content.append(name, code, state); top.append(check, sequence, thumb, content); card.append(top);
             if (product.remaining > 0) {
                 const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm mt-2';
                 const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '加入';
@@ -484,9 +489,8 @@
         finally { buttons.forEach(button=>button.disabled=false); }
     }
 
-    targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; });
+    targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; renderBoxes(); });
     productSearch.addEventListener('input', renderPendingProducts);
-    showAllProducts.addEventListener('change', renderPendingProducts);
     document.getElementById('selectVisibleProducts').addEventListener('click', () => {
         const checks = [...document.querySelectorAll('.pending-product-check:not(:disabled)')];
         const shouldSelect = checks.some(check => !check.checked);

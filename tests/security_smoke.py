@@ -2351,6 +2351,10 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(editor.status_code, 200)
             editor_html = editor.get_data(as_text=True)
             self.assertIn('id="packingProductSearch"', editor_html)
+            self.assertIn('PI 产品清单', editor_html)
+            self.assertIn('完整 PI，不显示价格', editor_html)
+            self.assertIn('全部产品始终保留', editor_html)
+            self.assertNotIn('id="showAllPackingProducts"', editor_html)
             self.assertIn('全选当前结果', editor_html)
             self.assertIn('全部剩余加入当前箱', editor_html)
             self.assertIn('清空当前箱产品', editor_html)
@@ -2364,6 +2368,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 prefill = application._packing_list_payload(pi, prefill=True)
                 self.assertEqual(len(prefill['boxes']), 1)
                 self.assertEqual(prefill['boxes'][0]['items'], [])
+                self.assertIn('image', prefill['pi_items'][0])
 
             response = self.client.post(
                 f'/api/packing-list/{self.alice_pi}', json=overpacked,

@@ -4319,6 +4319,7 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
             'name': product.name if product else '',
             'product_code': product.product_code if product else '',
             'specification': product.specification if product else '',
+            'image': product.image if product else '',
             'quantity': int(item.quantity or 0),
         })
 
