@@ -4352,11 +4352,7 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
             'volume_cbm': 0,
             'shipping_mark': '',
             'note': '',
-            'items': [{
-                'pi_item_id': item['id'],
-                'quantity': item['quantity'],
-                'note': '',
-            } for item in pi_items],
+            'items': [],
         })
 
     return {
@@ -4436,7 +4432,9 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False):
         width_cm = _packing_number(raw_box.get('width_cm'), '宽度')
         height_cm = _packing_number(raw_box.get('height_cm'), '高度')
         raw_items = raw_box.get('items')
-        if not isinstance(raw_items, list) or not raw_items:
+        if not isinstance(raw_items, list):
+            raise ValueError(f'箱号“{box_no}”的产品数据格式不正确。')
+        if completing and not raw_items:
             raise ValueError(f'箱号“{box_no}”至少需要一个产品。')
 
         box_seen_items = set()
