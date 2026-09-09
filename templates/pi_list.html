@@ -4,9 +4,40 @@
 {% block extra_head %}
 <style>
     .pi-list-table-wrap { overflow: visible; }
+    .pi-list-table { min-width: 1380px; }
     .pi-list-actions { white-space: nowrap; }
     .pi-list-actions .dropdown-menu { min-width: 13rem; }
     .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
+    .pi-list-workflow { display: grid; grid-template-columns: repeat(5, minmax(64px, 1fr)); min-width: 380px; }
+    .pi-list-workflow-stage {
+        position: relative; display: flex; flex-direction: column; align-items: center;
+        min-width: 0; color: #6c757d; text-decoration: none;
+    }
+    .pi-list-workflow-stage:is(button) { appearance: none; border: 0; background: transparent; padding: 0; width: 100%; }
+    .pi-list-workflow-stage.is-action { cursor: pointer; }
+    .pi-list-workflow-stage.is-action:hover .pi-list-workflow-dot,
+    .pi-list-workflow-stage.is-action:focus-visible .pi-list-workflow-dot { transform: scale(1.08); box-shadow: 0 0 0 3px rgba(13, 110, 253, .18); }
+    .pi-list-workflow-stage:not(:last-child)::after {
+        content: ''; position: absolute; top: .78rem; left: calc(50% + .82rem);
+        right: calc(-50% + .82rem); height: 3px; background: #ced4da; z-index: 0;
+    }
+    .pi-list-workflow-stage.is-complete:not(:last-child)::after { background: #198754; }
+    .pi-list-workflow-stage.is-partial:not(:last-child)::after { background: #0d6efd; }
+    .pi-list-workflow-dot {
+        position: relative; z-index: 1; width: 1.6rem; height: 1.6rem; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: #adb5bd; color: #fff; border: 2px solid #fff;
+        box-shadow: 0 0 0 1px #adb5bd; font-size: .72rem; transition: .15s ease;
+    }
+    .pi-list-workflow-stage.is-partial { color: #0d6efd; }
+    .pi-list-workflow-stage.is-partial .pi-list-workflow-dot { background: #0d6efd; box-shadow: 0 0 0 1px #0d6efd; }
+    .pi-list-workflow-stage.is-complete { color: #198754; }
+    .pi-list-workflow-stage.is-complete .pi-list-workflow-dot { background: #198754; box-shadow: 0 0 0 1px #198754; }
+    .pi-list-workflow-label { margin-top: .3rem; font-size: .75rem; font-weight: 700; line-height: 1; white-space: nowrap; }
+    .pi-list-workflow-status {
+        display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
+        color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
+    }
     @media (max-width: 991.98px) {
         .pi-list-table-wrap { overflow-x: auto; overflow-y: visible; }
     }
@@ -109,16 +140,16 @@
     <div class="card-body p-0">
         {% if pis %}
         <div class="table-responsive pi-list-table-wrap">
-            <table class="table table-hover mb-0 align-middle">
+            <table class="table table-hover mb-0 align-middle pi-list-table">
                 <thead class="table-light">
                     <tr>
                         <th>PI 编号</th>
                         <th>客户</th>
+                        <th>国家</th>
                         <th>业务员</th>
                         <th>日期</th>
                         <th class="text-end">订单总金额</th>
-                        <th>回款状态</th>
-                        <th>订单进度</th>
+                        <th class="text-center" style="min-width:420px;">订单流程</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
@@ -136,113 +167,79 @@
                             -
                             {% endif %}
                         </td>
+                        <td>{{ pi.customer.country if pi.customer and pi.customer.country else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</td>
-                        <td class="text-center">
-                            {% set total_received = pi.received_amount or 0 %}
-                            {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
-                            {% if pi.paid %}
-                            <span class="badge bg-success" title="已全额回款：{{ sym }}{{ '%.2f'|format(total_received) }} / {{ sym }}{{ '%.2f'|format(pi.grand_total) }}">已付清</span>
-                            {% elif total_received > 0 %}
-                            <span class="badge bg-warning text-dark" title="部分回款：{{ sym }}{{ '%.2f'|format(total_received) }} / {{ sym }}{{ '%.2f'|format(pi.grand_total) }}">部分回款</span>
-                            {% else %}
-                            <span class="badge bg-secondary">未回款</span>
-                            {% endif %}
-                        </td>
+                        {% set total_received = pi.received_amount or 0 %}
+                        {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
                         <td>
-                            {% set procurement_status = pi.effective_procurement_status %}
-                            {% if procurement_status == '发货完成' %}
-                            <span id="orderStatus-{{ pi.id }}" class="badge bg-success">发货完成</span>
-                            {% elif procurement_status == '采购完成' %}
-                            <span id="orderStatus-{{ pi.id }}" class="badge bg-primary">采购完成</span>
-                            {% elif procurement_status == '部分采购' %}
-                            <span id="orderStatus-{{ pi.id }}" class="badge bg-info text-dark">部分采购</span>
-                            {% elif procurement_status == '待采购' %}
-                            <span id="orderStatus-{{ pi.id }}" class="badge bg-warning text-dark">待采购</span>
-                            {% else %}
-                            <span id="orderStatus-{{ pi.id }}" class="badge bg-secondary">{{ procurement_status }}</span>
-                            {% endif %}
+                            <div class="pi-list-workflow" role="list" aria-label="{{ pi.pi_number }} 订单流程">
+                                {% set payment_state = 'complete' if pi.paid else ('partial' if total_received > 0 else 'pending') %}
+                                {% set payment_text = '已付清' if pi.paid else ('部分回款' if total_received > 0 else '未回款') %}
+                                <button type="button" role="listitem"
+                                        class="pi-list-workflow-stage is-{{ payment_state }} is-action"
+                                        {% if total_received > 0 or pi.paid %}onclick="viewPayments({{ pi.id }})"{% else %}onclick='confirmPayment({{ pi.id }}, {{ pi.grand_total }}, {{ (pi.currency or 'USD')|tojson }}, {{ payment_account_ids.get(pi.id)|tojson }})'{% endif %}
+                                        title="{{ payment_text }}：{{ sym }}{{ '%.2f'|format(total_received) }} / {{ sym }}{{ '%.2f'|format(pi.grand_total) }}；点击{{ '查看记录' if total_received > 0 or pi.paid else '登记回款' }}">
+                                    <span class="pi-list-workflow-dot"><i class="bi bi-cash-coin"></i></span>
+                                    <span class="pi-list-workflow-label">回款</span>
+                                    <span class="pi-list-workflow-status">{{ payment_text }}</span>
+                                </button>
+
+                                {% set procurement_state = 'complete' if pi.procurement_is_complete else ('partial' if pi.procurements else 'pending') %}
+                                {% set procurement_text = '采购完成' if pi.procurement_is_complete else ('部分采购' if pi.procurements else '未采购') %}
+                                {% if is_admin and total_received > 0 %}
+                                <a role="listitem" href="{{ url_for('procurement_page', pi_id=pi.id, readonly=1 if pi.procurement_confirmed or pi.shipping_completed else 0) }}"
+                                   class="pi-list-workflow-stage is-{{ procurement_state }} is-action"
+                                   title="{{ procurement_text }}；点击{{ '查看' if pi.procurement_confirmed or pi.shipping_completed else '处理' }}采购单">
+                                {% else %}
+                                <span role="listitem" class="pi-list-workflow-stage is-{{ procurement_state }}"
+                                      title="{{ procurement_text }}{{ '；尚未回款，不能开始采购' if total_received <= 0 else '；仅管理员可以处理采购' }}">
+                                {% endif %}
+                                    <span class="pi-list-workflow-dot"><i class="bi bi-cart-check"></i></span>
+                                    <span class="pi-list-workflow-label">采购</span>
+                                    <span class="pi-list-workflow-status">{{ procurement_text }}</span>
+                                {% if is_admin and total_received > 0 %}</a>{% else %}</span>{% endif %}
+
+                                {% set packing_state = 'complete' if pi.packing_list and pi.packing_list.is_completed else ('partial' if pi.packing_list else 'pending') %}
+                                {% set packing_text = '装箱完成' if packing_state == 'complete' else ('装箱草稿' if packing_state == 'partial' else '未装箱') %}
+                                {% if pi.packing_list or (is_admin and total_received > 0) %}
+                                <a role="listitem" href="{{ url_for('packing_list_detail', pi_id=pi.id) }}"
+                                   class="pi-list-workflow-stage is-{{ packing_state }} is-action"
+                                   title="{{ packing_text }}；点击{{ '查看' if pi.packing_list else '创建' }}装箱单">
+                                {% else %}
+                                <span role="listitem" class="pi-list-workflow-stage is-{{ packing_state }}"
+                                      title="{{ packing_text }}{{ '；尚未回款，不能创建装箱单' if total_received <= 0 else '；仅管理员可以创建装箱单' }}">
+                                {% endif %}
+                                    <span class="pi-list-workflow-dot"><i class="bi bi-box-seam"></i></span>
+                                    <span class="pi-list-workflow-label">装箱</span>
+                                    <span class="pi-list-workflow-status">{{ packing_text }}</span>
+                                {% if pi.packing_list or (is_admin and total_received > 0) %}</a>{% else %}</span>{% endif %}
+
+                                {% set customs_state = 'complete' if pi.customs_required is not none else 'pending' %}
+                                {% set customs_text = ('需要报关' if pi.customs_required else '无需报关') if pi.customs_required is not none else '未登记' %}
+                                <button type="button" role="listitem" id="customsBtn-{{ pi.id }}"
+                                        class="pi-list-workflow-stage is-{{ customs_state }} is-action"
+                                        onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                        title="{{ customs_text }}；点击查看或登记报关要求">
+                                    <span class="pi-list-workflow-dot"><i class="bi bi-file-earmark-check"></i></span>
+                                    <span class="pi-list-workflow-label">报关</span>
+                                    <span class="pi-list-workflow-status">{{ customs_text }}</span>
+                                </button>
+
+                                {% set shipping_state = 'complete' if pi.shipping_completed else 'pending' %}
+                                {% set shipping_text = '发货完成' if pi.shipping_completed else '未发货' %}
+                                <button type="button" role="listitem" id="shippingBtn-{{ pi.id }}"
+                                        class="pi-list-workflow-stage is-{{ shipping_state }} is-action"
+                                        onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                        title="{{ shipping_text }}；点击{{ '查看发货记录' if pi.shipping_completed else '登记或查看条件' }}">
+                                    <span class="pi-list-workflow-dot"><i class="bi bi-truck"></i></span>
+                                    <span class="pi-list-workflow-label">发货</span>
+                                    <span class="pi-list-workflow-status">{{ shipping_text }}</span>
+                                </button>
+                            </div>
                         </td>
                         <td class="text-end pi-list-actions">
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
-                                        data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
-                                    业务处理
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end text-start">
-                                    {% if pi.paid or total_received > 0 %}
-                                    <li>
-                                        <button type="button" class="dropdown-item" onclick="viewPayments({{ pi.id }})">
-                                            <i class="bi bi-cash-coin text-success"></i>查看回款记录
-                                        </button>
-                                    </li>
-                                    {% else %}
-                                    <li>
-                                        <button type="button" class="dropdown-item" onclick="confirmPayment({{ pi.id }}, {{ pi.grand_total }}, '{{ pi.currency or 'USD' }}', {{ payment_account_ids.get(pi.id)|tojson }})">
-                                            <i class="bi bi-cash-coin"></i>登记回款
-                                        </button>
-                                    </li>
-                                    {% endif %}
-
-                                    {% if procurement_status == '采购完成' %}
-                                    <li>
-                                        <button type="button" id="shippingBtn-{{ pi.id }}" class="dropdown-item"
-                                                onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                                title="采购已完成，点击登记发货">
-                                            <i class="bi bi-truck"></i>登记发货
-                                        </button>
-                                    </li>
-                                    {% elif procurement_status == '发货完成' %}
-                                    <li>
-                                        <button type="button" id="shippingBtn-{{ pi.id }}" class="dropdown-item"
-                                                onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                                title="点击查看发货记录">
-                                            <i class="bi bi-truck text-success"></i>查看发货记录
-                                        </button>
-                                    </li>
-                                    {% endif %}
-
-                                    {% if pi.packing_list %}
-                                    {% set packing_can_edit = is_admin and total_received > 0 %}
-                                    <li>
-                                        <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
-                                            <i class="bi {{ 'bi-check-lg text-success' if pi.packing_list.is_completed else ('bi-pencil-square' if packing_can_edit else 'bi-eye') }}"></i>
-                                            {{ '查看装箱单' if pi.packing_list.is_completed else ('编辑装箱单草稿' if packing_can_edit else '查看装箱单草稿') }}
-                                        </a>
-                                    </li>
-                                    {% elif is_admin and total_received > 0 %}
-                                    <li>
-                                        <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="dropdown-item">
-                                            <i class="bi bi-box-seam"></i>创建装箱单
-                                        </a>
-                                    </li>
-                                    {% endif %}
-
-                                    <li>
-                                        <button type="button" id="customsBtn-{{ pi.id }}" class="dropdown-item"
-                                                onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                                title="点击查看或修改是否需要报关">
-                                            {% if pi.customs_required is sameas true %}
-                                            <i class="bi bi-exclamation-circle text-warning"></i>报关：需报关
-                                            {% elif pi.customs_required is sameas false %}
-                                            <i class="bi bi-check-lg text-success"></i>报关：无需报关
-                                            {% else %}
-                                            <i class="bi bi-clipboard-check"></i>登记报关
-                                            {% endif %}
-                                        </button>
-                                    </li>
-
-                                    {% set expense_count = pi.expenses|length %}
-                                    <li>
-                                        <button type="button" id="expenseBtn-{{ pi.id }}" class="dropdown-item"
-                                                onclick='openExpense({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                                title="{{ ('已登记 ' ~ expense_count ~ ' 笔真实成本，点击查看记录') if expense_count else '点击新增订单真实成本' }}">
-                                            {% if expense_count %}<i class="bi bi-check-lg text-danger"></i>已登记（{{ expense_count }}笔）{% else %}<i class="bi bi-cash-stack"></i>新增真实成本{% endif %}
-                                        </button>
-                                    </li>
-                                </ul>
-                            </div>
                             <a href="{{ url_for('pi_detail', id=pi.id) }}" class="btn btn-sm btn-outline-warning">
                                 <i class="bi bi-eye"></i> 预览
                             </a>
@@ -252,6 +249,14 @@
                                     更多
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end text-start">
+                                    {% set expense_count = pi.expenses|length %}
+                                    <li>
+                                        <button type="button" id="expenseBtn-{{ pi.id }}" class="dropdown-item"
+                                                onclick='openExpense({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                                title="{{ ('已登记 ' ~ expense_count ~ ' 笔真实成本，点击查看记录') if expense_count else '点击新增订单真实成本' }}">
+                                            {% if expense_count %}<i class="bi bi-check-lg text-danger"></i>已登记（{{ expense_count }}笔）{% else %}<i class="bi bi-cash-stack"></i>新增真实成本{% endif %}
+                                        </button>
+                                    </li>
                                     <li>
                                         <a href="{{ url_for('pi_export', id=pi.id) }}" class="dropdown-item">
                                             <i class="bi bi-box-arrow-up-right text-primary"></i>导出
@@ -572,14 +577,10 @@ function openShippingRecord(piId, piNumber) {
 function updateShippingButton(piId) {
     var button = document.getElementById('shippingBtn-' + piId);
     if (!button) return;
-    button.className = 'dropdown-item';
+    button.className = 'pi-list-workflow-stage is-complete is-action';
     button.title = '点击查看发货记录';
-    button.innerHTML = '<i class="bi bi-truck text-success"></i>查看发货记录';
-    var status = document.getElementById('orderStatus-' + piId);
-    if (status) {
-        status.className = 'badge bg-success';
-        status.textContent = '发货完成';
-    }
+    var status = button.querySelector('.pi-list-workflow-status');
+    if (status) status.textContent = '发货完成';
 }
 function saveShippingRecord() {
     if (!currentShippingPiId) { shippingError('没有识别到对应的 PI，请关闭后重试。'); return; }
@@ -674,12 +675,10 @@ function openCustomsRecord(piId, piNumber) {
 function updateCustomsButton(piId, required) {
     var button = document.getElementById('customsBtn-' + piId);
     if (!button) return;
-    button.replaceChildren();
-    var icon = document.createElement('i');
-    icon.className = required ? 'bi bi-exclamation-circle text-warning' : 'bi bi-check-lg text-success';
-    button.appendChild(icon);
-    button.appendChild(document.createTextNode(required ? '报关：需报关' : '报关：无需报关'));
-    button.className = 'dropdown-item';
+    button.className = 'pi-list-workflow-stage is-complete is-action';
+    button.title = (required ? '需要报关' : '无需报关') + '；点击查看或修改报关要求';
+    var status = button.querySelector('.pi-list-workflow-status');
+    if (status) status.textContent = required ? '需要报关' : '无需报关';
 }
 function saveCustomsRecord() {
     var selected = document.querySelector('input[name="customs_required"]:checked');

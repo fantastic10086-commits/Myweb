@@ -124,77 +124,32 @@ class SecuritySmokeTests(unittest.TestCase):
     def test_anonymous_business_download_redirects_to_login(self):
         self.assertEqual(self.client.get('/pi/1/download').status_code, 302)
 
-    def test_pi_detail_shows_five_stage_workflow(self):
-        self.login('alice')
-        response = self.client.get(f'/pi/{self.alice_pi}')
-        self.assertEqual(response.status_code, 200)
-        html = response.get_data(as_text=True)
-        self.assertIn('id="piWorkflowCard"', html)
-        for stage in ('payment', 'procurement', 'packing', 'customs', 'shipping'):
-            self.assertIn(f'data-workflow-step="{stage}"', html)
-        self.assertIn('阻塞原因', html)
-        self.assertIn('流程条不会自动修改或清空下游数据', html)
-
-    def test_pi_workflow_reports_real_blockers_and_independent_records(self):
+    def test_pi_list_combines_workflow_actions_and_shows_customer_country(self):
         with application.app.app_context():
-            customer = Customer(name='Workflow Test Customer', salesperson='Alice')
-            product = Product(name='Workflow Test Product', product_code='FLOW-ITEM')
-            pi = PI(
-                pi_number='PI-WORKFLOW-TEST', customer=customer,
-                salesperson='Alice', currency='USD', exchange_rate=7,
-                total_amount=20,
-            )
-            item = PIItem(pi=pi, product=product, quantity=2, unit_price=10, amount=20)
-            db.session.add_all([customer, product, pi, item])
-            db.session.flush()
-
-            steps = {step['key']: step for step in application._pi_workflow_steps(pi)}
-            self.assertEqual(list(steps), [
-                'payment', 'procurement', 'packing', 'customs', 'shipping',
-            ])
-            self.assertEqual(steps['payment']['status'], '未回款')
-            self.assertEqual(steps['procurement']['state'], 'blocked')
-            self.assertIn('尚未回款', steps['procurement']['reason'])
-            self.assertEqual(steps['packing']['state'], 'blocked')
-            self.assertEqual(steps['customs']['status'], '未登记')
-            self.assertEqual(steps['shipping']['state'], 'blocked')
-
-            supplier = Supplier(name='Workflow Test Supplier')
-            payment = Payment(pi=pi, amount=5, fee=0, order_no='WORKFLOW-PAYMENT')
-            procurement = Procurement(
-                pi=pi, pi_item=item, supplier=supplier,
-                quantity=2, unit_price=3, total=6,
-            )
-            packing_list = PackingList(
-                pi=pi, status='draft', created_by='admin-test', updated_by='admin-test',
-            )
-            db.session.add_all([supplier, payment, procurement, packing_list])
-            pi.received_amount = 5
-            pi.customs_required = False
-            db.session.flush()
-
-            steps = {step['key']: step for step in application._pi_workflow_steps(pi)}
-            self.assertEqual(steps['payment']['status'], '部分回款')
-            self.assertEqual(steps['procurement']['status'], '待确认')
-            self.assertEqual(steps['packing']['status'], '装箱草稿')
-            self.assertEqual(steps['customs']['status'], '无需报关')
-            self.assertIn('采购尚未完成并确认', steps['shipping']['reason'])
-
-            pi.procurement_confirmed = True
-            packing_list.status = 'completed'
-            db.session.flush()
-            steps = {step['key']: step for step in application._pi_workflow_steps(pi)}
-            self.assertEqual(steps['procurement']['state'], 'complete')
-            self.assertEqual(steps['packing']['state'], 'complete')
-            self.assertEqual(steps['shipping']['status'], '待发货')
-
-            pi.shipping_completed = True
-            pi.shipping_date = date(2026, 9, 9)
-            pi.shipping_tracking_no = 'FLOW-TRACK'
-            steps = {step['key']: step for step in application._pi_workflow_steps(pi)}
-            self.assertEqual(steps['shipping']['state'], 'complete')
-            self.assertIn('FLOW-TRACK', steps['shipping']['reason'])
-            db.session.rollback()
+            customer = db.session.get(Customer, self.alice_customer)
+            original_country = customer.country
+            customer.country = '测试国家'
+            db.session.commit()
+        try:
+            self.login('alice')
+            response = self.client.get('/pi/list')
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertIn('<th>国家</th>', html)
+            self.assertIn('测试国家', html)
+            self.assertIn('class="pi-list-workflow"', html)
+            for label in ('回款', '采购', '装箱', '报关', '发货'):
+                self.assertIn(f'pi-list-workflow-label">{label}</span>', html)
+            self.assertNotIn('<th>回款状态</th>', html)
+            self.assertNotIn('<th>订单进度</th>', html)
+            self.assertNotIn('>业务处理</button>', html)
+            self.assertIn(f'id="customsBtn-{self.alice_pi}"', html)
+            self.assertIn(f'id="shippingBtn-{self.alice_pi}"', html)
+        finally:
+            with application.app.app_context():
+                customer = db.session.get(Customer, self.alice_customer)
+                customer.country = original_country
+                db.session.commit()
 
     def test_customer_deal_counts_partial_payments_fees_and_caps_each_pi(self):
         with application.app.app_context():
@@ -1344,7 +1299,7 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertEqual(history_response.status_code, 200)
         self.assertEqual(len(history_response.get_json()), 1)
         self.assertNotIn('利润表', salesperson_page)
-        self.assertNotIn('>采购<', salesperson_page)
+        self.assertNotIn('href="/procurement"', salesperson_page)
         self.assertEqual(self.client.get('/profit-report').status_code, 403)
         self.assertEqual(self.client.get('/fees').status_code, 403)
         self.assertEqual(self.client.get('/procurement').status_code, 403)
@@ -2048,7 +2003,8 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('> 预览\n', list_html)
         self.assertIn('bi-box-arrow-up-right text-primary"></i>导出', list_html)
         self.assertNotIn('在线编辑', list_html)
-        self.assertIn('业务处理', list_html)
+        self.assertIn('class="pi-list-workflow"', list_html)
+        self.assertNotIn('>业务处理</button>', list_html)
         self.assertIn('更多', list_html)
         self.assertNotIn('<th class="text-center">装箱单</th>', list_html)
         self.assertNotIn('<th class="text-center">报关</th>', list_html)
