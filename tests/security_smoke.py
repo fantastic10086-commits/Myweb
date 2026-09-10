@@ -2740,9 +2740,15 @@ class SecuritySmokeTests(unittest.TestCase):
             compact_workbook.close()
             compact_excel.close()
 
-            compact_pdf = self.client.get(
-                f'/packing-list/{self.alice_pi}/compact-100x150.pdf',
-            )
+            with patch.object(
+                application, 'convert_excel_to_pdf',
+                side_effect=AssertionError(
+                    'compact PDF must use the exact 100x150 renderer'
+                ),
+            ):
+                compact_pdf = self.client.get(
+                    f'/packing-list/{self.alice_pi}/compact-100x150.pdf',
+                )
             self.assertEqual(compact_pdf.status_code, 200)
             self.assertEqual(compact_pdf.mimetype, 'application/pdf')
             self.assertTrue(compact_pdf.data.startswith(b'%PDF-'))

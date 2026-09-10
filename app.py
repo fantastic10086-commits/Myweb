@@ -4729,29 +4729,22 @@ def _packing_compact_export(pi_id, output_format):
     base_name = secure_filename(
         f'Packing-List-{pi.pi_number}-Compact-100x150{suffix}'
     ) or 'packing-list-compact-100x150'
-    content = generate_compact_packing_list_workbook(pi, packing_list)
-    template = DocumentTemplate.query.filter_by(
-        code='packing-compact-100x150', active=True
-    ).first()
-    if template:
-        content = apply_packing_template_style(
-            content, _template_file_path(template), compact=True
-        )
-    mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     if output_format == 'pdf':
-        with tempfile.TemporaryDirectory(prefix='packing-compact-') as work_dir:
-            excel_path = os.path.join(work_dir, f'{base_name}.xlsx')
-            pdf_path = os.path.join(work_dir, f'{base_name}.pdf')
-            with open(excel_path, 'wb') as output_file:
-                output_file.write(content)
-            try:
-                convert_excel_to_pdf(excel_path, pdf_path)
-            except TemplateError as exc:
-                flash(f'生成装箱单 PDF 失败：{exc}', 'danger')
-                return redirect(url_for('packing_list_detail', pi_id=pi.id))
-            with open(pdf_path, 'rb') as pdf_file:
-                content = pdf_file.read()
+        # Keep the label PDF at its exact physical size. Applying an editable
+        # Excel template before LibreOffice conversion can replace the custom
+        # 100 x 150 mm page with A4 and shrink the label into its centre.
+        content = generate_compact_packing_list_pdf(pi, packing_list)
         mimetype = 'application/pdf'
+    else:
+        content = generate_compact_packing_list_workbook(pi, packing_list)
+        template = DocumentTemplate.query.filter_by(
+            code='packing-compact-100x150', active=True
+        ).first()
+        if template:
+            content = apply_packing_template_style(
+                content, _template_file_path(template), compact=True
+            )
+        mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     response = send_file(
         BytesIO(content), mimetype=mimetype, as_attachment=True,
         download_name=f'{base_name}.{output_format}',
