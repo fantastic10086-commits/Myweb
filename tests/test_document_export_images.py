@@ -7,9 +7,27 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils.units import EMU_to_pixels
 
 from document_export import _fit_image_size, _image_cell_bounds, _put_image
+from packing_list_export import (
+    COMPACT_PRODUCT_TEXT_UNITS,
+    _compact_product_text,
+)
 
 
 class DocumentExportImageTests(unittest.TestCase):
+    def test_compact_packing_product_text_is_truncated_only_when_too_long(self):
+        self.assertEqual(
+            _compact_product_text('P80 Torch', '8M cable'),
+            'P80 Torch / 8M cable',
+        )
+
+        truncated = _compact_product_text(
+            'Black Wolf P80 plasma cutting torch with extended handle',
+            'Extra long product specification for carton label',
+        )
+        self.assertTrue(truncated.endswith('…'))
+        self.assertLessEqual(len(truncated), COMPACT_PRODUCT_TEXT_UNITS)
+        self.assertNotIn('Extra long product specification', truncated)
+
     def test_fit_preserves_wide_image_ratio(self):
         width, height = _fit_image_size(400, 100, 52, 48)
 

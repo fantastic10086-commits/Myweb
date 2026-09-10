@@ -3,6 +3,7 @@
 from io import BytesIO
 from math import ceil
 from copy import copy
+import unicodedata
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -22,6 +23,7 @@ GREEN = "198754"
 COMPACT_BLACK = "000000"
 COMPACT_WHITE = "FFFFFF"
 COMPACT_PAGE_SIZE = (100 * mm, 150 * mm)
+COMPACT_PRODUCT_TEXT_UNITS = 44
 
 
 def _text(value):
@@ -32,6 +34,28 @@ def _text(value):
 
 def _compact_number(value):
     return f"{float(value or 0):g}"
+
+
+def _compact_product_text(product_name, specification):
+    """Keep compact product rows on one line without changing stored data."""
+    value = " / ".join(filter(None, [
+        str(product_name or "").strip(),
+        str(specification or "").strip(),
+    ]))
+    if not value:
+        return ""
+
+    width = 0
+    kept = []
+    suffix = "…"
+    suffix_width = 2
+    for char in value:
+        char_width = 2 if unicodedata.east_asian_width(char) in {"W", "F"} else 1
+        if width + char_width + suffix_width > COMPACT_PRODUCT_TEXT_UNITS:
+            return "".join(kept).rstrip() + suffix
+        kept.append(char)
+        width += char_width
+    return value
 
 
 def _compact_sheet_title(index, box_no, used_titles):
@@ -128,9 +152,9 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
         sheet.merge_cells(start_row=item_row, start_column=2, end_row=item_row, end_column=5)
         values = (
             item_index if item else "",
-            _text(
-                " / ".join(filter(None, [item.product_name, item.specification]))
-            ) if item else "No products / 暂无产品",
+            _text(_compact_product_text(
+                item.product_name, item.specification
+            )) if item else "No products / 暂无产品",
             int(item.quantity) if item else "",
         )
         for column, value in ((1, values[0]), (2, values[1]), (6, values[2])):
@@ -385,9 +409,9 @@ def generate_compact_packing_list_pdf(pi, packing_list):
             document.setLineWidth(0.45)
             document.rect(x, y, cell_width, row_height, fill=0, stroke=1)
             if item:
-                product_text = " / ".join(filter(None, [
-                    item.product_name or '', item.specification or '',
-                ]))
+                product_text = _compact_product_text(
+                    item.product_name, item.specification
+                )
                 item_text = f"{item_index + 1}. {product_text}"
                 quantity_text = f"x {int(item.quantity)}"
             else:
