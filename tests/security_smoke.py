@@ -291,6 +291,208 @@ class SecuritySmokeTests(unittest.TestCase):
                 db.session.delete(created)
                 db.session.commit()
 
+    def test_pi_edit_protects_downstream_records_and_preserves_item_ids(self):
+        with application.app.app_context():
+            original_product = Product.query.filter_by(product_code='ORIG').one()
+            extra_product = Product(
+                name='PI Edit Extra Product', product_code='PI-EDIT-EXTRA',
+                unit_price=5,
+            )
+            supplier = Supplier(name='PI Edit Protected Supplier')
+            pi = PI(
+                pi_number='PI-EDIT-PROTECTED',
+                customer_id=self.alice_customer,
+                salesperson='Alice', currency='USD', exchange_rate=7,
+                issue_date=date(2026, 9, 10), total_amount=25,
+            )
+            db.session.add_all([extra_product, supplier, pi])
+            db.session.flush()
+            protected_item = PIItem(
+                pi_id=pi.id, product_id=original_product.id,
+                quantity=2, unit_price=10, amount=20,
+            )
+            extra_item = PIItem(
+                pi_id=pi.id, product_id=extra_product.id,
+                quantity=1, unit_price=5, amount=5,
+            )
+            db.session.add_all([protected_item, extra_item])
+            db.session.flush()
+            db.session.add(Procurement(
+                pi_id=pi.id, pi_item_id=protected_item.id,
+                supplier_id=supplier.id, unit_price=8,
+                quantity=2, total=16,
+            ))
+            packing_list = PackingList(
+                pi_id=pi.id, status='draft', created_by='admin-test',
+                updated_by='admin-test',
+            )
+            db.session.add(packing_list)
+            db.session.flush()
+            box = PackingBox(
+                packing_list_id=packing_list.id, box_no='1', sort_order=0,
+            )
+            db.session.add(box)
+            db.session.flush()
+            db.session.add(PackingItem(
+                packing_box_id=box.id, pi_item_id=protected_item.id,
+                quantity=1, product_name=original_product.name,
+            ))
+            db.session.add(Payment(
+                pi_id=pi.id, amount=25, fee=0,
+                order_no='PI-EDIT-PROTECTED-PAYMENT',
+            ))
+            pi.received_amount = 25
+            pi.paid = True
+            db.session.commit()
+            application._recalculate_customer_deal(
+                db.session.get(Customer, self.alice_customer)
+            )
+            db.session.commit()
+            pi_id = pi.id
+            original_product_id = original_product.id
+            protected_item_id = protected_item.id
+            extra_item_id = extra_item.id
+            extra_product_id = extra_product.id
+            supplier_id = supplier.id
+
+        def edit_data(client, *, protected_qty=2, include_protected=True,
+                      unlock=False, reason='', note=''):
+            with application.app.app_context():
+                current = db.session.get(PI, pi_id)
+                version = current.version
+            data = {
+                'version': str(version),
+                'customer_id': str(self.alice_customer),
+                'salesperson': 'Alice',
+                'payment_terms': '100% TT before shipment',
+                'price_terms': '',
+                'delivery_time': '',
+                'bank_info': '',
+                'notes': note,
+                'issue_date': '2026-09-10',
+                'currency': 'USD',
+                'exchange_rate': '7',
+                'company': 'klista',
+                'shipping_address': 'Safe editable address',
+                'shipping_cost': '0',
+                'shipping_note': '',
+                f'selected_{extra_product_id}': 'on',
+                f'qty_{extra_product_id}': '1',
+                f'unit_price_{extra_product_id}': '5',
+                'product_order': (
+                    f'{original_product_id},{extra_product_id}'
+                    if include_protected else str(extra_product_id)
+                ),
+                'csrf_token': self.token(f'/pi/{pi_id}/edit'),
+            }
+            if include_protected:
+                data.update({
+                    f'selected_{original_product_id}': 'on',
+                    f'qty_{original_product_id}': str(protected_qty),
+                    f'unit_price_{original_product_id}': '10',
+                })
+            if unlock:
+                data['downstream_unlock'] = '1'
+                data['downstream_change_reason'] = reason
+            return data
+
+        try:
+            self.login('alice')
+            page = self.client.get(f'/pi/{pi_id}/edit')
+            html = page.get_data(as_text=True)
+            self.assertIn('该 PI 已有下游业务记录，结构信息已锁定', html)
+            self.assertIn('回款 1 笔', html)
+            self.assertIn('采购 1 行 / 1 家供应商', html)
+            self.assertIn('装箱单草稿 / 1 箱 / 1 行', html)
+            self.assertNotIn('id="downstream_unlock"', html)
+
+            denied = self.client.post(
+                f'/pi/{pi_id}/edit',
+                data=edit_data(self.client, protected_qty=3, note='denied'),
+            )
+            self.assertEqual(denied.status_code, 302)
+            with application.app.app_context():
+                self.assertEqual(db.session.get(PIItem, protected_item_id).quantity, 2)
+
+            with patch.object(
+                application, '_generate_default_pi_documents',
+                return_value=('protected.pdf', 'protected.xlsx'),
+            ):
+                notes_only = self.client.post(
+                    f'/pi/{pi_id}/edit',
+                    data=edit_data(self.client, note='allowed notes-only edit'),
+                )
+            self.assertEqual(notes_only.status_code, 302)
+            with application.app.app_context():
+                current = db.session.get(PI, pi_id)
+                self.assertEqual(current.notes, 'allowed notes-only edit')
+                self.assertEqual(db.session.get(PIItem, protected_item_id).quantity, 2)
+                self.assertEqual(db.session.get(PIItem, extra_item_id).quantity, 1)
+
+            self.client.get('/logout')
+            self.login('admin-test')
+            admin_page = self.client.get(f'/pi/{pi_id}/edit').get_data(as_text=True)
+            self.assertIn('id="downstream_unlock"', admin_page)
+            self.assertIn('原因会写入审计日志', admin_page)
+
+            with patch.object(
+                application, '_generate_default_pi_documents',
+                return_value=('protected.pdf', 'protected.xlsx'),
+            ):
+                updated = self.client.post(
+                    f'/pi/{pi_id}/edit',
+                    data=edit_data(
+                        self.client, protected_qty=3, unlock=True,
+                        reason='客户确认增加采购数量', note='admin updated',
+                    ),
+                )
+            self.assertEqual(updated.status_code, 302)
+            with application.app.app_context():
+                item = db.session.get(PIItem, protected_item_id)
+                self.assertEqual(item.quantity, 3)
+                self.assertEqual(item.pi_id, pi_id)
+                self.assertIsNotNone(db.session.get(PIItem, extra_item_id))
+                current = db.session.get(PI, pi_id)
+                self.assertEqual(current.received_amount, 25)
+                self.assertFalse(current.paid)
+                audit = AuditLog.query.filter_by(
+                    entity_type='pi', entity_id=pi_id, action='update',
+                ).order_by(AuditLog.id.desc()).first()
+                self.assertIn('下游解锁原因', audit.summary)
+                self.assertIn('客户确认增加采购数量', audit.after_json)
+
+            blocked_remove = self.client.post(
+                f'/pi/{pi_id}/edit',
+                data=edit_data(
+                    self.client, include_protected=False, unlock=True,
+                    reason='尝试移除已有下游记录产品',
+                ),
+            )
+            self.assertEqual(blocked_remove.status_code, 302)
+            with application.app.app_context():
+                self.assertIsNotNone(db.session.get(PIItem, protected_item_id))
+                self.assertEqual(Procurement.query.filter_by(
+                    pi_item_id=protected_item_id
+                ).count(), 1)
+                self.assertEqual(PackingItem.query.filter_by(
+                    pi_item_id=protected_item_id
+                ).count(), 1)
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                if pi:
+                    db.session.delete(pi)
+                    db.session.flush()
+                supplier = db.session.get(Supplier, supplier_id)
+                if supplier:
+                    db.session.delete(supplier)
+                product = db.session.get(Product, extra_product_id)
+                if product:
+                    db.session.delete(product)
+                customer = db.session.get(Customer, self.alice_customer)
+                application._recalculate_customer_deal(customer)
+                db.session.commit()
+
     def test_direct_pi_pdf_download_uses_current_default_export_renderer(self):
         self.login('alice')
         calls = []

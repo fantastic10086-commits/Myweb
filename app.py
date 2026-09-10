@@ -5299,6 +5299,173 @@ def _preload_products(pi):
     return preload
 
 
+def _pi_downstream_impact(pi):
+    """Summarize records that make structural PI edits business-sensitive."""
+    payment_count = Payment.query.filter_by(pi_id=pi.id).filter(
+        Payment.deleted_at.is_(None)
+    ).count()
+    procurements = Procurement.query.filter_by(pi_id=pi.id).all()
+    supplier_count = len({row.supplier_id for row in procurements if row.supplier_id})
+    packing_list = PackingList.query.filter_by(pi_id=pi.id).first()
+    box_count = 0
+    packing_item_count = 0
+    if packing_list:
+        box_count = PackingBox.query.filter_by(packing_list_id=packing_list.id).count()
+        packing_item_count = PackingItem.query.join(PackingBox).filter(
+            PackingBox.packing_list_id == packing_list.id
+        ).count()
+    customs_recorded = pi.customs_required is not None
+    has_downstream = bool(
+        payment_count or procurements or packing_list
+        or customs_recorded or pi.shipping_completed
+    )
+    return {
+        'has_downstream': has_downstream,
+        'payment_count': payment_count,
+        'procurement_count': len(procurements),
+        'supplier_count': supplier_count,
+        'packing_exists': bool(packing_list),
+        'packing_status': packing_list.status if packing_list else '',
+        'box_count': box_count,
+        'packing_item_count': packing_item_count,
+        'customs_recorded': customs_recorded,
+        'customs_label': (
+            '需要报关' if pi.customs_required is True
+            else ('无需报关' if pi.customs_required is False else '')
+        ),
+        'shipping_completed': bool(pi.shipping_completed),
+    }
+
+
+def _pi_item_usage(pi):
+    """Return purchased and packed quantities keyed by the stable PI item id."""
+    usage = {
+        item.id: {'procured': 0, 'packed': 0}
+        for item in pi.items
+    }
+    procurement_rows = db.session.query(
+        Procurement.pi_item_id, func.sum(Procurement.quantity)
+    ).filter(Procurement.pi_id == pi.id).group_by(Procurement.pi_item_id).all()
+    for item_id, quantity in procurement_rows:
+        usage.setdefault(item_id, {'procured': 0, 'packed': 0})['procured'] = int(quantity or 0)
+
+    packing_rows = db.session.query(
+        PackingItem.pi_item_id, func.sum(PackingItem.quantity)
+    ).join(PackingBox, PackingItem.packing_box_id == PackingBox.id).join(
+        PackingList, PackingBox.packing_list_id == PackingList.id
+    ).filter(PackingList.pi_id == pi.id).group_by(PackingItem.pi_item_id).all()
+    for item_id, quantity in packing_rows:
+        usage.setdefault(item_id, {'procured': 0, 'packed': 0})['packed'] = int(quantity or 0)
+    return usage
+
+
+def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
+                           exchange_rate, company, issue_date, shipping_cost,
+                           selected_items):
+    """Describe submitted changes that can affect downstream business records."""
+    changes = []
+    scalar_values = (
+        ('客户', pi.customer_id, customer_id),
+        ('业务员', pi.salesperson or '', salesperson or ''),
+        ('币种', (pi.currency or 'USD').upper(), currency.upper()),
+        ('本单业务汇率', float(pi.exchange_rate or 0), float(exchange_rate)),
+        ('公司模板', pi.company or 'klista', company or 'klista'),
+        ('开单日期', pi.issue_date, issue_date),
+        ('客户费用/折扣', float(pi.shipping_cost or 0), float(shipping_cost)),
+    )
+    for label, old_value, new_value in scalar_values:
+        if isinstance(old_value, float) or isinstance(new_value, float):
+            different = abs(float(old_value) - float(new_value)) > 0.00005
+        else:
+            different = old_value != new_value
+        if different:
+            changes.append(label)
+
+    existing_by_product = {item.product_id: item for item in pi.items}
+    submitted_by_product = {row['product'].id: row for row in selected_items}
+    added = [row['product'].name for product_id, row in submitted_by_product.items()
+             if product_id not in existing_by_product]
+    removed = [item.product.name if item.product else str(item.product_id)
+               for product_id, item in existing_by_product.items()
+               if product_id not in submitted_by_product]
+    modified = []
+    for product_id, item in existing_by_product.items():
+        submitted = submitted_by_product.get(product_id)
+        if not submitted:
+            continue
+        details = []
+        if int(item.quantity or 0) != int(submitted['quantity']):
+            details.append('数量')
+        if abs(float(item.unit_price or 0) - float(submitted['unit_price'])) > 0.005:
+            details.append('单价')
+        if details:
+            modified.append(
+                f"{item.product.name if item.product else product_id}（{'、'.join(details)}）"
+            )
+    if added:
+        changes.append(f"新增产品：{'、'.join(added[:5])}")
+    if removed:
+        changes.append(f"移除产品：{'、'.join(removed[:5])}")
+    if modified:
+        changes.append(f"修改产品：{'、'.join(modified[:5])}")
+
+    submitted_total = round(sum(row['amount'] for row in selected_items), 2)
+    if abs(float(pi.total_amount or 0) - submitted_total) > 0.005 and not any(
+        label.startswith(('新增产品：', '移除产品：', '修改产品：')) for label in changes
+    ):
+        changes.append('产品小计')
+    return changes
+
+
+def _validate_pi_item_reconciliation(pi, selected_items):
+    """Block item changes that would invalidate existing purchase/packing rows."""
+    usage = _pi_item_usage(pi)
+    submitted_by_product = {row['product'].id: row for row in selected_items}
+    errors = []
+    for item in pi.items:
+        submitted = submitted_by_product.get(item.product_id)
+        item_usage = usage.get(item.id, {'procured': 0, 'packed': 0})
+        product_name = item.product.name if item.product else str(item.product_id)
+        if not submitted:
+            references = []
+            if item_usage['procured']:
+                references.append(f"已采购 {item_usage['procured']}")
+            if item_usage['packed']:
+                references.append(f"已装箱 {item_usage['packed']}")
+            if references:
+                errors.append(f"{product_name} 不能移除（{'，'.join(references)}）")
+            continue
+        submitted_quantity = int(submitted['quantity'])
+        if item_usage['procured'] > submitted_quantity:
+            errors.append(
+                f"{product_name} 的 PI 数量不能低于已采购数量 {item_usage['procured']}"
+            )
+        if item_usage['packed'] > submitted_quantity:
+            errors.append(
+                f"{product_name} 的 PI 数量不能低于已装箱数量 {item_usage['packed']}"
+            )
+    return errors
+
+
+def _reconcile_pi_items(pi, selected_items):
+    """Update PI items in place so downstream foreign keys remain valid."""
+    existing_by_product = {item.product_id: item for item in pi.items}
+    submitted_product_ids = set()
+    for submitted in selected_items:
+        product_id = submitted['product'].id
+        submitted_product_ids.add(product_id)
+        item = existing_by_product.get(product_id)
+        if item is None:
+            item = PIItem(product_id=product_id)
+            pi.items.append(item)
+        item.quantity = submitted['quantity']
+        item.unit_price = submitted['unit_price']
+        item.amount = submitted['amount']
+    for product_id, item in existing_by_product.items():
+        if product_id not in submitted_product_ids:
+            pi.items.remove(item)
+
+
 @app.route('/pi/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def pi_edit(id):
@@ -5311,6 +5478,14 @@ def pi_edit(id):
     # Map existing items: product_id -> {quantity, selected}
     existing_items = {item.product_id: item.quantity for item in pi.items}
     preload = _preload_products(pi)
+    downstream_impact = _pi_downstream_impact(pi)
+
+    def render_edit_page():
+        return render_template(
+            'pi_edit.html', pi=pi, customers=customers,
+            existing_items=existing_items, preload_products=preload,
+            downstream_impact=downstream_impact,
+        )
 
     if request.method == 'POST':
         if _submitted_version(pi) != (pi.version or 1):
@@ -5318,6 +5493,8 @@ def pi_edit(id):
             flash('该 PI 已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('pi_edit', id=id))
         before = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        before['items'] = [item.to_dict() for item in pi.items]
+        old_customer_id = pi.customer_id
         customer_id = request.form.get('customer_id', type=int)
         salesperson = request.form.get('salesperson', '').strip()
         payment_terms = request.form.get('payment_terms', '').strip()
@@ -5361,9 +5538,7 @@ def pi_edit(id):
 
         if not customer_id:
             flash('请选择客户。', 'danger')
-            return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   existing_items=existing_items,
-                                   preload_products=preload)
+            return render_edit_page()
 
         customer = Customer.query.get_or_404(customer_id)
         require_customer_access(customer)
@@ -5372,9 +5547,7 @@ def pi_edit(id):
 
         if not salesperson:
             flash('请选择业务员。', 'danger')
-            return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   existing_items=existing_items,
-                                   preload_products=preload)
+            return render_edit_page()
 
         shipping_address = request.form.get('shipping_address', '').strip()
         try:
@@ -5398,14 +5571,49 @@ def pi_edit(id):
 
         selected_items, total_amount = _submitted_pi_items(
             request.form,
-            allow_inactive_ids={item.product_id for item in existing_items},
+            allow_inactive_ids=set(existing_items),
         )
 
         if not selected_items:
             flash('请至少选择一个产品。', 'danger')
-            return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   existing_items=existing_items,
-                                   preload_products=preload)
+            return render_edit_page()
+
+        structural_changes = _pi_structural_changes(
+            pi,
+            customer_id=customer_id,
+            salesperson=salesperson,
+            currency=currency,
+            exchange_rate=business_exchange_rate,
+            company=company,
+            issue_date=issue_date,
+            shipping_cost=shipping_cost,
+            selected_items=selected_items,
+        )
+        if downstream_impact['has_downstream'] and structural_changes:
+            if not is_admin():
+                flash(
+                    '该 PI 已有下游业务记录，业务员只能修改备注、地址、条款等非结构信息。',
+                    'danger',
+                )
+                return redirect(url_for('pi_edit', id=id))
+            unlock_confirmed = request.form.get('downstream_unlock') == '1'
+            change_reason = request.form.get('downstream_change_reason', '').strip()
+            if not unlock_confirmed or len(change_reason) < 5:
+                flash('请确认下游影响，并填写至少 5 个字符的修改原因。', 'danger')
+                return redirect(url_for('pi_edit', id=id))
+        else:
+            change_reason = ''
+
+        item_errors = _validate_pi_item_reconciliation(pi, selected_items)
+        if item_errors:
+            flash('；'.join(item_errors[:5]), 'danger')
+            return redirect(url_for('pi_edit', id=id))
+        if (
+            downstream_impact['payment_count']
+            and (pi.currency or 'USD').upper() != currency.upper()
+        ):
+            flash('该 PI 已有回款记录，不能修改币种；请先按业务流程处理原回款记录。', 'danger')
+            return redirect(url_for('pi_edit', id=id))
 
         # Update PI record
         pi.customer_id = customer_id
@@ -5428,19 +5636,28 @@ def pi_edit(id):
         pi.shipping_address = shipping_address
         pi.notes = notes
 
-        # Replace items
-        PIItem.query.filter_by(pi_id=pi.id).delete()
-        for item in selected_items:
-            pi_item = PIItem(
-                pi_id=pi.id,
-                product_id=item['product'].id,
-                quantity=item['quantity'],
-                unit_price=item['unit_price'],
-                amount=item['amount'],
-            )
-            db.session.add(pi_item)
+        # Preserve stable PI item ids so procurement and packing references
+        # continue to point at the same business rows.
+        _reconcile_pi_items(pi, selected_items)
 
         db.session.flush()
+
+        # Amount/customer changes must update the stored payment flag and both
+        # customers' deal totals in the same transaction as the PI edit.
+        active_payments = _active_payments(pi.id)
+        paid_with_fee = sum(
+            (payment.amount or 0) + (payment.fee or 0)
+            for payment in active_payments
+        )
+        pi.received_amount = round(sum(
+            payment.amount or 0 for payment in active_payments
+        ), 2)
+        pi.paid = paid_with_fee >= pi.grand_total
+        customer_ids_to_recalculate = {old_customer_id, customer_id}
+        for affected_customer_id in customer_ids_to_recalculate:
+            affected_customer = db.session.get(Customer, affected_customer_id)
+            if affected_customer:
+                _recalculate_customer_deal(affected_customer)
 
         # Regenerate the saved files through the export workbench renderer.
         try:
@@ -5450,21 +5667,25 @@ def pi_edit(id):
         except Exception as e:
             db.session.rollback()
             flash(f'生成 PDF 失败：{str(e)}', 'danger')
-            return render_template('pi_edit.html', pi=pi, customers=customers,
-                                   existing_items=existing_items,
-                                   preload_products=preload)
+            return render_edit_page()
 
         pi.version = (pi.version or 1) + 1
-        _audit('update', 'pi', pi.id, f'修改 PI：{pi.pi_number}', before=before,
-               after=_snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
+        after = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        after['items'] = [item.to_dict() for item in pi.items]
+        if structural_changes:
+            after['structural_changes'] = structural_changes
+        if change_reason:
+            after['downstream_change_reason'] = change_reason
+        summary = f'修改 PI：{pi.pi_number}'
+        if change_reason:
+            summary += f'（下游解锁原因：{change_reason[:120]}）'
+        _audit('update', 'pi', pi.id, summary, before=before, after=after)
         db.session.commit()
         flash(f'PI {pi.pi_number} 已更新并重新生成 PDF。', 'success')
         return redirect(url_for('pi_detail', id=pi.id))
 
     # GET request
-    return render_template('pi_edit.html', pi=pi, customers=customers,
-                           existing_items=existing_items,
-                           preload_products=preload)
+    return render_edit_page()
 
 
 def _apply_form_to_pi(form, pi):

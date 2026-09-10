@@ -8,6 +8,8 @@
     var selectedProductOrder = [];
     var pendingProducts = {};
     var pendingProductOrder = [];
+    var hasDownstreamRecords = {{ downstream_impact.has_downstream|tojson }};
+    var downstreamEditAdmin = {{ is_admin|tojson }};
     var adjustmentUsd = {{ ((pi.shipping_cost or 0) / (pi.exchange_rate or 7) if pi.currency == 'RMB' else (pi.shipping_cost or 0))|tojson }};
     var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
@@ -24,6 +26,20 @@
     function toUsd(value) { return getCurrency() === 'RMB' ? value / getBusinessRate() : value; }
     function getSymbol() {
         return getCurrency() === 'RMB' ? '¥' : '$';
+    }
+    function structuralEditLocked() {
+        if (!hasDownstreamRecords) return false;
+        var unlock = document.getElementById('downstream_unlock');
+        return !downstreamEditAdmin || !unlock || !unlock.checked;
+    }
+    function applyStructuralLock() {
+        var locked = structuralEditLocked();
+        document.querySelectorAll('.pi-structural-control').forEach(function(el) {
+            el.disabled = locked;
+        });
+        var reasonWrap = document.getElementById('downstream_reason_wrap');
+        if (reasonWrap) reasonWrap.classList.toggle('d-none', locked);
+        updateAddProductButton();
     }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
@@ -58,10 +74,10 @@
             '<td class="row-num"></td>' +
             '<td>' + imgTag(p.img) + '<strong>' + escHtml(p.name) + '</strong>' + (p.spec ? '<br><small class="text-muted">' + escHtml(p.spec) + '</small>' : '') + '</td>' +
             '<td>' + escHtml(p.code) + '</td>' +
-            '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="width:90px;"></td>' +
-            '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
+            '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price pi-structural-control" value="' + p.price.toFixed(2) + '" style="width:90px;"></td>' +
+            '<td><input type="number" class="form-control form-control-sm sel-qty pi-structural-control" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
             '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
-            '<td><button type="button" class="btn btn-sm btn-outline-danger">&times;</button></td>' +
+            '<td><button type="button" class="btn btn-sm btn-outline-danger pi-structural-control">&times;</button></td>' +
             '<input type="hidden" name="selected_' + p.id + '" value="on">' +
             '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
             '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(2) + '">';
@@ -117,7 +133,7 @@
     function updateAddProductButton() {
         var btn = document.getElementById('add_product_btn');
         var count = pendingProductOrder.length;
-        btn.disabled = count === 0;
+        btn.disabled = count === 0 || structuralEditLocked();
         btn.innerHTML = '<i class="bi bi-plus-lg"></i> 添加所选产品' + (count ? ' (' + count + ')' : '');
     }
     function renderDropdown(filter) {
@@ -189,7 +205,20 @@
             if (!sp.value) { e.preventDefault(); alert('请选择业务员。'); return; }
             if (!(parseFloat(document.getElementById('exchange_rate').value) > 0)) { e.preventDefault(); alert('本单业务汇率必须大于 0。'); return; }
             if (selectedProductOrder.length === 0) { e.preventDefault(); alert('请至少添加一个产品。'); return; }
+            var unlock = document.getElementById('downstream_unlock');
+            if (hasDownstreamRecords && downstreamEditAdmin && unlock && unlock.checked) {
+                var reason = document.getElementById('downstream_change_reason');
+                if (!reason || reason.value.trim().length < 5) {
+                    e.preventDefault(); alert('请填写至少 5 个字符的修改原因。'); return;
+                }
+                if (!confirm('该 PI 已有下游业务记录。确认按页面所示影响范围保存结构修改吗？')) {
+                    e.preventDefault(); return;
+                }
+            }
             updateTotal();
+            document.querySelectorAll('.pi-structural-control').forEach(function(el) {
+                el.disabled = false;
+            });
         });
         initSearchable('cust_search', 'customer_id', 'cust_dropdown');
         initSearchable('sp_search', 'pi_salesperson', 'sp_dropdown');
@@ -197,6 +226,9 @@
         var customerNote = document.getElementById('customer_notes_display');
         if (selectedCustomer && customerNote) customerNote.textContent = selectedCustomer.getAttribute('data-notes') || '—';
         applyCurrency();
+        var downstreamUnlock = document.getElementById('downstream_unlock');
+        if (downstreamUnlock) downstreamUnlock.addEventListener('change', applyStructuralLock);
+        applyStructuralLock();
     });
     function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
     function initSearchable(inputId, selectId, dropdownId) {
@@ -212,21 +244,46 @@
 
 {% block content %}
 <div class="row mb-3"><div class="col"><h2><i class="bi bi-pencil-square me-2"></i>编辑 PI {{ pi.pi_number }}</h2><a href="{{ url_for('pi_detail', id=pi.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回预览</a></div></div>
+{% if downstream_impact.has_downstream %}
+<div class="alert alert-warning border-warning mb-3" id="downstream-impact-panel">
+    <div class="fw-bold mb-2"><i class="bi bi-shield-lock me-1"></i>该 PI 已有下游业务记录，结构信息已锁定</div>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+        {% if downstream_impact.payment_count %}<span class="badge text-bg-light border">回款 {{ downstream_impact.payment_count }} 笔</span>{% endif %}
+        {% if downstream_impact.procurement_count %}<span class="badge text-bg-light border">采购 {{ downstream_impact.procurement_count }} 行 / {{ downstream_impact.supplier_count }} 家供应商</span>{% endif %}
+        {% if downstream_impact.packing_exists %}<span class="badge text-bg-light border">装箱单{{ '已完成' if downstream_impact.packing_status == 'completed' else '草稿' }} / {{ downstream_impact.box_count }} 箱 / {{ downstream_impact.packing_item_count }} 行</span>{% endif %}
+        {% if downstream_impact.customs_recorded %}<span class="badge text-bg-light border">报关：{{ downstream_impact.customs_label }}</span>{% endif %}
+        {% if downstream_impact.shipping_completed %}<span class="badge text-bg-light border">已登记发货</span>{% endif %}
+    </div>
+    <div class="small mb-2">备注、收货地址、付款条款、价格条款和交货期仍可直接修改。客户、业务员、币种、汇率、开单日期、产品、数量、单价及订单金额需要管理员解锁。已有采购或装箱引用的产品不能移除，PI 数量也不能低于已采购或已装箱数量。</div>
+    {% if is_admin %}
+    <div class="form-check mt-2">
+        <input class="form-check-input" type="checkbox" value="1" name="downstream_unlock" id="downstream_unlock">
+        <label class="form-check-label fw-semibold" for="downstream_unlock">我已核对以上影响范围，解锁结构信息</label>
+    </div>
+    <div class="mt-2 d-none" id="downstream_reason_wrap">
+        <label class="form-label mb-1" for="downstream_change_reason">修改原因 <span class="text-danger">*</span></label>
+        <textarea class="form-control" name="downstream_change_reason" id="downstream_change_reason" rows="2" maxlength="500" placeholder="说明为什么需要修改，至少 5 个字符；原因会写入审计日志。"></textarea>
+    </div>
+    {% else %}
+    <div class="small fw-semibold"><i class="bi bi-info-circle me-1"></i>如需修改结构信息，请联系管理员处理。</div>
+    {% endif %}
+</div>
+{% endif %}
 <form method="post" id="pi-form"><input type="hidden" name="version" value="{{ pi.version or 1 }}"><input type="hidden" name="product_order" id="product_order" value=""><div class="row g-4">
     <div class="col-lg-5">
         <div class="card mb-3"><div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div><div class="card-body">
-            <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
+            <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input pi-structural-control" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none pi-structural-control" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{{ pi.customer.notes if pi.customer and pi.customer.notes else '—' }}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
-            <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
+            <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
-            <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
-            <div class="mb-3"><label class="form-label">币种</label><select class="form-select" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
+            <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select pi-structural-control" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
+            <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
             <div class="mb-3">
                 <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>
-                <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ pi.exchange_rate or exchange_rate }}" required><span class="input-group-text">RMB</span></div>
+                <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control pi-structural-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ pi.exchange_rate or exchange_rate }}" required><span class="input-group-text">RMB</span></div>
                 <small class="text-muted">这是该 PI 保存的业务汇率。修改只影响本单报价、采购成本和利润，不改变其他历史 PI。</small>
             </div>
-            <div class="mb-3"><label for="issue_date" class="form-label">开单日期</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}"></div>
+            <div class="mb-3"><label for="issue_date" class="form-label">开单日期</label><input type="date" class="form-control pi-structural-control" id="issue_date" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}"></div>
             <div class="mb-3"><label for="payment_terms" class="form-label">付款条款</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="{{ pi.payment_terms or '100% TT before shipment' }}"></div>
             <div class="mb-3"><label for="price_terms" class="form-label">价格条款</label><input type="text" class="form-control" id="price_terms" name="price_terms" list="price_terms_options" value="{{ pi.price_terms or '' }}" placeholder="请选择或临时输入……"><datalist id="price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist><div class="form-text">管理员可在“字段管理”维护常用选项。</div></div>
             <div class="mb-3"><label for="delivery_time" class="form-label">交货期</label><input type="text" class="form-control" id="delivery_time" name="delivery_time" list="delivery_time_options" value="{{ pi.delivery_time or '' }}" placeholder="请选择或临时输入……"><datalist id="delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist></div>
@@ -237,8 +294,8 @@
         </div>
     </div>
     <div class="col-lg-7">
-        <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
-            <div class="input-group mb-2"><input type="text" class="form-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary" id="add_product_btn" disabled><i class="bi bi-plus-lg"></i> 添加所选产品</button></div>
+        <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
+            <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn" disabled><i class="bi bi-plus-lg"></i> 添加所选产品</button></div>
             <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
             <div class="table-responsive mt-2" id="selected_products_area"><table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div></div>
         </div></div>
@@ -249,12 +306,12 @@
                         <label class="form-label">客户费用 / 折扣</label>
                         <div class="input-group">
                             <span class="input-group-text" id="shipping_sym">{{ '¥' if pi and pi.currency == 'RMB' else '$' }}</span>
-                            <input type="number" step="0.01" class="form-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format(pi.shipping_cost) if pi and pi.shipping_cost else '0.00' }}" oninput="updateTotal()">
+                            <input type="number" step="0.01" class="form-control pi-structural-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format(pi.shipping_cost) if pi and pi.shipping_cost else '0.00' }}" oninput="updateTotal()">
                         </div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">类型</label>
-                        <select class="form-select" name="shipping_note" id="shipping_note">
+                        <select class="form-select pi-structural-control" name="shipping_note" id="shipping_note">
                             <option value="" {% if not pi.shipping_note %}selected{% endif %}>— 请选择客户费用 / 折扣类型 —</option>
                             {% if pi.shipping_note and not shipping_note_options|selectattr('value', 'equalto', pi.shipping_note)|list %}<option value="{{ pi.shipping_note }}" selected>{{ pi.shipping_note }}（{{ pi.shipping_note_en or '历史值' }}）</option>{% endif %}
                             {% for option in shipping_note_options %}<option value="{{ option.value }}" {% if option.value == pi.shipping_note %}selected{% endif %}>{{ option.value }}（{{ option.english_value or option.value }}）</option>{% endfor %}
