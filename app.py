@@ -2877,7 +2877,7 @@ def product_add():
 
 
 @app.route('/products/<int:id>/edit', methods=['GET', 'POST'])
-@admin_required
+@login_required
 def product_edit(id):
     product = Product.query.get_or_404(id)
     if request.method == 'POST':
@@ -2929,7 +2929,7 @@ def product_edit(id):
 
 
 @app.route('/products/<int:id>/delete', methods=['POST'])
-@admin_required
+@login_required
 def product_delete(id):
     product = Product.query.get_or_404(id)
     action, reference_count, image_filename = _retire_or_delete_product(product)
@@ -3085,12 +3085,17 @@ def api_product_search():
 
 
 @app.route('/api/products/<int:id>/update', methods=['POST'])
-@admin_required
+@login_required
 def api_product_update(id):
     """Inline update product fields. Accepts JSON: {field: value}"""
     product = Product.query.get_or_404(id)
     data = request.get_json(silent=True) or {}
     allowed = {'name', 'product_code', 'specification', 'chinese_name', 'unit_price', 'unit_price_rmb'}
+    audit_fields = [
+        'name', 'chinese_name', 'product_code', 'specification',
+        'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+    ]
+    before = _snapshot(product, audit_fields)
     for field, value in data.items():
         if field not in allowed:
             continue
@@ -3104,6 +3109,12 @@ def api_product_update(id):
             if field == 'name' and not value:
                 return jsonify({'success': False, 'error': '名称不能为空。'}), 400
         setattr(product, field, value)
+    after = _snapshot(product, audit_fields)
+    if after != before:
+        _audit(
+            'update', 'product', product.id, f'快捷编辑产品：{product.name}',
+            before=before, after=after,
+        )
     db.session.commit()
     return jsonify({
         'success': True,
@@ -3112,7 +3123,7 @@ def api_product_update(id):
 
 
 @app.route('/api/products/<int:id>/copy', methods=['POST'])
-@admin_required
+@login_required
 def api_product_copy(id):
     """Duplicate a product with same info."""
     original = Product.query.get_or_404(id)
@@ -3151,7 +3162,7 @@ def api_product_copy(id):
 
 
 @app.route('/api/products/<int:id>/delete', methods=['POST'])
-@admin_required
+@login_required
 def api_product_delete(id):
     """Disable referenced products; delete only products without PI history."""
     product = Product.query.get_or_404(id)

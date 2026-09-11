@@ -142,12 +142,10 @@
                                 {% endif %}
                             </td>
                             <td class="text-end text-nowrap">
-                                {% if is_admin %}
                                 <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
                                 <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
-                                {% if not p.active %}<button type="button" class="btn btn-sm btn-outline-success" title="重新启用" onclick="enableProduct({{ p.id }})"><i class="bi bi-arrow-counterclockwise"></i></button>{% endif %}
+                                {% if is_admin and not p.active %}<button type="button" class="btn btn-sm btn-outline-success" title="重新启用" onclick="enableProduct({{ p.id }})"><i class="bi bi-arrow-counterclockwise"></i></button>{% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-danger" title="删除或停用" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
-                                {% else %}<span class="text-muted">仅查看</span>{% endif %}
                             </td>
                         </tr>
                         {% endfor %}

@@ -611,11 +611,16 @@ class SecuritySmokeTests(unittest.TestCase):
             pi.customs_recorded_by = ''
             db.session.commit()
 
-    def test_salesperson_can_add_products_but_cannot_manage_existing_products(self):
+    def test_salesperson_can_manage_individual_products_but_not_admin_bulk_tools(self):
         self.login()
         product_page = self.client.get('/products')
         self.assertEqual(product_page.status_code, 200)
-        self.assertIn('添加产品', product_page.get_data(as_text=True))
+        product_html = product_page.get_data(as_text=True)
+        self.assertIn('添加产品', product_html)
+        self.assertIn('title="复制"', product_html)
+        self.assertIn('title="完整编辑（含图片）"', product_html)
+        self.assertIn('title="删除或停用"', product_html)
+        self.assertNotIn('仅查看', product_html)
         self.assertEqual(self.client.get('/products/add').status_code, 200)
 
         response = self.client.post('/products/add', data={
@@ -645,14 +650,72 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertEqual(api_response.status_code, 200)
         self.assertTrue(api_response.get_json()['success'])
 
-        self.assertEqual(self.client.get(f'/products/{product_id}/edit').status_code, 403)
+        self.assertEqual(self.client.get(f'/products/{product_id}/edit').status_code, 200)
+        edited = self.client.post(f'/products/{product_id}/edit', data={
+            'name': 'Sales Edited Product',
+            'product_code': 'SALES-EDITED',
+            'unit_price': '13.5',
+            'unit_price_rmb': '94.5',
+            'csrf_token': self.token(f'/products/{product_id}/edit'),
+        })
+        self.assertEqual(edited.status_code, 302)
+        inline_updated = self.client.post(
+            f'/api/products/{product_id}/update',
+            json={'specification': 'Sales inline edit'},
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(inline_updated.status_code, 200)
+
+        copied = self.client.post(
+            f'/api/products/{product_id}/copy',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(copied.status_code, 200)
+        copied_id = copied.get_json()['product']['id']
+        deleted_copy = self.client.post(
+            f'/api/products/{copied_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(deleted_copy.status_code, 200)
+        self.assertEqual(deleted_copy.get_json()['action'], 'deleted')
+
         self.assertEqual(self.client.get('/products/import').status_code, 403)
-        denied_delete = self.client.post(f'/products/{product_id}/delete', data={
+        denied_batch = self.client.post('/products/batch-delete', data={
+            'ids': str(product_id),
             'csrf_token': self.token('/products'),
         })
-        self.assertEqual(denied_delete.status_code, 403)
+        self.assertEqual(denied_batch.status_code, 403)
         with application.app.app_context():
-            self.assertIsNotNone(db.session.get(Product, product_id))
+            product = db.session.get(Product, product_id)
+            self.assertEqual(product.name, 'Sales Edited Product')
+            self.assertEqual(product.specification, 'Sales inline edit')
+            self.assertIsNotNone(AuditLog.query.filter_by(
+                entity_type='product', entity_id=product_id,
+                action='update', username='alice',
+            ).first())
+            db.session.add(PIItem(
+                pi_id=self.alice_pi,
+                product_id=product_id,
+                quantity=1,
+                unit_price=13.5,
+                amount=13.5,
+            ))
+            db.session.commit()
+
+        retired = self.client.post(
+            f'/api/products/{product_id}/delete',
+            headers={'X-CSRFToken': self.token('/products')},
+        )
+        self.assertEqual(retired.status_code, 200)
+        self.assertEqual(retired.get_json()['action'], 'disabled')
+        with application.app.app_context():
+            product = db.session.get(Product, product_id)
+            self.assertFalse(product.active)
+            PIItem.query.filter_by(
+                pi_id=self.alice_pi, product_id=product_id
+            ).delete()
+            db.session.delete(product)
+            db.session.commit()
 
     def test_product_picker_supports_pagination_search_and_batch_ui(self):
         self.login()
