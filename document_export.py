@@ -375,7 +375,7 @@ def create_placeholder_template(output_path):
 
     totals = [
         (14, 'PRODUCT SUBTOTAL:', '{{product_subtotal}}'),
-        (15, 'OTHER CHARGES / DISCOUNT:', '{{other_charges}}'),
+        (15, 'OTHER CHARGES:', '{{other_charges}}'),
         (16, 'TOTAL AMOUNT:', '{{grand_total}}'),
     ]
     for row_number, label, token in totals:

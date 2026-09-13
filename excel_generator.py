@@ -153,7 +153,7 @@ def generate_pi_excel(pi, output_dir):
         adjustment_label = (
             getattr(pi, 'shipping_note_en', '')
             or getattr(pi, 'shipping_note', '')
-            or 'Other Charges / Discount'
+            or 'Other Charges'
         )
         ws.cell(row=r, column=1, value=f'{adjustment_label.upper()}:').font = b9
         ws.cell(row=r, column=1).alignment = rgt

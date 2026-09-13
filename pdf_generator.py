@@ -402,7 +402,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         shipping_note_en = (
             getattr(pi, 'shipping_note_en', '')
             or getattr(pi, 'shipping_note', '')
-            or 'Other Charges / Discount'
+            or 'Other Charges'
         )
         shipping_data = [
             ['', Paragraph(f'Subtotal ({cur_label}):', right_label_style),

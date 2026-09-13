@@ -74,7 +74,7 @@
             <th style="padding:4px 6px;text-align:right;font-size:10px;">{{ sym }}{{ '%.2f'|format(pi.product_subtotal) }}</th>
         </tr>
         <tr>
-            <th colspan="4" style="padding:4px 6px;text-align:right;font-size:10px;font-weight:normal;">{{ pi.shipping_note_en or pi.shipping_note or 'Other Charges / Discount' }} ({{ pi.currency or 'USD' }}):</th>
+            <th colspan="4" style="padding:4px 6px;text-align:right;font-size:10px;font-weight:normal;">{{ pi.shipping_note_en or pi.shipping_note or 'Other Charges' }} ({{ pi.currency or 'USD' }}):</th>
             <th style="padding:4px 6px;text-align:right;font-size:10px;">{{ sym }}{{ '%.2f'|format(shipping) }}</th>
         </tr>
         {% endif %}

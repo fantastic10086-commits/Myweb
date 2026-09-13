@@ -153,7 +153,7 @@ sheet.getRange("E18:G18").merge();
 sheet.getRange("E18").values = [["Product Subtotal ({{currency}}):"]];
 sheet.getRange("H18").values = [["{{product_subtotal}}"]];
 sheet.getRange("E19:G19").merge();
-sheet.getRange("E19").values = [["Other Charges / Discount ({{currency}}):"]];
+sheet.getRange("E19").values = [["Other Charges ({{currency}}):"]];
 sheet.getRange("H19").values = [["{{other_charges}}"]];
 sheet.getRange("E20:G20").merge();
 sheet.getRange("E20").values = [["{{shipping_note}}"]];

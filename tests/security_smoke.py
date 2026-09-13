@@ -1921,6 +1921,44 @@ class SecuritySmokeTests(unittest.TestCase):
             pi.paid = False
             db.session.commit()
 
+    def test_pi_exports_label_adjustments_as_other_charges(self):
+        workbook = load_workbook(
+            application.SYSTEM_DEFAULT_TEMPLATE_SOURCE,
+            data_only=False,
+            read_only=True,
+        )
+        try:
+            self.assertEqual(
+                workbook['PI Template']['E19'].value,
+                'Other Charges ({{currency}}):',
+            )
+        finally:
+            workbook.close()
+
+        self.login()
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            previous = (
+                pi.shipping_cost, pi.shipping_note, pi.shipping_note_en,
+            )
+            pi.shipping_cost = 5
+            pi.shipping_note = ''
+            pi.shipping_note_en = ''
+            db.session.commit()
+        try:
+            preview = self.client.get(
+                f'/pi/{self.alice_pi}/preview'
+            ).get_data(as_text=True)
+            self.assertIn('Other Charges (USD):', preview)
+            self.assertNotIn('Other Charges / Discount', preview)
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                (
+                    pi.shipping_cost, pi.shipping_note, pi.shipping_note_en,
+                ) = previous
+                db.session.commit()
+
     def test_migration_normalizes_legacy_empty_deleted_dates(self):
         with application.app.app_context():
             db.session.execute(db.text(
