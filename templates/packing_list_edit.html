@@ -137,8 +137,14 @@
 <div class="row g-3 packing-workspace">
     <div class="col-xl packing-side-column">
         <div class="card packing-unallocated-panel mb-3">
-            <div class="card-header d-flex justify-content-between align-items-center gap-2">
-                <strong><i class="bi bi-card-checklist me-1"></i>PI 产品清单</strong>
+            <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <strong><i class="bi bi-card-checklist me-1"></i>PI 产品清单</strong>
+                    <div id="packingProductFilters" class="btn-group btn-group-sm" role="group" aria-label="产品装箱筛选">
+                        <button type="button" class="btn btn-outline-secondary active" data-packing-filter="all" aria-pressed="true">全部</button>
+                        <button type="button" class="btn btn-outline-warning" data-packing-filter="remaining" aria-pressed="false">待装箱</button>
+                    </div>
+                </div>
                 <span id="packingPendingCount" class="badge bg-secondary">0 项</span>
             </div>
             <div class="card-body">
@@ -238,6 +244,7 @@
     let boxes = data.boxes || [];
     let version = data.version || 0;
     let selectedTargetBox = 0;
+    let productFilter = 'all';
     const selectedProductIds = new Set();
     const selectedProductQuantities = new Map();
     const expandedBoxes = new Set([0]);
@@ -250,6 +257,7 @@
     const targetLabel = document.getElementById('packingTargetLabel');
     const selectionCount = document.getElementById('packingSelectionCount');
     const clearSelectedProducts = document.getElementById('clearSelectedProducts');
+    const productFilterButtons = [...document.querySelectorAll('[data-packing-filter]')];
 
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -405,6 +413,7 @@
         }));
         const remainingCount = allProducts.filter(product => product.remaining > 0).length;
         const visibleProducts = allProducts.filter(product => {
+            if (productFilter === 'remaining' && product.remaining <= 0) return false;
             if (!query) return true;
             return [product.name, product.product_code, product.specification]
                 .some(value => String(value || '').toLocaleLowerCase().includes(query));
@@ -429,7 +438,9 @@
         if (!visibleProducts.length) {
             const complete = document.createElement('div');
             complete.className = 'packing-empty-state';
-            complete.innerHTML = '<i class="bi bi-search d-block mb-1"></i>没有匹配的产品';
+            complete.innerHTML = productFilter === 'remaining' && !query
+                ? '<i class="bi bi-check-circle d-block mb-1"></i>所有产品都已装箱'
+                : '<i class="bi bi-search d-block mb-1"></i>没有匹配的产品';
             pendingProducts.append(complete);
             return;
         }
@@ -619,6 +630,15 @@
 
     targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; renderBoxes(); });
     productSearch.addEventListener('input', renderPendingProducts);
+    productFilterButtons.forEach(button => button.addEventListener('click', () => {
+        productFilter = button.dataset.packingFilter === 'remaining' ? 'remaining' : 'all';
+        productFilterButtons.forEach(option => {
+            const active = option.dataset.packingFilter === productFilter;
+            option.classList.toggle('active', active);
+            option.setAttribute('aria-pressed', String(active));
+        });
+        renderPendingProducts();
+    }));
     document.getElementById('selectVisibleProducts').addEventListener('click', () => {
         const checks = [...document.querySelectorAll('.pending-product-check:not(:disabled)')];
         const shouldSelect = checks.some(check => !check.checked);
