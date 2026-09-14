@@ -2831,6 +2831,7 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('compact-100x150.pdf', completed_detail)
             self.assertIn('id="compactExportModal"', completed_detail)
             self.assertIn('选择要导出的箱子', completed_detail)
+            self.assertIn('compact-export-box m-0 flex-shrink-0', completed_detail)
             self.assertIn('第 1 箱 · 箱号 1', completed_detail)
             self.assertIn('第 2 箱 · 箱号 2', completed_detail)
 

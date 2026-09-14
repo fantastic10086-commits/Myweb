@@ -261,9 +261,9 @@
                 </div>
                 <div class="vstack gap-2 overflow-auto" style="max-height: 50vh;">
                     {% for box in packing_list.boxes %}
-                    <label class="form-check border rounded px-3 py-2 m-0">
-                        <input class="form-check-input compact-export-box" type="checkbox" value="{{ loop.index }}" checked>
-                        <span class="form-check-label ms-1">第 {{ loop.index }} 箱 · 箱号 {{ box.box_no }}</span>
+                    <label class="border rounded px-3 py-2 m-0 d-flex align-items-center gap-2">
+                        <input class="form-check-input compact-export-box m-0 flex-shrink-0" type="checkbox" value="{{ loop.index }}" checked>
+                        <span>第 {{ loop.index }} 箱 · 箱号 {{ box.box_no }}</span>
                     </label>
                     {% endfor %}
                 </div>
