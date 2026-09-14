@@ -30,6 +30,29 @@ def _unique(values):
     ))
 
 
+def _amount(value):
+    try:
+        return round(float(value or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _model_summary(group, limit=3):
+    """Show representative models for a merged item without overflowing forms."""
+    values = group.get('product_models') or []
+    if isinstance(values, str):
+        values = values.split('；')
+    if not values:
+        values = (group.get('product_details') or '').split('；')
+    unique_values = list(dict.fromkeys(
+        _text(value).strip() for value in values if _text(value).strip()
+    ))
+    summary = '、'.join(unique_values[:limit])
+    if len(unique_values) > limit:
+        summary += '\n等，详见装箱单 / SEE PACKING LIST'
+    return summary
+
+
 def build_customs_snapshot(pi, form_data):
     """Capture every value used by the export so confirmed files stay stable."""
     groups = OrderedDict()
@@ -49,6 +72,7 @@ def build_customs_snapshot(pi, form_data):
             'quantity': 0,
             'amount': 0.0,
             'product_details': [],
+            'product_models': [],
             'brand_type': [],
             'preferential': [],
             'purpose': [],
@@ -67,6 +91,11 @@ def build_customs_snapshot(pi, form_data):
         )
         if detail:
             group['product_details'].append(detail)
+        model = (
+            product.product_code or product.specification or product.name or ''
+        ).strip()
+        if model:
+            group['product_models'].append(model)
         for key_name, field_name in (
             ('brand_type', 'customs_brand_type'),
             ('preferential', 'customs_preferential'),
@@ -81,6 +110,7 @@ def build_customs_snapshot(pi, form_data):
 
     normalized_groups = []
     for group in groups.values():
+        group['product_models'] = list(dict.fromkeys(group['product_models']))
         for key_name in (
             'product_details', 'brand_type', 'preferential', 'purpose',
             'brand', 'origin_country', 'domestic_source', 'tax_exemption',
@@ -91,6 +121,7 @@ def build_customs_snapshot(pi, form_data):
         group['unit_price'] = round(
             group['amount'] / group['quantity'], 6
         ) if group['quantity'] else 0
+        group['model_summary'] = _model_summary(group)
         normalized_groups.append(group)
 
     packing_list = pi.packing_list
@@ -156,7 +187,14 @@ def build_customs_snapshot(pi, form_data):
             group['amount'] for group in normalized_groups
         ), 2),
         'other_charges': round(float(pi.other_charges or 0), 2),
-        'other_charges_treatment': 'exclude',
+        'other_charges_treatment': form_data.get(
+            'other_charges_treatment', 'exclude'
+        ),
+        'customs_fees': {
+            'freight': _amount(form_data.get('customs_freight_amount')),
+            'insurance': _amount(form_data.get('customs_insurance_amount')),
+            'misc': _amount(form_data.get('customs_misc_amount')),
+        },
         'customs': {
             key: _text(value) for key, value in form_data.items()
             if not key.startswith('_')
@@ -247,6 +285,15 @@ def _populate_declaration(workbook, donor, snapshot):
     boxes = snapshot['boxes']
     customs = snapshot['customs']
     customer = snapshot['customer']
+    fees = snapshot.get('customs_fees') or {
+        'freight': _amount(customs.get('customs_freight_amount')),
+        'insurance': _amount(customs.get('customs_insurance_amount')),
+        'misc': _amount(customs.get('customs_misc_amount')),
+    }
+
+    def fee_text(kind):
+        amount = _amount(fees.get(kind))
+        return f"{snapshot['currency']} {amount:.2f}" if amount else 0
 
     values = {
         'A4': snapshot['company_name_cn'],
@@ -271,9 +318,9 @@ def _populate_declaration(workbook, donor, snapshot):
         'E12': round(sum(box['gross_weight'] for box in boxes), 3),
         'H12': round(sum(box['net_weight'] for box in boxes), 3),
         'I12': snapshot['price_terms'],
-        'J12': 0,
-        'L12': 0,
-        'N12': 0,
+        'J12': fee_text('freight'),
+        'L12': fee_text('insurance'),
+        'N12': fee_text('misc'),
         'A14': customs.get('accompanying_documents', ''),
         'A16': customs.get('marks_notes', ''),
     }
@@ -292,7 +339,7 @@ def _populate_declaration(workbook, donor, snapshot):
         row = 17 + number
         row_values = [
             number, group['hs_code'], group['name_cn'],
-            group['product_details'], group['quantity'], '', group['unit'],
+            _model_summary(group), group['quantity'], '', group['unit'],
             group['unit_price'], group['amount'], snapshot['currency'],
             group['origin_country'], customs.get('destination_country', ''),
             group['domestic_source'], group['tax_exemption'],
@@ -380,7 +427,7 @@ def _populate_invoice(workbook, donor, snapshot):
     for number, group in enumerate(groups, 1):
         row = 16 + number
         description = '\n'.join(filter(None, (
-            group['name_en'], group['product_details'],
+            group['name_en'], _model_summary(group),
         )))
         for column, value in enumerate((
             number, description, group['quantity'],
@@ -543,7 +590,7 @@ def _populate_elements(workbook, donor, snapshot):
             ('出口享惠情况', group['preferential']),
             ('用途', group['purpose']),
             ('品牌（中文或外文名称）', group['brand']),
-            ('型号/规格', group['product_details']),
+            ('型号/规格', _model_summary(group)),
             ('原产国', group['origin_country']),
             ('境内货源地', group['domestic_source']),
             ('征免', group['tax_exemption']),
@@ -616,7 +663,7 @@ def _populate_contract(workbook, donor, snapshot):
         row = 16 + number
         for column, value in enumerate((
             number,
-            '\n'.join(filter(None, (group['name_en'], group['product_details']))),
+            '\n'.join(filter(None, (group['name_en'], _model_summary(group)))),
             group['quantity'], group['unit_price'], group['amount'],
         ), 1):
             ws.cell(row, column, value)

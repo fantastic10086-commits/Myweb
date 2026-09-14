@@ -9,6 +9,7 @@ import unittest
 import zipfile
 from datetime import date
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from openpyxl import Workbook, load_workbook
@@ -39,6 +40,7 @@ from models import (
     Product, Supplier, User, CustomsDocument, CustomsRevision, db,
 )
 from document_export import _fixed_values, convert_excel_to_pdf, find_soffice
+from customs_export import _model_summary
 
 
 class SecuritySmokeTests(unittest.TestCase):
@@ -132,7 +134,8 @@ class SecuritySmokeTests(unittest.TestCase):
                 customer_id=self.alice_customer,
                 salesperson='Alice',
                 currency='USD',
-                total_amount=20,
+                total_amount=32,
+                shipping_cost=12,
                 customs_required=True,
             )
             db.session.add(pi)
@@ -168,10 +171,20 @@ class SecuritySmokeTests(unittest.TestCase):
             'declaration_date': '2026-09-14',
             'supervision_mode': '一般贸易',
             'packing_type': '纸箱 / CARTON',
+            'customs_freight_amount': '5',
+            'customs_insurance_amount': '3',
+            'customs_misc_amount': '1',
         }
         try:
             self.login('alice')
             path = f'/pi/{pi_id}/customs-documents'
+            form_html = self.client.get(path).get_data(as_text=True)
+            for field in (
+                'customs_freight_amount', 'customs_insurance_amount',
+                'customs_misc_amount',
+            ):
+                self.assertIn(f'name="{field}"', form_html)
+            self.assertNotIn('exclude_charges_confirm', form_html)
             token = self.token(path)
             response = self.client.post(path, data={
                 **values, 'csrf_token': token, 'version': '0',
@@ -204,6 +217,9 @@ class SecuritySmokeTests(unittest.TestCase):
             )
             self.assertEqual(workbook['发票']['E17'].value, 20)
             self.assertEqual(workbook['合同']['E17'].value, 20)
+            self.assertEqual(workbook['报关单']['J12'].value, 'USD 5.00')
+            self.assertEqual(workbook['报关单']['L12'].value, 'USD 3.00')
+            self.assertEqual(workbook['报关单']['N12'].value, 'USD 1.00')
             self.assertEqual(
                 workbook['报关单']['A4'].value,
                 '常州市克利斯达国际贸易有限公司',
@@ -236,6 +252,24 @@ class SecuritySmokeTests(unittest.TestCase):
                 if pi:
                     db.session.delete(pi)
                     db.session.commit()
+
+    def test_customs_merged_model_summary_limits_examples(self):
+        group = {'product_models': ['A-1', 'B-2', 'C-3', 'D-4', 'A-1']}
+        self.assertEqual(
+            _model_summary(group),
+            'A-1、B-2、C-3\n等，详见装箱单 / SEE PACKING LIST',
+        )
+
+    def test_customs_charge_allocation_cannot_exceed_pi_other_charges(self):
+        errors = application._validate_customs_charge_allocation(
+            SimpleNamespace(other_charges=10),
+            {
+                'customs_freight_amount': '6',
+                'customs_insurance_amount': '3',
+                'customs_misc_amount': '2',
+            },
+        )
+        self.assertIn('合计不能超过 PI 其他费用', errors[0])
 
     def test_customs_draft_exports_before_packing_but_cannot_confirm(self):
         with application.app.app_context():

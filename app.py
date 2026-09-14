@@ -107,6 +107,8 @@ CUSTOMS_DOCUMENT_FIELDS = (
     'departure_port', 'export_date', 'declaration_date',
     'supervision_mode', 'exemption_nature', 'license_no', 'packing_type',
     'accompanying_documents', 'marks_notes', 'declaration_agent',
+    'customs_freight_amount', 'customs_insurance_amount',
+    'customs_misc_amount',
 )
 CUSTOMS_DOCUMENT_REQUIRED_FIELDS = (
     'trade_country', 'destination_country', 'export_date', 'declaration_date',
@@ -157,10 +159,60 @@ def _customs_document_data(form, existing=None):
     data = dict(existing or {})
     for field in CUSTOMS_DOCUMENT_FIELDS:
         data[field] = (form.get(field) or '').strip()
-    # The current business rule is deliberate: customer-facing miscellaneous
-    # charges do not enter the customs product value.
-    data['other_charges_treatment'] = 'exclude'
+    data['other_charges_treatment'] = (
+        'allocated'
+        if any(data.get(field) for field in (
+            'customs_freight_amount', 'customs_insurance_amount',
+            'customs_misc_amount',
+        ))
+        else 'exclude'
+    )
     return data
+
+
+def _validate_customs_charge_allocation(pi, data):
+    """Validate how PI other charges are split across customs fee fields."""
+    field_labels = {
+        'customs_freight_amount': '运费',
+        'customs_insurance_amount': '保险费',
+        'customs_misc_amount': '杂费',
+    }
+    amounts = {}
+    errors = []
+    for field, label in field_labels.items():
+        raw = (data.get(field) or '').strip()
+        try:
+            value = float(raw or 0)
+        except (TypeError, ValueError):
+            errors.append(f'{label}必须填写有效金额。')
+            continue
+        if not math.isfinite(value):
+            errors.append(f'{label}必须填写有效金额。')
+            continue
+        if field != 'customs_misc_amount' and value < 0:
+            errors.append(f'{label}不能为负数。')
+        amounts[field] = round(value, 2)
+
+    if errors:
+        return errors
+
+    other_charges = round(float(pi.other_charges or 0), 2)
+    declared_total = round(sum(amounts.values()), 2)
+    if other_charges > 0:
+        if amounts['customs_misc_amount'] < 0:
+            errors.append('PI 其他费用为正数时，杂费不能填写负数。')
+        elif declared_total > other_charges + 0.005:
+            errors.append('运费、保险费和杂费合计不能超过 PI 其他费用。')
+    elif other_charges < 0:
+        if amounts['customs_freight_amount'] or amounts['customs_insurance_amount']:
+            errors.append('PI 其他费用为折扣时，只能作为负数杂费处理。')
+        elif amounts['customs_misc_amount'] > 0:
+            errors.append('PI 其他费用为折扣时，杂费应填写负数。')
+        elif declared_total < other_charges - 0.005:
+            errors.append('报关杂费不能超过 PI 折扣金额。')
+    elif declared_total:
+        errors.append('本 PI 没有其他费用，不能分配报关运费、保险费或杂费。')
+    return errors
 
 
 def _customs_missing_products(pi):
@@ -4972,6 +5024,9 @@ def customs_document_edit(pi_id):
         'declaration_date': date.today().isoformat(),
         'supervision_mode': '一般贸易',
         'packing_type': '纸箱 / CARTON',
+        'customs_freight_amount': '',
+        'customs_insurance_amount': '',
+        'customs_misc_amount': '',
     }
     for field, value in defaults.items():
         if not data.get(field):
@@ -5033,7 +5088,7 @@ def customs_document_edit(pi_id):
             return redirect(url_for('customs_document_edit', pi_id=pi.id))
 
         data = _customs_document_data(request.form, data)
-        errors = []
+        errors = _validate_customs_charge_allocation(pi, data)
         if action == 'confirm':
             if pi.customs_required is not True:
                 errors.append('请先在 PI 列表中选择“需要报关”。')
@@ -5053,8 +5108,6 @@ def customs_document_edit(pi_id):
             ]
             if empty_fields:
                 errors.append('请填写：' + '、'.join(empty_fields) + '。')
-            if pi.other_charges and request.form.get('exclude_charges_confirm') != '1':
-                errors.append('请确认其他费用不计入本次报关金额。')
             if (pi.currency or '').upper() == 'RMB' and request.form.get('rmb_confirm') != '1':
                 errors.append('RMB 报关需要再次确认币种。')
 
