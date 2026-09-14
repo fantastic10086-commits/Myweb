@@ -162,14 +162,8 @@ class SecuritySmokeTests(unittest.TestCase):
             pi_id = pi.id
 
         values = {
-            'export_customs': '上海海关',
-            'transport_mode': '海运',
-            'vehicle_voyage': 'TEST V001',
-            'bill_no': 'BL-001',
             'trade_country': '美国',
             'destination_country': '美国',
-            'destination_port': 'LOS ANGELES',
-            'departure_port': '上海港',
             'export_date': '2026-09-14',
             'declaration_date': '2026-09-14',
             'supervision_mode': '一般贸易',

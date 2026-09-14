@@ -109,9 +109,7 @@ CUSTOMS_DOCUMENT_FIELDS = (
     'accompanying_documents', 'marks_notes', 'declaration_agent',
 )
 CUSTOMS_DOCUMENT_REQUIRED_FIELDS = (
-    'export_customs', 'transport_mode', 'vehicle_voyage', 'bill_no',
-    'trade_country', 'destination_country', 'destination_port',
-    'departure_port', 'export_date', 'declaration_date',
+    'trade_country', 'destination_country', 'export_date', 'declaration_date',
     'supervision_mode', 'packing_type',
 )
 CUSTOMS_DOCUMENT_LABELS = {

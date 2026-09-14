@@ -66,14 +66,14 @@
         <div class="card-body">
             <div class="row g-3">
                 {% set fields = [
-                    ('export_customs', '出境关别', 'text', true),
-                    ('transport_mode', '运输方式', 'text', true),
-                    ('vehicle_voyage', '运输工具及航次', 'text', true),
-                    ('bill_no', '提运单号', 'text', true),
+                    ('export_customs', '出境关别', 'text', false),
+                    ('transport_mode', '运输方式', 'text', false),
+                    ('vehicle_voyage', '运输工具及航次', 'text', false),
+                    ('bill_no', '提运单号', 'text', false),
                     ('trade_country', '贸易国（地区）', 'text', true),
                     ('destination_country', '运抵国（地区）', 'text', true),
-                    ('destination_port', '指运港', 'text', true),
-                    ('departure_port', '离境口岸', 'text', true),
+                    ('destination_port', '指运港', 'text', false),
+                    ('departure_port', '离境口岸', 'text', false),
                     ('export_date', '出口日期', 'date', true),
                     ('declaration_date', '申报日期', 'date', true),
                     ('supervision_mode', '监管方式', 'text', true),
