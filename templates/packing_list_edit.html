@@ -18,8 +18,9 @@
     .packing-box-meta { color: #6c757d; font-size: .82rem; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
     .packing-box-actions { flex:0 0 auto; }
     .packing-box-body[hidden] { display: none !important; }
-    .packing-unallocated-panel, .packing-boxes-panel { position: sticky; top: 5.25rem; }
-    .packing-pending-list, .packing-boxes-scroll { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
+    .packing-unallocated-panel { position: sticky; top: 5.25rem; }
+    .packing-pending-list { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
+    .packing-boxes-scroll { overflow: visible; padding-right: .25rem; }
     .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .4rem .55rem; background: #fff; }
     .packing-pending-item.is-selected { border-color:#0d6efd; box-shadow:0 0 0 1px rgba(13,110,253,.18); background:#f4f8ff; }
     .packing-pending-item.is-complete { background:#f1f3f5; color:#868e96; border-color:#e1e5e9; }
@@ -44,8 +45,8 @@
         .packing-side-column { flex:1 1 0 !important; width:0; min-width:0; max-width:none; }
     }
     @media (max-width: 1199.98px) {
-        .packing-unallocated-panel, .packing-boxes-panel { position: static; }
-        .packing-pending-list, .packing-boxes-scroll { max-height: none; }
+        .packing-unallocated-panel { position: static; }
+        .packing-pending-list { max-height: none; }
         .packing-transfer-panel { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; }
         .packing-transfer-panel .btn { flex:1 1 180px; }
         .packing-transfer-arrow { transform:rotate(90deg); display:inline-block; }
