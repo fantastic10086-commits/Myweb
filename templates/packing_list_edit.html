@@ -517,17 +517,16 @@
             });
             actions.append(moveUp, moveDown, finishBoxTop, remove);
             header.append(toggle, actions);
-            const body = document.createElement('div'); body.className='card-body packing-box-body'; body.hidden = !expandedBoxes.has(boxIndex);
-            const fields = document.createElement('div'); fields.className='row g-2 mb-3';
+            const body = document.createElement('div'); body.className='card-body packing-box-body p-2'; body.hidden = !expandedBoxes.has(boxIndex);
+            const fields = document.createElement('div'); fields.className='row g-2 mb-2';
             fields.append(
-                field('箱号 *','text',box.box_no,'box_no',boxIndex),
-                field('净重 N.W.（kg）','number',box.net_weight,'net_weight',boxIndex),
-                field('毛重 G.W.（kg）','number',box.gross_weight,'gross_weight',boxIndex),
-                field('长（cm）','number',box.length_cm,'length_cm',boxIndex),
-                field('宽（cm）','number',box.width_cm,'width_cm',boxIndex),
-                field('高（cm）','number',box.height_cm,'height_cm',boxIndex),
-                field('唛头','text',box.shipping_mark,'shipping_mark',boxIndex,{className:'col-12 col-md-6'}),
-                field('箱备注','text',box.note,'note',boxIndex,{className:'col-12 col-md-6'})
+                field('净重 N.W.（kg）','number',box.net_weight,'net_weight',boxIndex,{className:'col-6'}),
+                field('毛重 G.W.（kg）','number',box.gross_weight,'gross_weight',boxIndex,{className:'col-6'}),
+                field('长（cm）','number',box.length_cm,'length_cm',boxIndex,{className:'col-4'}),
+                field('宽（cm）','number',box.width_cm,'width_cm',boxIndex,{className:'col-4'}),
+                field('高（cm）','number',box.height_cm,'height_cm',boxIndex,{className:'col-4'}),
+                field('唛头','text',box.shipping_mark,'shipping_mark',boxIndex,{className:'col-6'}),
+                field('箱备注','text',box.note,'note',boxIndex,{className:'col-6'})
             );
             const cbm = document.createElement('div'); cbm.className='small text-muted mb-2'; cbm.dataset.cbmBox=String(boxIndex); cbm.textContent=`自动计算体积：${numberValue(box.volume_cbm).toFixed(4)} m³`;
             const itemList = document.createElement('div'); itemList.className='mb-2';
