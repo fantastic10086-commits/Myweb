@@ -39,6 +39,7 @@ from models import (
     db, Customer, Product, PI, PIItem, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBox, PackingItem,
+    CustomsDocument, CustomsRevision,
 )
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
@@ -56,6 +57,7 @@ from packing_list_export import (
     generate_compact_packing_list_workbook,
     generate_packing_list_workbook,
 )
+from customs_export import build_customs_snapshot, generate_customs_workbook
 
 # ── Configuration ────────────────────────────────────────────────────
 # Detect the app root directory (where this file lives)
@@ -99,6 +101,39 @@ PRODUCT_AUDIT_FIELDS = (
     'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
 ) + PRODUCT_CUSTOMS_FIELDS
 
+CUSTOMS_DOCUMENT_FIELDS = (
+    'export_customs', 'transport_mode', 'vehicle_voyage', 'bill_no',
+    'trade_country', 'destination_country', 'destination_port',
+    'departure_port', 'export_date', 'declaration_date',
+    'supervision_mode', 'exemption_nature', 'license_no', 'packing_type',
+    'accompanying_documents', 'marks_notes', 'declaration_agent',
+)
+CUSTOMS_DOCUMENT_REQUIRED_FIELDS = (
+    'export_customs', 'transport_mode', 'vehicle_voyage', 'bill_no',
+    'trade_country', 'destination_country', 'destination_port',
+    'departure_port', 'export_date', 'declaration_date',
+    'supervision_mode', 'packing_type',
+)
+CUSTOMS_DOCUMENT_LABELS = {
+    'export_customs': '出境关别',
+    'transport_mode': '运输方式',
+    'vehicle_voyage': '运输工具及航次',
+    'bill_no': '提运单号',
+    'trade_country': '贸易国（地区）',
+    'destination_country': '运抵国（地区）',
+    'destination_port': '指运港',
+    'departure_port': '离境口岸',
+    'export_date': '出口日期',
+    'declaration_date': '申报日期',
+    'supervision_mode': '监管方式',
+    'exemption_nature': '征免性质',
+    'license_no': '许可证号',
+    'packing_type': '运输包装种类',
+    'accompanying_documents': '随附单证及编号',
+    'marks_notes': '标记唛码及备注',
+    'declaration_agent': '申报人员',
+}
+
 
 def _apply_product_customs_form(product, form):
     """Apply a complete customs profile from a product form."""
@@ -117,6 +152,49 @@ def _apply_product_customs_form(product, form):
     for field, value in values.items():
         setattr(product, field, value)
     return True, ''
+
+
+def _customs_document_data(form, existing=None):
+    """Return the stable, explicitly supported customs form payload."""
+    data = dict(existing or {})
+    for field in CUSTOMS_DOCUMENT_FIELDS:
+        data[field] = (form.get(field) or '').strip()
+    # The current business rule is deliberate: customer-facing miscellaneous
+    # charges do not enter the customs product value.
+    data['other_charges_treatment'] = 'exclude'
+    return data
+
+
+def _customs_missing_products(pi):
+    required = tuple(
+        field for field in PRODUCT_CUSTOMS_FIELDS
+        if field != 'customs_elements'
+    )
+    missing = []
+    for item in pi.items:
+        product = item.product
+        if not product:
+            missing.append(f'明细 #{item.id}（产品已不存在）')
+            continue
+        absent = [
+            field for field in required
+            if not str(getattr(product, field, '') or '').strip()
+        ]
+        if absent or not re.fullmatch(
+            r'\d{10}', str(product.customs_hs_code or '').strip()
+        ):
+            missing.append(product.name or f'产品 #{product.id}')
+    return missing
+
+
+def _customs_data_from_document(document):
+    if not document or not document.data_json:
+        return {}
+    try:
+        value = json.loads(document.data_json)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 MANAGED_FIELD_LABELS = {
     'shipping_note': '客户费用/折扣类型',
@@ -195,6 +273,8 @@ def _migrate_db():
         'packing_lists': {},  # tables auto-created by create_all
         'packing_boxes': {},
         'packing_items': {'note': 'VARCHAR(500)'},
+        'customs_documents': {},
+        'customs_revisions': {},
         'users': {
             'account': ('VARCHAR(100)', "''"),
             'active': ('BOOLEAN', '1'),
@@ -4875,6 +4955,210 @@ def pi_detail(id):
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
     return resp
+
+
+@app.route('/pi/<int:pi_id>/customs-documents', methods=['GET', 'POST'])
+@login_required
+def customs_document_edit(pi_id):
+    """Create, edit and formally confirm the customs package for one PI."""
+    pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
+    require_pi_access(pi)
+    document = CustomsDocument.query.filter_by(pi_id=pi.id).first()
+    data = _customs_data_from_document(document)
+    data.pop('_confirmed_snapshot', None)
+    country = (pi.customer.country or '').strip()
+    defaults = {
+        'trade_country': country,
+        'destination_country': country,
+        'export_date': date.today().isoformat(),
+        'declaration_date': date.today().isoformat(),
+        'supervision_mode': '一般贸易',
+        'packing_type': '纸箱 / CARTON',
+    }
+    for field, value in defaults.items():
+        if not data.get(field):
+            data[field] = value
+
+    if request.method == 'POST':
+        action = (request.form.get('action') or 'save').strip()
+        if action == 'unlock':
+            if not is_admin():
+                abort(403)
+            reason = (request.form.get('unlock_reason') or '').strip()
+            if not document or document.status != 'confirmed':
+                flash('当前报关资料不是已确认状态。', 'warning')
+            elif not reason:
+                flash('管理员解锁必须填写修改原因。', 'danger')
+            elif _submitted_version(document) != document.version:
+                flash('报关资料已被其他人更新，请刷新后重试。', 'danger')
+            else:
+                before = _customs_data_from_document(document)
+                revision_no = CustomsRevision.query.filter_by(
+                    customs_document_id=document.id
+                ).count() + 1
+                db.session.add(CustomsRevision(
+                    customs_document_id=document.id,
+                    version=revision_no,
+                    action='unlock',
+                    reason=reason,
+                    data_json=document.data_json,
+                    created_by=get_current_user().username,
+                ))
+                editable = dict(before)
+                editable.pop('_confirmed_snapshot', None)
+                document.data_json = json.dumps(
+                    editable, ensure_ascii=False, default=str
+                )
+                document.status = 'draft'
+                document.updated_by = get_current_user().username
+                document.confirmed_by = ''
+                document.confirmed_at = None
+                _audit(
+                    'unlock', 'customs_document', document.id,
+                    f'管理员解锁报关资料：{pi.pi_number}；原因：{reason}',
+                    before={'status': 'confirmed'},
+                    after={'status': 'draft', 'reason': reason},
+                )
+                try:
+                    db.session.commit()
+                    flash('报关资料已解锁，可以重新编辑。', 'success')
+                except StaleDataError:
+                    db.session.rollback()
+                    flash('报关资料已被其他人更新，请刷新后重试。', 'danger')
+            return redirect(url_for('customs_document_edit', pi_id=pi.id))
+
+        if document and document.status == 'confirmed':
+            flash('已确认的报关资料已锁定，请由管理员先解锁。', 'danger')
+            return redirect(url_for('customs_document_edit', pi_id=pi.id))
+        if document and _submitted_version(document) != document.version:
+            flash('报关资料已被其他人更新，请刷新后再保存。', 'danger')
+            return redirect(url_for('customs_document_edit', pi_id=pi.id))
+
+        data = _customs_document_data(request.form, data)
+        errors = []
+        if action == 'confirm':
+            if pi.customs_required is not True:
+                errors.append('请先在 PI 列表中选择“需要报关”。')
+            if not pi.items:
+                errors.append('PI 没有产品明细。')
+            missing_products = _customs_missing_products(pi)
+            if missing_products:
+                preview = '、'.join(missing_products[:5])
+                suffix = '等' if len(missing_products) > 5 else ''
+                errors.append(f'以下产品缺少完整报关信息：{preview}{suffix}。')
+            if not pi.packing_list or pi.packing_list.status != 'completed':
+                errors.append('装箱单尚未完成，只能保存或导出报关草稿。')
+            empty_fields = [
+                CUSTOMS_DOCUMENT_LABELS[field]
+                for field in CUSTOMS_DOCUMENT_REQUIRED_FIELDS
+                if not data.get(field)
+            ]
+            if empty_fields:
+                errors.append('请填写：' + '、'.join(empty_fields) + '。')
+            if pi.other_charges and request.form.get('exclude_charges_confirm') != '1':
+                errors.append('请确认其他费用不计入本次报关金额。')
+            if (pi.currency or '').upper() == 'RMB' and request.form.get('rmb_confirm') != '1':
+                errors.append('RMB 报关需要再次确认币种。')
+
+        if errors:
+            for message in errors:
+                flash(message, 'danger')
+        else:
+            username = get_current_user().username
+            if not document:
+                document = CustomsDocument(
+                    pi_id=pi.id, created_by=username, updated_by=username,
+                )
+                db.session.add(document)
+                db.session.flush()
+            before = {
+                'status': document.status,
+                'data': _customs_data_from_document(document),
+            }
+            if action == 'confirm':
+                data['_confirmed_snapshot'] = build_customs_snapshot(pi, data)
+                document.status = 'confirmed'
+                document.confirmed_by = username
+                document.confirmed_at = datetime.utcnow()
+            else:
+                document.status = 'draft'
+            document.data_json = json.dumps(
+                data, ensure_ascii=False, default=str
+            )
+            document.updated_by = username
+            if action == 'confirm':
+                revision_no = CustomsRevision.query.filter_by(
+                    customs_document_id=document.id
+                ).count() + 1
+                db.session.add(CustomsRevision(
+                    customs_document_id=document.id,
+                    version=revision_no,
+                    action='confirm',
+                    data_json=document.data_json,
+                    created_by=username,
+                ))
+            _audit(
+                'confirm' if action == 'confirm' else 'update',
+                'customs_document', document.id,
+                ('正式确认' if action == 'confirm' else '保存草稿')
+                + f'报关资料：{pi.pi_number}',
+                before=before,
+                after={'status': document.status, 'data': data},
+            )
+            try:
+                db.session.commit()
+                flash(
+                    '报关资料已正式确认并锁定。'
+                    if action == 'confirm' else '报关资料草稿已保存。',
+                    'success',
+                )
+                return redirect(url_for('customs_document_edit', pi_id=pi.id))
+            except StaleDataError:
+                db.session.rollback()
+                flash('报关资料已被其他人更新，请刷新后重试。', 'danger')
+
+    missing_products = _customs_missing_products(pi)
+    packing_ready = bool(
+        pi.packing_list and pi.packing_list.status == 'completed'
+    )
+    response = make_response(render_template(
+        'customs_document.html', pi=pi, document=document, data=data,
+        missing_products=missing_products, packing_ready=packing_ready,
+        field_labels=CUSTOMS_DOCUMENT_LABELS,
+    ))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
+@app.route('/pi/<int:pi_id>/customs-documents.xlsx')
+@login_required
+def customs_document_export(pi_id):
+    """Download the saved draft or confirmed five-sheet customs workbook."""
+    pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
+    require_pi_access(pi)
+    document = CustomsDocument.query.filter_by(pi_id=pi.id).first()
+    if not document:
+        flash('请先保存报关资料草稿。', 'warning')
+        return redirect(url_for('customs_document_edit', pi_id=pi.id))
+    data = _customs_data_from_document(document)
+    try:
+        content = generate_customs_workbook(pi, document, data)
+    except Exception:
+        current_app.logger.exception('Customs workbook export failed')
+        flash('生成报关资料失败，请联系管理员查看日志。', 'danger')
+        return redirect(url_for('customs_document_edit', pi_id=pi.id))
+    suffix = '' if document.status == 'confirmed' else '-DRAFT'
+    response = send_file(
+        BytesIO(content),
+        mimetype=(
+            'application/vnd.openxmlformats-officedocument.'
+            'spreadsheetml.sheet'
+        ),
+        as_attachment=True,
+        download_name=f'Customs-{secure_filename(pi.pi_number)}{suffix}.xlsx',
+    )
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route('/pi/<int:id>/preview')

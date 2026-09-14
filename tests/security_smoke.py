@@ -36,7 +36,7 @@ from werkzeug.datastructures import MultiDict
 from models import (
     Account, AuditLog, Customer, DocumentTemplate, Expense, FieldOption,
     PackingBox, PackingItem, PackingList, Payment, PI, PIItem, Procurement,
-    Product, Supplier, User, db,
+    Product, Supplier, User, CustomsDocument, CustomsRevision, db,
 )
 from document_export import _fixed_values, convert_excel_to_pdf, find_soffice
 
@@ -123,6 +123,171 @@ class SecuritySmokeTests(unittest.TestCase):
 
     def test_anonymous_business_download_redirects_to_login(self):
         self.assertEqual(self.client.get('/pi/1/download').status_code, 302)
+
+    def test_salesperson_can_confirm_and_export_own_customs_package(self):
+        with application.app.app_context():
+            product = Product.query.filter_by(name='Original Product').one()
+            pi = PI(
+                pi_number='PI-CUSTOMS-TEST-001',
+                customer_id=self.alice_customer,
+                salesperson='Alice',
+                currency='USD',
+                total_amount=20,
+                customs_required=True,
+            )
+            db.session.add(pi)
+            db.session.flush()
+            pi_item = PIItem(
+                pi_id=pi.id, product_id=product.id,
+                quantity=2, unit_price=10, amount=20,
+            )
+            packing = PackingList(
+                pi_id=pi.id, status='completed', created_by='alice',
+            )
+            db.session.add_all([pi_item, packing])
+            db.session.flush()
+            box = PackingBox(
+                packing_list_id=packing.id, box_no='1',
+                net_weight=1, gross_weight=2,
+                length_cm=10, width_cm=20, height_cm=30,
+            )
+            db.session.add(box)
+            db.session.flush()
+            db.session.add(PackingItem(
+                packing_box_id=box.id, pi_item_id=pi_item.id,
+                quantity=2, product_name=product.name,
+                product_code=product.product_code,
+            ))
+            db.session.commit()
+            pi_id = pi.id
+
+        values = {
+            'export_customs': '上海海关',
+            'transport_mode': '海运',
+            'vehicle_voyage': 'TEST V001',
+            'bill_no': 'BL-001',
+            'trade_country': '美国',
+            'destination_country': '美国',
+            'destination_port': 'LOS ANGELES',
+            'departure_port': '上海港',
+            'export_date': '2026-09-14',
+            'declaration_date': '2026-09-14',
+            'supervision_mode': '一般贸易',
+            'packing_type': '纸箱 / CARTON',
+        }
+        try:
+            self.login('alice')
+            path = f'/pi/{pi_id}/customs-documents'
+            token = self.token(path)
+            response = self.client.post(path, data={
+                **values, 'csrf_token': token, 'version': '0',
+                'action': 'save',
+            })
+            self.assertEqual(response.status_code, 302)
+            with application.app.app_context():
+                document = CustomsDocument.query.filter_by(pi_id=pi_id).one()
+                version = document.version
+                self.assertEqual(document.status, 'draft')
+
+            token = self.token(path)
+            response = self.client.post(path, data={
+                **values, 'csrf_token': token, 'version': str(version),
+                'action': 'confirm',
+            })
+            self.assertEqual(response.status_code, 302)
+            with application.app.app_context():
+                document = CustomsDocument.query.filter_by(pi_id=pi_id).one()
+                self.assertEqual(document.status, 'confirmed')
+                self.assertEqual(len(document.revisions), 1)
+                self.assertIn('_confirmed_snapshot', document.data_json)
+
+            response = self.client.get(f'/pi/{pi_id}/customs-documents.xlsx')
+            self.assertEqual(response.status_code, 200)
+            workbook = load_workbook(BytesIO(response.data), data_only=True)
+            self.assertEqual(
+                workbook.sheetnames,
+                ['报关单', '发票', '装箱单', '申报要素', '合同'],
+            )
+            self.assertEqual(workbook['发票']['G16'].value, 20)
+            workbook.close()
+
+            self.client.get('/logout')
+            self.login('admin-test')
+            token = self.token(path)
+            with application.app.app_context():
+                version = CustomsDocument.query.filter_by(pi_id=pi_id).one().version
+            response = self.client.post(path, data={
+                'csrf_token': token,
+                'version': str(version),
+                'action': 'unlock',
+                'unlock_reason': '测试更正报关资料',
+            })
+            self.assertEqual(response.status_code, 302)
+            with application.app.app_context():
+                document = CustomsDocument.query.filter_by(pi_id=pi_id).one()
+                self.assertEqual(document.status, 'draft')
+                self.assertEqual(len(document.revisions), 2)
+                self.assertNotIn('_confirmed_snapshot', document.data_json)
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                if pi:
+                    db.session.delete(pi)
+                    db.session.commit()
+
+    def test_customs_draft_exports_before_packing_but_cannot_confirm(self):
+        with application.app.app_context():
+            product = Product.query.filter_by(name='Original Product').one()
+            pi = PI(
+                pi_number='PI-CUSTOMS-DRAFT-001',
+                customer_id=self.alice_customer,
+                salesperson='Alice', currency='USD', total_amount=10,
+                customs_required=True,
+            )
+            db.session.add(pi)
+            db.session.flush()
+            db.session.add(PIItem(
+                pi_id=pi.id, product_id=product.id,
+                quantity=1, unit_price=10, amount=10,
+            ))
+            db.session.commit()
+            pi_id = pi.id
+        values = {
+            'export_customs': '上海海关', 'transport_mode': '海运',
+            'vehicle_voyage': 'TEST V002', 'bill_no': 'BL-002',
+            'trade_country': '美国', 'destination_country': '美国',
+            'destination_port': 'LOS ANGELES', 'departure_port': '上海港',
+            'export_date': '2026-09-14', 'declaration_date': '2026-09-14',
+            'supervision_mode': '一般贸易', 'packing_type': '纸箱 / CARTON',
+        }
+        try:
+            self.login('alice')
+            path = f'/pi/{pi_id}/customs-documents'
+            response = self.client.post(path, data={
+                **values, 'csrf_token': self.token(path),
+                'version': '0', 'action': 'save',
+            })
+            self.assertEqual(response.status_code, 302)
+            export = self.client.get(f'/pi/{pi_id}/customs-documents.xlsx')
+            self.assertEqual(export.status_code, 200)
+            self.assertIn('DRAFT', export.headers.get('Content-Disposition', ''))
+            with application.app.app_context():
+                document = CustomsDocument.query.filter_by(pi_id=pi_id).one()
+                version = document.version
+            response = self.client.post(path, data={
+                **values, 'csrf_token': self.token(path),
+                'version': str(version), 'action': 'confirm',
+            }, follow_redirects=True)
+            self.assertIn('装箱单尚未完成'.encode(), response.data)
+            with application.app.app_context():
+                document = CustomsDocument.query.filter_by(pi_id=pi_id).one()
+                self.assertEqual(document.status, 'draft')
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, pi_id)
+                if pi:
+                    db.session.delete(pi)
+                    db.session.commit()
 
     def test_pi_list_combines_workflow_actions_and_shows_customer_country(self):
         with application.app.app_context():

@@ -601,6 +601,61 @@ class PackingItem(db.Model):
     pi_item = db.relationship('PIItem', lazy=True)
 
 
+class CustomsDocument(db.Model):
+    """Editable customs package for one PI, locked after formal confirmation."""
+    __tablename__ = 'customs_documents'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(
+        db.Integer, db.ForeignKey('pis.id'), nullable=False,
+        unique=True, index=True,
+    )
+    status = db.Column(db.String(20), nullable=False, default='draft')
+    data_json = db.Column(db.Text, nullable=False, default='{}')
+    created_by = db.Column(db.String(100), nullable=False, default='')
+    updated_by = db.Column(db.String(100), nullable=False, default='')
+    confirmed_by = db.Column(db.String(100), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, nullable=False, default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    __mapper_args__ = {'version_id_col': version}
+    pi = db.relationship(
+        'PI', backref=db.backref(
+            'customs_document', uselist=False, lazy=True,
+            cascade='all, delete-orphan',
+        ),
+    )
+
+
+class CustomsRevision(db.Model):
+    """Immutable snapshots created on confirm and unlock operations."""
+    __tablename__ = 'customs_revisions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    customs_document_id = db.Column(
+        db.Integer, db.ForeignKey('customs_documents.id'),
+        nullable=False, index=True,
+    )
+    version = db.Column(db.Integer, nullable=False)
+    action = db.Column(db.String(30), nullable=False, default='confirm')
+    reason = db.Column(db.String(500), nullable=False, default='')
+    data_json = db.Column(db.Text, nullable=False, default='{}')
+    created_by = db.Column(db.String(100), nullable=False, default='')
+    created_at = db.Column(
+        db.DateTime, nullable=False, default=datetime.utcnow,
+    )
+    document = db.relationship(
+        'CustomsDocument', backref=db.backref(
+            'revisions', lazy=True, cascade='all, delete-orphan',
+            order_by='CustomsRevision.id.desc()',
+        ),
+    )
+
+
 class Expense(db.Model):
     __tablename__ = 'expenses'
 

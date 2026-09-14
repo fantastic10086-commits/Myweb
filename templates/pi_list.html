@@ -375,6 +375,9 @@
         </div>
         <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <a href="#" class="btn btn-outline-success d-none" id="customsDocumentsBtn">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>制作报关资料
+            </a>
             <button type="button" class="btn btn-primary" id="customsSaveBtn" disabled onclick="saveCustomsRecord()">
                 <i class="bi bi-check-lg"></i> 保存报关记录
             </button>
@@ -652,6 +655,8 @@ function openCustomsRecord(piId, piNumber) {
     document.getElementById('customsNote').value = '';
     document.getElementById('customsFields').disabled = true;
     document.getElementById('customsSaveBtn').disabled = true;
+    document.getElementById('customsDocumentsBtn').classList.add('d-none');
+    document.getElementById('customsDocumentsBtn').href = '/pi/' + piId + '/customs-documents';
     document.getElementById('customsRecordMeta').textContent = '正在读取记录……';
     document.getElementById('customsModalError').classList.add('d-none');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('customsModal')).show();
@@ -664,6 +669,9 @@ function openCustomsRecord(piId, piNumber) {
             document.getElementById('customsRequiredYes').checked = result.data.customs_required === true;
             document.getElementById('customsRequiredNo').checked = result.data.customs_required === false;
             document.getElementById('customsNote').value = result.data.note || '';
+            document.getElementById('customsDocumentsBtn').classList.toggle(
+                'd-none', result.data.customs_required !== true
+            );
             document.getElementById('customsRecordMeta').textContent = result.data.recorded_at
                 ? '最近登记：' + (result.data.recorded_by || '未知用户') + ' · ' + result.data.recorded_at
                 : '尚未登记。';
@@ -701,9 +709,14 @@ function saveCustomsRecord() {
         .then(function(result) {
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存报关记录失败。');
             updateCustomsButton(currentCustomsPiId, result.data.customs_required);
+            document.getElementById('customsDocumentsBtn').classList.toggle(
+                'd-none', result.data.customs_required !== true
+            );
             document.getElementById('customsRecordMeta').textContent =
                 '最近登记：' + result.data.recorded_by + ' · ' + result.data.recorded_at;
-            bootstrap.Modal.getInstance(document.getElementById('customsModal')).hide();
+            if (result.data.customs_required !== true) {
+                bootstrap.Modal.getInstance(document.getElementById('customsModal')).hide();
+            }
         })
         .catch(function(error) { customsError(error.message || '保存报关记录失败。'); })
         .finally(function() {
