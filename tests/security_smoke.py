@@ -202,7 +202,15 @@ class SecuritySmokeTests(unittest.TestCase):
                 workbook.sheetnames,
                 ['报关单', '发票', '装箱单', '申报要素', '合同'],
             )
-            self.assertEqual(workbook['发票']['G16'].value, 20)
+            self.assertEqual(workbook['发票']['E17'].value, 20)
+            self.assertEqual(workbook['合同']['E17'].value, 20)
+            self.assertEqual(
+                workbook['报关单']['A4'].value,
+                '常州市克利斯达国际贸易有限公司',
+            )
+            self.assertTrue(workbook['报关单'].print_area)
+            self.assertTrue(workbook['发票'].print_area)
+            self.assertTrue(workbook['装箱单'].print_area)
             workbook.close()
 
             self.client.get('/logout')
