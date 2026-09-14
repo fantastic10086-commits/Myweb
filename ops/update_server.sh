@@ -19,6 +19,7 @@ rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'stati
     --include 'assets/qisuo_legacy_pi_template.xlsx' \
     --include 'assets/packing_a4.xlsx' \
     --include 'assets/packing_compact_100x150.xlsx' \
+    --include 'assets/customs_declaration_template.xlsx' \
     --exclude '*.xlsx' \
     --exclude '__pycache__' --exclude '.DS_Store' \
     --exclude 'auth*' --exclude 'tmp' "$SOURCE_DIR/" "$RELEASE/"
