@@ -11,9 +11,10 @@
     .packing-box-card { border-left: 4px solid #0d6efd; overflow: hidden; }
     .packing-box-card.is-target { box-shadow: 0 0 0 2px rgba(13,110,253,.22); }
     .packing-box-card .form-label { font-size: .8rem; color: #6c757d; margin-bottom: .2rem; }
-    .packing-box-toggle { min-width: 0; cursor: pointer; }
+    .packing-box-toggle { min-width: 0; cursor: pointer; flex:1 1 210px; }
     .packing-box-title { min-width: 0; }
-    .packing-box-meta { color: #6c757d; font-size: .82rem; }
+    .packing-box-meta { color: #6c757d; font-size: .82rem; white-space:normal; overflow-wrap:anywhere; line-height:1.35; }
+    .packing-box-actions { flex:0 0 auto; }
     .packing-box-body[hidden] { display: none !important; }
     .packing-unallocated-panel, .packing-boxes-panel { position: sticky; top: 5.25rem; }
     .packing-pending-list, .packing-boxes-scroll { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
@@ -338,6 +339,42 @@
         updateSelectionSummary();
     }
 
+    function scrollToBox(boxIndex) {
+        requestAnimationFrame(() => {
+            const boxCard = container.querySelector(`[data-box-index="${boxIndex}"]`);
+            if (boxCard) boxCard.scrollIntoView({behavior:'smooth', block:'nearest'});
+        });
+    }
+
+    function moveBox(boxIndex, direction) {
+        const targetIndex = boxIndex + direction;
+        if (targetIndex < 0 || targetIndex >= boxes.length) return;
+        const boxWasExpanded = expandedBoxes.has(boxIndex);
+        const targetWasExpanded = expandedBoxes.has(targetIndex);
+        [boxes[boxIndex], boxes[targetIndex]] = [boxes[targetIndex], boxes[boxIndex]];
+        expandedBoxes.delete(boxIndex);
+        expandedBoxes.delete(targetIndex);
+        if (boxWasExpanded) expandedBoxes.add(targetIndex);
+        if (targetWasExpanded) expandedBoxes.add(boxIndex);
+        if (selectedTargetBox === boxIndex) selectedTargetBox = targetIndex;
+        else if (selectedTargetBox === targetIndex) selectedTargetBox = boxIndex;
+        renderBoxes();
+        scrollToBox(targetIndex);
+    }
+
+    function finishBoxAndCreateNext(boxIndex) {
+        const box = boxes[boxIndex];
+        if (!box || !box.items.length) return showAlert('当前箱子还没有产品，不能完成。', 'warning');
+        if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
+        expandedBoxes.delete(boxIndex);
+        boxes.push(emptyBox());
+        selectedTargetBox=boxes.length-1;
+        expandedBoxes.add(selectedTargetBox);
+        renderBoxes();
+        showAlert(`第 ${boxIndex + 1} 箱已完成，已自动创建第 ${selectedTargetBox + 1} 箱。`, 'success', false);
+        scrollToBox(selectedTargetBox);
+    }
+
     function renderTargetBoxes() {
         if (selectedTargetBox >= boxes.length) selectedTargetBox = Math.max(0, boxes.length - 1);
         targetBoxSelect.replaceChildren();
@@ -445,29 +482,38 @@
         container.replaceChildren();
         boxes.forEach((box, boxIndex) => {
             if (!Array.isArray(box.items)) box.items = [];
-            const card = document.createElement('div'); card.className = `card packing-box-card mb-3 ${boxIndex === selectedTargetBox ? 'is-target' : ''}`;
-            const header = document.createElement('div'); header.className = 'card-header d-flex justify-content-between align-items-center gap-2';
+            const card = document.createElement('div'); card.className = `card packing-box-card mb-3 ${boxIndex === selectedTargetBox ? 'is-target' : ''}`; card.dataset.boxIndex=String(boxIndex);
+            const header = document.createElement('div'); header.className = 'card-header d-flex flex-wrap justify-content-between align-items-start gap-2';
             const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn btn-link text-decoration-none text-start text-dark p-0 flex-grow-1 packing-box-toggle';
-            const toggleContent = document.createElement('div'); toggleContent.className = 'd-flex align-items-center gap-2';
+            const toggleContent = document.createElement('div'); toggleContent.className = 'd-flex align-items-start gap-2';
             const icon = document.createElement('i'); icon.className = `bi ${expandedBoxes.has(boxIndex) ? 'bi-chevron-down' : 'bi-chevron-right'} text-primary`;
             const titleWrap = document.createElement('div'); titleWrap.className = 'packing-box-title';
             const title = document.createElement('div'); title.className = 'fw-bold text-truncate'; title.dataset.boxTitle = String(boxIndex);
-            const meta = document.createElement('div'); meta.className = 'packing-box-meta text-truncate'; meta.dataset.boxMeta = String(boxIndex);
+            const meta = document.createElement('div'); meta.className = 'packing-box-meta'; meta.dataset.boxMeta = String(boxIndex);
             titleWrap.append(title, meta); toggleContent.append(icon, titleWrap); toggle.append(toggleContent);
             toggle.addEventListener('click', () => {
                 selectedTargetBox = boxIndex;
                 if (expandedBoxes.has(boxIndex)) expandedBoxes.delete(boxIndex); else expandedBoxes.add(boxIndex);
                 renderBoxes();
             });
+            const actions = document.createElement('div'); actions.className='packing-box-actions d-flex gap-1 flex-wrap justify-content-end';
+            const moveUp = document.createElement('button'); moveUp.type='button'; moveUp.className='btn btn-sm btn-outline-secondary'; moveUp.disabled=boxIndex===0; moveUp.title='上移箱子'; moveUp.setAttribute('aria-label','上移箱子'); moveUp.innerHTML='<i class="bi bi-arrow-up"></i>';
+            moveUp.addEventListener('click', () => moveBox(boxIndex, -1));
+            const moveDown = document.createElement('button'); moveDown.type='button'; moveDown.className='btn btn-sm btn-outline-secondary'; moveDown.disabled=boxIndex===boxes.length-1; moveDown.title='下移箱子'; moveDown.setAttribute('aria-label','下移箱子'); moveDown.innerHTML='<i class="bi bi-arrow-down"></i>';
+            moveDown.addEventListener('click', () => moveBox(boxIndex, 1));
+            const finishBoxTop=document.createElement('button'); finishBoxTop.type='button'; finishBoxTop.className='btn btn-sm btn-success'; finishBoxTop.disabled=!box.items.length; finishBoxTop.innerHTML='<i class="bi bi-check-lg"></i> 完成箱子';
+            finishBoxTop.addEventListener('click',()=>finishBoxAndCreateNext(boxIndex));
             const remove = document.createElement('button'); remove.type='button'; remove.className='btn btn-sm btn-outline-danger'; remove.innerHTML='<i class="bi bi-trash"></i> 删除箱子';
             remove.addEventListener('click', () => {
                 if (boxes.length === 1) return showAlert('至少需要保留一个箱子。', 'warning');
                 if (!confirm(`确认删除第 ${boxIndex + 1} 箱吗？箱内产品会回到待分配列表。`)) return;
                 boxes.splice(boxIndex, 1);
                 expandedBoxes.clear(); expandedBoxes.add(Math.max(0, Math.min(boxIndex, boxes.length - 1)));
+                selectedTargetBox = Math.max(0, Math.min(boxIndex, boxes.length - 1));
                 renderBoxes();
             });
-            header.append(toggle, remove);
+            actions.append(moveUp, moveDown, finishBoxTop, remove);
+            header.append(toggle, actions);
             const body = document.createElement('div'); body.className='card-body packing-box-body'; body.hidden = !expandedBoxes.has(boxIndex);
             const fields = document.createElement('div'); fields.className='row g-2 mb-3';
             fields.append(
@@ -500,8 +546,12 @@
             if (!box.items.length) {
                 const empty = document.createElement('div'); empty.className = 'packing-empty-state py-4'; empty.innerHTML = '<i class="bi bi-inbox me-1"></i>此箱尚未加入产品，请从左侧选择一个或多个产品。'; itemList.append(empty);
             }
+            const boxActions=document.createElement('div'); boxActions.className='d-flex flex-wrap justify-content-between gap-2';
             const clearBox=document.createElement('button'); clearBox.type='button'; clearBox.className='btn btn-sm btn-outline-secondary'; clearBox.disabled=!box.items.length; clearBox.innerHTML='<i class="bi bi-arrow-counterclockwise"></i> 清空当前箱产品'; clearBox.addEventListener('click',()=>{if(!confirm(`确认清空第 ${boxIndex + 1} 箱的产品吗？这些产品会回到待分配列表。`))return;box.items=[];renderBoxes();});
-            body.append(fields,cbm,itemList,clearBox); card.append(header,body); container.append(card);
+            const finishBox=document.createElement('button'); finishBox.type='button'; finishBox.className='btn btn-sm btn-success'; finishBox.disabled=!box.items.length; finishBox.innerHTML='<i class="bi bi-check-lg"></i> 完成箱子';
+            finishBox.addEventListener('click',()=>finishBoxAndCreateNext(boxIndex));
+            boxActions.append(clearBox,finishBox);
+            body.append(fields,cbm,itemList,boxActions); card.append(header,body); container.append(card);
             updateBoxSummary(boxIndex);
         });
         renderOverview();
@@ -633,10 +683,12 @@
         showAlert(`已将全部 ${additions.length} 项剩余产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
     });
     document.getElementById('addBoxButton').addEventListener('click',()=>{
+        if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
         boxes.push(emptyBox());
         selectedTargetBox = boxes.length - 1;
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
+        scrollToBox(selectedTargetBox);
     });
     document.querySelectorAll('.packing-save').forEach(button=>button.addEventListener('click',()=>save(button.dataset.action)));
     renderBoxes();
