@@ -258,6 +258,24 @@ class Product(db.Model):
     chinese_name = db.Column(db.String(200), default='')
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
     unit_price_rmb = db.Column(db.Float, nullable=False, default=0.0)
+    # Customs master data. Existing products are backfilled with the company's
+    # common welding/cutting-parts declaration profile during migration; users
+    # can then adjust the smaller number of exceptions product by product.
+    customs_hs_code = db.Column(db.String(20), nullable=False, default='8515900090')
+    customs_name_cn = db.Column(db.String(200), nullable=False, default='焊割设备配件')
+    customs_name_en = db.Column(db.String(200), nullable=False, default='Welding & Cutting Equipment Parts')
+    customs_unit = db.Column(db.String(30), nullable=False, default='件')
+    customs_brand_type = db.Column(db.String(100), nullable=False, default='无品牌')
+    customs_brand = db.Column(db.String(100), nullable=False, default='无品牌')
+    customs_preferential = db.Column(db.String(100), nullable=False, default='无')
+    customs_purpose = db.Column(
+        db.Text, nullable=False,
+        default='用于焊接及等离子切割设备的导电、连接、夹持和气流控制等',
+    )
+    customs_origin_country = db.Column(db.String(100), nullable=False, default='中国')
+    customs_domestic_source = db.Column(db.String(100), nullable=False, default='常州其他')
+    customs_tax_exemption = db.Column(db.String(100), nullable=False, default='照章征税')
+    customs_elements = db.Column(db.Text, nullable=False, default='')
     notes = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
     active = db.Column(db.Boolean, nullable=False, default=True)
@@ -272,6 +290,18 @@ class Product(db.Model):
             'chinese_name': self.chinese_name,
             'unit_price': self.unit_price,
             'unit_price_rmb': self.unit_price_rmb,
+            'customs_hs_code': self.customs_hs_code,
+            'customs_name_cn': self.customs_name_cn,
+            'customs_name_en': self.customs_name_en,
+            'customs_unit': self.customs_unit,
+            'customs_brand_type': self.customs_brand_type,
+            'customs_brand': self.customs_brand,
+            'customs_preferential': self.customs_preferential,
+            'customs_purpose': self.customs_purpose,
+            'customs_origin_country': self.customs_origin_country,
+            'customs_domestic_source': self.customs_domestic_source,
+            'customs_tax_exemption': self.customs_tax_exemption,
+            'customs_elements': self.customs_elements,
             'notes': self.notes,
             'image': self.image,
             'active': self.active,

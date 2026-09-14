@@ -121,6 +121,55 @@ document.addEventListener('paste', function(e) {
                     <small class="text-muted">当前： <img src="{{ url_for('uploaded_product_thumbnail', filename=product.image) }}" loading="lazy" decoding="async" style="max-height:40px;vertical-align:middle;"></small>
                     {% endif %}
                 </div>
+                <div class="col-12"><hr><h5 class="mb-0"><i class="bi bi-clipboard-check me-1"></i>报关资料</h5><small class="text-muted">系统已为全部产品采用统一默认值；例外产品可在这里调整。</small></div>
+                <div class="col-md-4">
+                    <label for="customs_hs_code" class="form-label">HS 编码 <span class="text-danger">*</span></label>
+                    <input type="text" inputmode="numeric" maxlength="10" pattern="[0-9]{10}" class="form-control" id="customs_hs_code" name="customs_hs_code" required value="{{ product.customs_hs_code if product else '8515900090' }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="customs_name_cn" class="form-label">中文报关品名 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_name_cn" name="customs_name_cn" required value="{{ product.customs_name_cn if product else '焊割设备配件' }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="customs_name_en" class="form-label">英文报关品名 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_name_en" name="customs_name_en" required value="{{ product.customs_name_en if product else 'Welding & Cutting Equipment Parts' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="customs_unit" class="form-label">申报单位 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_unit" name="customs_unit" required value="{{ product.customs_unit if product else '件' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="customs_brand_type" class="form-label">品牌类型 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_brand_type" name="customs_brand_type" required value="{{ product.customs_brand_type if product else '无品牌' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="customs_brand" class="form-label">品牌 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_brand" name="customs_brand" required value="{{ product.customs_brand if product else '无品牌' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="customs_preferential" class="form-label">出口享惠 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_preferential" name="customs_preferential" required value="{{ product.customs_preferential if product else '无' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="customs_origin_country" class="form-label">原产国 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_origin_country" name="customs_origin_country" required value="{{ product.customs_origin_country if product else '中国' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="customs_domestic_source" class="form-label">境内货源地 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_domestic_source" name="customs_domestic_source" required value="{{ product.customs_domestic_source if product else '常州其他' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="customs_tax_exemption" class="form-label">征免方式 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_tax_exemption" name="customs_tax_exemption" required value="{{ product.customs_tax_exemption if product else '照章征税' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="customs_purpose" class="form-label">用途 <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="customs_purpose" name="customs_purpose" required value="{{ product.customs_purpose if product else '用于焊接及等离子切割设备的导电、连接、夹持和气流控制等' }}">
+                </div>
+                <div class="col-12">
+                    <label for="customs_elements" class="form-label">其他申报要素</label>
+                    <textarea class="form-control" id="customs_elements" name="customs_elements" rows="2" placeholder="例如材质、额定电压、工作压力等 HS 编码要求的补充信息">{{ product.customs_elements if product else '' }}</textarea>
+                </div>
                 <div class="col-12">
                     <label for="notes" class="form-label">备注</label>
                     <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="产品其他备注……">{{ product.notes if product else '' }}</textarea>

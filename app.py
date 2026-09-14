@@ -79,6 +79,45 @@ PACKING_TEMPLATE_DEFINITIONS = {
 # quotation/profit rate never rewrites a salesperson's historical performance.
 PERFORMANCE_EXCHANGE_RATE = 7.0
 
+PRODUCT_CUSTOMS_DEFAULTS = {
+    'customs_hs_code': '8515900090',
+    'customs_name_cn': '焊割设备配件',
+    'customs_name_en': 'Welding & Cutting Equipment Parts',
+    'customs_unit': '件',
+    'customs_brand_type': '无品牌',
+    'customs_brand': '无品牌',
+    'customs_preferential': '无',
+    'customs_purpose': '用于焊接及等离子切割设备的导电、连接、夹持和气流控制等',
+    'customs_origin_country': '中国',
+    'customs_domestic_source': '常州其他',
+    'customs_tax_exemption': '照章征税',
+    'customs_elements': '',
+}
+PRODUCT_CUSTOMS_FIELDS = tuple(PRODUCT_CUSTOMS_DEFAULTS)
+PRODUCT_AUDIT_FIELDS = (
+    'name', 'chinese_name', 'product_code', 'specification',
+    'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+) + PRODUCT_CUSTOMS_FIELDS
+
+
+def _apply_product_customs_form(product, form):
+    """Apply a complete customs profile from a product form."""
+    values = {}
+    for field, default_value in PRODUCT_CUSTOMS_DEFAULTS.items():
+        submitted = form.get(field)
+        values[field] = (
+            str(submitted).strip() if submitted is not None else default_value
+        )
+    required = [field for field in PRODUCT_CUSTOMS_FIELDS if field != 'customs_elements']
+    missing = [field for field in required if not values[field]]
+    if missing:
+        return False, '报关资料必填字段不能为空。'
+    if not re.fullmatch(r'\d{10}', values['customs_hs_code']):
+        return False, 'HS 编码必须是 10 位数字。'
+    for field, value in values.items():
+        setattr(product, field, value)
+    return True, ''
+
 MANAGED_FIELD_LABELS = {
     'shipping_note': '客户费用/折扣类型',
     'expense_category': '订单真实成本类别',
@@ -117,6 +156,18 @@ def _migrate_db():
             'chinese_name': 'VARCHAR(200)',
             'unit_price_rmb': 'FLOAT',
             'active': ('BOOLEAN', '1'),
+            'customs_hs_code': ('VARCHAR(20)', "'8515900090'"),
+            'customs_name_cn': ('VARCHAR(200)', "'焊割设备配件'"),
+            'customs_name_en': ('VARCHAR(200)', "'Welding & Cutting Equipment Parts'"),
+            'customs_unit': ('VARCHAR(30)', "'件'"),
+            'customs_brand_type': ('VARCHAR(100)', "'无品牌'"),
+            'customs_brand': ('VARCHAR(100)', "'无品牌'"),
+            'customs_preferential': ('VARCHAR(100)', "'无'"),
+            'customs_purpose': ('TEXT', "'用于焊接及等离子切割设备的导电、连接、夹持和气流控制等'"),
+            'customs_origin_country': ('VARCHAR(100)', "'中国'"),
+            'customs_domestic_source': ('VARCHAR(100)', "'常州其他'"),
+            'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
+            'customs_elements': ('TEXT', "''"),
         },
         'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '7.0'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
@@ -179,6 +230,17 @@ def _migrate_db():
             CREATE UNIQUE INDEX IF NOT EXISTS ux_users_account_nocase
             ON users(account COLLATE NOCASE)
         """))
+        db.session.commit()
+    if inspector.has_table('products'):
+        # Fill only missing customs values. This upgrades all historical
+        # products without overwriting any exception already maintained.
+        for field, default_value in PRODUCT_CUSTOMS_DEFAULTS.items():
+            if not default_value:
+                continue
+            db.session.execute(text(
+                f"UPDATE products SET {field} = :value "
+                f"WHERE {field} IS NULL OR trim(CAST({field} AS TEXT)) = ''"
+            ), {'value': default_value})
         db.session.commit()
     # Earlier releases added nullable datetime columns with an empty-string
     # default. SQLAlchemy correctly expects either NULL or an ISO datetime, so
@@ -2854,18 +2916,20 @@ def product_add():
             notes=request.form.get('notes', '').strip(),
             image=image_filename,
         )
+        customs_ok, customs_error = _apply_product_customs_form(product, request.form)
         if not product.name:
             _remove_upload(image_filename)
             flash('产品名称不能为空。', 'danger')
+            return render_template('product_form.html', product=product, editing=False)
+        if not customs_ok:
+            _remove_upload(image_filename)
+            flash(customs_error, 'danger')
             return render_template('product_form.html', product=product, editing=False)
         try:
             db.session.add(product)
             db.session.flush()
             _audit('create', 'product', product.id, f'新增产品：{product.name}',
-                   after=_snapshot(product, [
-                       'name', 'chinese_name', 'product_code', 'specification',
-                       'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
-                   ]))
+                   after=_snapshot(product, PRODUCT_AUDIT_FIELDS))
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -2885,10 +2949,7 @@ def product_edit(id):
         if not new_name:
             flash('产品名称不能为空。', 'danger')
             return render_template('product_form.html', product=product, editing=True)
-        before = _snapshot(product, [
-            'name', 'chinese_name', 'product_code', 'specification',
-            'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
-        ])
+        before = _snapshot(product, PRODUCT_AUDIT_FIELDS)
         old_image = product.image or ''
         new_image = ''
         image_file = request.files.get('image')
@@ -2908,14 +2969,16 @@ def product_edit(id):
         except ValueError:
             product.unit_price = 0.0
         product.notes = request.form.get('notes', '').strip()
+        customs_ok, customs_error = _apply_product_customs_form(product, request.form)
+        if not customs_ok:
+            _remove_upload(new_image)
+            flash(customs_error, 'danger')
+            return render_template('product_form.html', product=product, editing=True)
         if new_image:
             product.image = new_image
         try:
             _audit('update', 'product', product.id, f'更新产品：{product.name}',
-                   before=before, after=_snapshot(product, [
-                       'name', 'chinese_name', 'product_code', 'specification',
-                       'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
-                   ]))
+                   before=before, after=_snapshot(product, PRODUCT_AUDIT_FIELDS))
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -3140,16 +3203,14 @@ def api_product_copy(id):
         unit_price_rmb=original.unit_price_rmb,
         notes=original.notes,
         image=new_image,
+        **{field: getattr(original, field) for field in PRODUCT_CUSTOMS_FIELDS},
     )
     try:
         db.session.add(new_product)
         db.session.flush()
         _audit('copy', 'product', new_product.id,
                f'复制产品：{original.name} → {new_product.name}',
-               after=_snapshot(new_product, [
-                   'name', 'chinese_name', 'product_code', 'specification',
-                   'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
-               ]))
+               after=_snapshot(new_product, PRODUCT_AUDIT_FIELDS))
         db.session.commit()
     except Exception:
         db.session.rollback()
