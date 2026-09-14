@@ -38,6 +38,9 @@
     .packing-inline-quantity .form-control, .packing-inline-quantity .input-group-text { min-height:32px; padding-top:.2rem; padding-bottom:.2rem; }
     .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
     .packing-readonly-table td, .packing-readonly-table th { vertical-align:middle; }
+    @media (min-width: 1200px) {
+        .packing-side-column { flex:1 1 0 !important; width:0; min-width:0; max-width:none; }
+    }
     @media (max-width: 1199.98px) {
         .packing-unallocated-panel, .packing-boxes-panel { position: static; }
         .packing-pending-list, .packing-boxes-scroll { max-height: none; }
@@ -132,7 +135,7 @@
 </div>
 
 <div class="row g-3 packing-workspace">
-    <div class="col-xl">
+    <div class="col-xl packing-side-column">
         <div class="card packing-unallocated-panel mb-3">
             <div class="card-header d-flex justify-content-between align-items-center gap-2">
                 <strong><i class="bi bi-card-checklist me-1"></i>PI 产品清单</strong>
@@ -168,7 +171,7 @@
             </button>
         </div>
     </div>
-    <div class="col-xl">
+    <div class="col-xl packing-side-column">
         <div class="packing-boxes-panel">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <strong><i class="bi bi-box-seam me-1"></i>箱子与已分配产品</strong>

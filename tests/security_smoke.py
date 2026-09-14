@@ -2745,7 +2745,10 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn("title='上移箱子'", editor_html)
             self.assertIn("title='下移箱子'", editor_html)
             self.assertIn('function moveBox(boxIndex, direction)', editor_html)
-            self.assertEqual(editor_html.count('class="col-xl"'), 2)
+            self.assertEqual(
+                editor_html.count('class="col-xl packing-side-column"'), 2,
+            )
+            self.assertIn('.packing-side-column { flex:1 1 0 !important;', editor_html)
             self.assertIn('class="col-xl-1"', editor_html)
             self.assertNotIn('class="col-xl-7"', editor_html)
             self.assertNotIn('class="col-xl-4"', editor_html)
