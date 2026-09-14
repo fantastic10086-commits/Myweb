@@ -2751,8 +2751,9 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('function moveBox(boxIndex, direction)', editor_html)
             self.assertNotIn("field('箱号 *'", editor_html)
             self.assertIn("body.className='card-body packing-box-body p-2'", editor_html)
-            self.assertIn("fields.className='row g-2 mb-2'", editor_html)
-            self.assertEqual(editor_html.count("{className:'col-4'}"), 3)
+            self.assertIn("measureFields.className='row g-2 mb-2 packing-measure-fields'", editor_html)
+            self.assertIn("body.append(measureFields,noteFields,cbm,itemList,boxActions)", editor_html)
+            self.assertGreaterEqual(editor_html.count("{className:'col'}"), 5)
             self.assertEqual(
                 editor_html.count('class="col-xl packing-side-column"'), 2,
             )
