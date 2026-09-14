@@ -18,6 +18,7 @@
     .packing-unallocated-panel, .packing-boxes-panel { position: sticky; top: 5.25rem; }
     .packing-pending-list, .packing-boxes-scroll { max-height: 64vh; overflow-y: auto; padding-right: .25rem; }
     .packing-pending-item { border: 1px solid #dee2e6; border-radius: .55rem; padding: .4rem .55rem; background: #fff; }
+    .packing-pending-item.is-selected { border-color:#0d6efd; box-shadow:0 0 0 1px rgba(13,110,253,.18); background:#f4f8ff; }
     .packing-pending-item.is-complete { background:#f1f3f5; color:#868e96; border-color:#e1e5e9; }
     .packing-pending-item.is-complete .text-muted { color:#9aa0a6 !important; }
     .packing-product-thumb { width:38px; height:38px; object-fit:cover; border-radius:.3rem; border:1px solid #dee2e6; flex:0 0 auto; }
@@ -142,7 +143,11 @@
                     <input id="packingProductSearch" type="search" class="form-control" placeholder="搜索品名、编码或规格">
                 </div>
                 <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
-                    <button type="button" id="selectVisibleProducts" class="btn btn-sm btn-link p-0">全选当前结果</button>
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <button type="button" id="selectVisibleProducts" class="btn btn-sm btn-link p-0">全选当前结果</button>
+                        <span id="packingSelectionCount" class="badge bg-secondary">已选择 0 项</span>
+                        <button type="button" id="clearSelectedProducts" class="btn btn-sm btn-link text-secondary p-0" disabled>清空选择</button>
+                    </div>
                     <span class="small text-muted">完整 PI，不显示价格</span>
                 </div>
                 <div id="packingPendingProducts" class="packing-pending-list mb-3"></div>
@@ -229,6 +234,8 @@
     let boxes = data.boxes || [];
     let version = data.version || 0;
     let selectedTargetBox = 0;
+    const selectedProductIds = new Set();
+    const selectedProductQuantities = new Map();
     const expandedBoxes = new Set([0]);
     const container = document.getElementById('packingBoxes');
     const alertBox = document.getElementById('packingAlert');
@@ -237,6 +244,8 @@
     const pendingCount = document.getElementById('packingPendingCount');
     const productSearch = document.getElementById('packingProductSearch');
     const targetLabel = document.getElementById('packingTargetLabel');
+    const selectionCount = document.getElementById('packingSelectionCount');
+    const clearSelectedProducts = document.getElementById('clearSelectedProducts');
 
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
@@ -317,6 +326,18 @@
         if (meta) meta.textContent = `${box.items.length} 项 · ${boxItemCount(box)} 件 · 净重 ${numberValue(box.net_weight).toFixed(2)} kg · 毛重 ${numberValue(box.gross_weight).toFixed(2)} kg · ${boxVolume(box).toFixed(4)} m³`;
     }
 
+    function updateSelectionSummary() {
+        selectionCount.textContent = `已选择 ${selectedProductIds.size} 项`;
+        selectionCount.className = `badge ${selectedProductIds.size ? 'bg-primary' : 'bg-secondary'}`;
+        clearSelectedProducts.disabled = selectedProductIds.size === 0;
+    }
+
+    function clearProductSelection() {
+        selectedProductIds.clear();
+        selectedProductQuantities.clear();
+        updateSelectionSummary();
+    }
+
     function renderTargetBoxes() {
         if (selectedTargetBox >= boxes.length) selectedTargetBox = Math.max(0, boxes.length - 1);
         targetBoxSelect.replaceChildren();
@@ -348,6 +369,20 @@
             return [product.name, product.product_code, product.specification]
                 .some(value => String(value || '').toLocaleLowerCase().includes(query));
         });
+        const productStates = new Map(allProducts.map(product => [Number(product.id), product]));
+        [...selectedProductIds].forEach(id => {
+            const product = productStates.get(Number(id));
+            if (!product || product.remaining <= 0) {
+                selectedProductIds.delete(id);
+                selectedProductQuantities.delete(id);
+                return;
+            }
+            const rememberedQuantity = integerValue(selectedProductQuantities.get(id));
+            if (rememberedQuantity <= 0 || rememberedQuantity > product.remaining) {
+                selectedProductQuantities.set(id, product.remaining);
+            }
+        });
+        updateSelectionSummary();
         pendingCount.textContent = `待分配 ${remainingCount} / 共 ${allProducts.length} 项`;
         pendingCount.className = `badge ${allProducts.some(product => product.remaining < 0) ? 'bg-danger' : remainingCount ? 'bg-warning text-dark' : 'bg-success'}`;
         pendingProducts.replaceChildren();
@@ -360,9 +395,21 @@
         }
         visibleProducts.forEach(product => {
             const card = document.createElement('div');
-            card.className = `packing-pending-item ${product.remaining === 0 ? 'is-complete' : product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
+            card.className = `packing-pending-item ${selectedProductIds.has(Number(product.id)) ? 'is-selected' : ''} ${product.remaining === 0 ? 'is-complete' : product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
             const top = document.createElement('div'); top.className = 'd-flex align-items-start gap-2';
-            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining <= 0;
+            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining <= 0; check.checked = selectedProductIds.has(Number(product.id));
+            check.addEventListener('change', () => {
+                const id = Number(product.id);
+                if (check.checked) {
+                    selectedProductIds.add(id);
+                    if (!selectedProductQuantities.has(id)) selectedProductQuantities.set(id, product.remaining);
+                } else {
+                    selectedProductIds.delete(id);
+                    selectedProductQuantities.delete(id);
+                }
+                card.classList.toggle('is-selected', check.checked);
+                updateSelectionSummary();
+            });
             const sequence = document.createElement('span'); sequence.className='small text-muted mt-1'; sequence.textContent=String(products.findIndex(row => Number(row.id) === Number(product.id)) + 1);
             let thumb;
             if (product.image) { thumb=document.createElement('img'); thumb.className='packing-product-thumb'; thumb.loading='lazy'; thumb.alt=''; thumb.src=`/uploads/thumb/${encodeURIComponent(product.image)}`; }
@@ -375,7 +422,17 @@
             if (product.remaining > 0) {
                 const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm packing-inline-quantity';
                 const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '数量';
-                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(product.remaining); qty.step = '1'; qty.value = String(product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id);
+                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(product.remaining); qty.step = '1'; qty.value = String(selectedProductQuantities.get(Number(product.id)) || product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id);
+                qty.addEventListener('input', () => {
+                    const id = Number(product.id);
+                    selectedProductQuantities.set(id, qty.value);
+                    if (!selectedProductIds.has(id)) {
+                        selectedProductIds.add(id);
+                        check.checked = true;
+                        card.classList.add('is-selected');
+                        updateSelectionSummary();
+                    }
+                });
                 const unit = document.createElement('span'); unit.className = 'input-group-text'; unit.textContent = '件';
                 qtyWrap.append(label, qty, unit); top.append(qtyWrap);
             }
@@ -513,21 +570,38 @@
     document.getElementById('selectVisibleProducts').addEventListener('click', () => {
         const checks = [...document.querySelectorAll('.pending-product-check:not(:disabled)')];
         const shouldSelect = checks.some(check => !check.checked);
-        checks.forEach(check => { check.checked = shouldSelect; });
+        checks.forEach(check => {
+            const id = Number(check.value);
+            check.checked = shouldSelect;
+            check.closest('.packing-pending-item').classList.toggle('is-selected', shouldSelect);
+            if (shouldSelect) {
+                selectedProductIds.add(id);
+                if (!selectedProductQuantities.has(id)) {
+                    const product = products.find(row => Number(row.id) === id);
+                    const packed = packedQuantities();
+                    selectedProductQuantities.set(id, integerValue(product.quantity) - (packed[id] || 0));
+                }
+            } else {
+                selectedProductIds.delete(id);
+                selectedProductQuantities.delete(id);
+            }
+        });
+        updateSelectionSummary();
+    });
+    clearSelectedProducts.addEventListener('click', () => {
+        clearProductSelection();
+        renderPendingProducts();
     });
     document.getElementById('batchAddProducts').addEventListener('click', () => {
-        const checked = [...document.querySelectorAll('.pending-product-check:checked')];
-        if (!checked.length) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
+        if (!selectedProductIds.size) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
         if (!boxes[selectedTargetBox]) return showAlert('请选择要加入的目标箱。', 'warning');
         const packed = packedQuantities();
         const additions = [];
-        for (const checkbox of checked) {
-            const id = Number(checkbox.value);
+        for (const id of selectedProductIds) {
             const product = products.find(row => Number(row.id) === id);
             if (!product) continue;
             const remaining = integerValue(product.quantity) - (packed[id] || 0);
-            const quantityInput = document.querySelector(`.pending-product-qty[data-product-id="${id}"]`);
-            const quantity = integerValue(quantityInput ? quantityInput.value : remaining);
+            const quantity = integerValue(selectedProductQuantities.get(id) || remaining);
             if (quantity <= 0 || quantity > remaining) return showAlert(`产品“${product.name}”的加入数量应为 1 至 ${remaining}。`, 'warning');
             additions.push({id, quantity});
         }
@@ -538,6 +612,7 @@
             else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity, note:''});
         }
         expandedBoxes.add(selectedTargetBox);
+        clearProductSelection();
         renderBoxes();
         showAlert(`已将 ${additions.length} 项产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
     });
