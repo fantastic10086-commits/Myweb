@@ -198,13 +198,16 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     sheet.print_area = f"A1:F{last_row}"
 
 
-def generate_compact_packing_list_workbook(pi, packing_list):
+def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None):
     """Generate the compact 100 x 150 mm workbook, one carton per sheet/page."""
     workbook = Workbook()
     workbook.remove(workbook.active)
     used_titles = set()
     boxes = list(packing_list.boxes)
-    for box_index, box in enumerate(boxes, 1):
+    selected_indexes = range(len(boxes)) if box_indexes is None else box_indexes
+    for zero_based_index in selected_indexes:
+        box = boxes[zero_based_index]
+        box_index = zero_based_index + 1
         title = _compact_sheet_title(box_index, box.box_no, used_titles)
         sheet = workbook.create_sheet(title)
         _compact_excel_sheet(sheet, pi, packing_list, box, box_index, len(boxes))
@@ -330,7 +333,7 @@ def _fit_pdf_text(value, font_name, font_size, max_width):
     return text + suffix
 
 
-def generate_compact_packing_list_pdf(pi, packing_list):
+def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
     """Generate an exact 100 x 150 mm PDF with one carton on every page."""
     font_name = _ensure_compact_pdf_font()
     output = BytesIO()
@@ -340,7 +343,10 @@ def generate_compact_packing_list_pdf(pi, packing_list):
     margin = 5 * mm
     content_width = page_width - 2 * margin
     boxes = list(packing_list.boxes)
-    for box_index, box in enumerate(boxes, 1):
+    selected_indexes = range(len(boxes)) if box_indexes is None else box_indexes
+    for zero_based_index in selected_indexes:
+        box = boxes[zero_based_index]
+        box_index = zero_based_index + 1
         document.setFillColor(HexColor(f"#{COMPACT_WHITE}"))
         document.setStrokeColor(HexColor(f"#{COMPACT_BLACK}"))
         document.setLineWidth(0.6)

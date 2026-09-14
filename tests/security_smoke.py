@@ -2829,6 +2829,10 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('精简 100×150', completed_detail)
             self.assertIn('compact-100x150.xlsx', completed_detail)
             self.assertIn('compact-100x150.pdf', completed_detail)
+            self.assertIn('id="compactExportModal"', completed_detail)
+            self.assertIn('选择要导出的箱子', completed_detail)
+            self.assertIn('第 1 箱 · 箱号 1', completed_detail)
+            self.assertIn('第 2 箱 · 箱号 2', completed_detail)
 
             packing_index = self.client.get('/packing-lists').get_data(as_text=True)
             self.assertIn('<i class="bi bi-eye"></i> 预览', packing_index)
@@ -2907,6 +2911,35 @@ class SecuritySmokeTests(unittest.TestCase):
             compact_workbook.close()
             compact_excel.close()
 
+            selected_compact_excel = self.client.get(
+                f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?box=2',
+            )
+            self.assertEqual(selected_compact_excel.status_code, 200)
+            self.assertIn(
+                'Cartons-2',
+                selected_compact_excel.headers.get('Content-Disposition', ''),
+            )
+            selected_workbook = load_workbook(
+                BytesIO(selected_compact_excel.data), data_only=False,
+            )
+            self.assertEqual(len(selected_workbook.sheetnames), 1)
+            self.assertTrue(selected_workbook.sheetnames[0].startswith('第2箱-'))
+            self.assertIn('2/2', str(selected_workbook.active['C5'].value))
+            selected_workbook.close()
+            selected_compact_excel.close()
+            self.assertEqual(
+                self.client.get(
+                    f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?box=0',
+                ).status_code,
+                400,
+            )
+            self.assertEqual(
+                self.client.get(
+                    f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?box=3',
+                ).status_code,
+                400,
+            )
+
             with patch.object(
                 application, 'convert_excel_to_pdf',
                 side_effect=AssertionError(
@@ -2925,6 +2958,16 @@ class SecuritySmokeTests(unittest.TestCase):
                 rb'/MediaBox\s*\[\s*0\s+0\s+283\.[0-9]+\s+425\.[0-9]+\s*\]',
             )
             compact_pdf.close()
+
+            selected_compact_pdf = self.client.get(
+                f'/packing-list/{self.alice_pi}/compact-100x150.pdf?box=2',
+            )
+            self.assertEqual(selected_compact_pdf.status_code, 200)
+            self.assertEqual(
+                len(re.findall(rb'/Type\s*/Page\b', selected_compact_pdf.data)),
+                1,
+            )
+            selected_compact_pdf.close()
 
             # Any administrator can edit a packing list, even when another
             # administrator created it.

@@ -4739,18 +4739,40 @@ def _packing_compact_export(pi_id, output_format):
     packing_list = pi.packing_list
     if not packing_list:
         abort(404)
+    requested_boxes = request.args.getlist('box')
+    box_indexes = None
+    if requested_boxes:
+        box_count = len(packing_list.boxes)
+        selected_indexes = set()
+        for value in requested_boxes:
+            if not re.fullmatch(r'[1-9]\d*', value or ''):
+                abort(400, description='导出的箱子序号无效。')
+            box_position = int(value)
+            if box_position > box_count:
+                abort(400, description='导出的箱子序号超出范围。')
+            selected_indexes.add(box_position - 1)
+        box_indexes = sorted(selected_indexes)
     suffix = '-DRAFT' if not packing_list.is_completed else ''
+    selection_suffix = ''
+    if box_indexes is not None:
+        selection_suffix = '-Cartons-' + '-'.join(
+            str(index + 1) for index in box_indexes
+        )
     base_name = secure_filename(
-        f'Packing-List-{pi.pi_number}-Compact-100x150{suffix}'
+        f'Packing-List-{pi.pi_number}-Compact-100x150{selection_suffix}{suffix}'
     ) or 'packing-list-compact-100x150'
     if output_format == 'pdf':
         # Keep the label PDF at its exact physical size. Applying an editable
         # Excel template before LibreOffice conversion can replace the custom
         # 100 x 150 mm page with A4 and shrink the label into its centre.
-        content = generate_compact_packing_list_pdf(pi, packing_list)
+        content = generate_compact_packing_list_pdf(
+            pi, packing_list, box_indexes=box_indexes
+        )
         mimetype = 'application/pdf'
     else:
-        content = generate_compact_packing_list_workbook(pi, packing_list)
+        content = generate_compact_packing_list_workbook(
+            pi, packing_list, box_indexes=box_indexes
+        )
         template = DocumentTemplate.query.filter_by(
             code='packing-compact-100x150', active=True
         ).first()
