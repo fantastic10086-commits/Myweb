@@ -291,6 +291,49 @@ class SecuritySmokeTests(unittest.TestCase):
                 db.session.delete(created)
                 db.session.commit()
 
+    def test_new_pi_requires_notes_in_browser_and_server(self):
+        self.login('admin-test')
+        form_html = self.client.get('/pi/create').get_data(as_text=True)
+        self.assertRegex(
+            form_html,
+            r'<label for="notes"[^>]*>PI 备注\s*<span[^>]*>\*</span></label>',
+        )
+        self.assertRegex(
+            form_html,
+            r'<textarea[^>]*id="notes"[^>]*name="notes"[^>]*required',
+        )
+
+        with application.app.app_context():
+            product_id = Product.query.filter_by(product_code='ORIG').one().id
+            before_count = PI.query.count()
+
+        response = self.client.post('/pi/create', data={
+            'customer_id': str(self.alice_customer),
+            'salesperson': 'Alice',
+            'payment_terms': '100% TT before shipment',
+            'price_terms': '',
+            'delivery_time': '',
+            'bank_info': 'SAFE BANK',
+            'notes': '   ',
+            'issue_date': '2026-09-14',
+            'currency': 'USD',
+            'exchange_rate': '7',
+            'company': 'klista',
+            'shipping_address': '',
+            'shipping_cost': '0',
+            'shipping_note': '',
+            f'selected_{product_id}': 'on',
+            f'qty_{product_id}': '1',
+            f'unit_price_{product_id}': '10',
+            'product_order': str(product_id),
+            'csrf_token': self.token('/pi/create'),
+        }, follow_redirects=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('请填写 PI 备注。', response.get_data(as_text=True))
+        with application.app.app_context():
+            self.assertEqual(PI.query.count(), before_count)
+
     def test_pi_edit_protects_downstream_records_and_preserves_item_ids(self):
         with application.app.app_context():
             original_product = Product.query.filter_by(product_code='ORIG').one()

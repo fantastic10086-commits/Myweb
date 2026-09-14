@@ -4030,6 +4030,9 @@ def pi_create():
             return redirect(url_for('pi_create'))
         bank_info = request.form.get('bank_info', '').strip()
         notes = request.form.get('notes', '').strip()
+        if not notes:
+            flash('请填写 PI 备注。', 'danger')
+            return redirect(url_for('pi_create'))
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', 'USD').strip()
         try:
