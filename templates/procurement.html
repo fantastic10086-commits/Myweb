@@ -95,6 +95,57 @@ function applyProcurementFilter() {
 function setProcurementFilter(filterName) {
     activeProcurementFilter = filterName;
     applyProcurementFilter();
+    updateBulkSupplierSelection();
+}
+
+function updateBulkSupplierSelection() {
+    var selectAll = document.getElementById('procSelectAll');
+    if (!selectAll) return;
+    var rows = Array.from(document.querySelectorAll('#itemsTable tbody tr'));
+    var selected = rows.filter(function(row) {
+        return row.querySelector('.proc-row-select').checked;
+    });
+    var visible = rows.filter(function(row) { return !row.classList.contains('d-none'); });
+    var allVisibleSelected = visible.length > 0 && visible.every(function(row) {
+        return row.querySelector('.proc-row-select').checked;
+    });
+    var someVisibleSelected = visible.some(function(row) {
+        return row.querySelector('.proc-row-select').checked;
+    });
+    selectAll.checked = allVisibleSelected;
+    selectAll.indeterminate = someVisibleSelected && !allVisibleSelected;
+    document.getElementById('procSelectedCount').textContent = selected.length;
+    document.getElementById('procBulkSupplierApply').disabled = selected.length === 0;
+    document.getElementById('procClearSelection').disabled = selected.length === 0;
+}
+
+function selectVisibleProcurementRows(checked) {
+    document.querySelectorAll('#itemsTable tbody tr:not(.d-none) .proc-row-select').forEach(function(input) {
+        input.checked = checked;
+    });
+    updateBulkSupplierSelection();
+}
+
+function clearProcurementSelection() {
+    document.querySelectorAll('.proc-row-select').forEach(function(input) {
+        input.checked = false;
+    });
+    updateBulkSupplierSelection();
+}
+
+function applyBulkSupplier() {
+    var supplierId = document.getElementById('procBulkSupplier').value;
+    if (!supplierId) {
+        alert('请先选择要批量填写的供应商。');
+        return;
+    }
+    document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
+        if (row.querySelector('.proc-row-select').checked) {
+            row.querySelector('.proc-supplier').value = supplierId;
+        }
+    });
+    updateCalculations();
+    clearProcurementSelection();
 }
 
 function updateProcurementHighlights() {
@@ -132,6 +183,7 @@ function updateProcurementHighlights() {
         activeProcurementFilter = 'all';
     }
     applyProcurementFilter();
+    updateBulkSupplierSelection();
 }
 
 function updateCalculations() {
@@ -343,6 +395,18 @@ function installSupplierOption(supplier, selected) {
         option.textContent = supplier.name;
         if (selected && select === supplierTargetSelect) select.value = String(supplier.id);
     });
+    var bulkSelect = document.getElementById('procBulkSupplier');
+    if (bulkSelect) {
+        var bulkOption = Array.from(bulkSelect.options).find(function(candidate) {
+            return Number(candidate.value) === Number(supplier.id);
+        });
+        if (!bulkOption) {
+            bulkOption = document.createElement('option');
+            bulkOption.value = supplier.id;
+            bulkSelect.appendChild(bulkOption);
+        }
+        bulkOption.textContent = supplier.name;
+    }
 }
 
 function openNewSupplierModal(targetSelect) {
@@ -556,6 +620,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.proc-supplier').forEach(function(select) {
         select.addEventListener('change', updateCalculations);
     });
+    document.querySelectorAll('.proc-row-select').forEach(function(input) {
+        input.addEventListener('change', updateBulkSupplierSelection);
+    });
+    var selectAll = document.getElementById('procSelectAll');
+    if (selectAll) selectAll.addEventListener('change', function() {
+        selectVisibleProcurementRows(selectAll.checked);
+    });
     var freight = document.getElementById('supplierFreight');
     if (freight) freight.addEventListener('input', updateCalculations);
     var rate = document.getElementById('businessRate');
@@ -670,10 +741,26 @@ document.addEventListener('DOMContentLoaded', function() {
             </button>
             <span class="small text-muted ms-auto">红色为价格风险，橙色为待补充信息</span>
         </div>
+        {% if not pi.procurement_confirmed %}
+        <div class="d-flex align-items-center flex-wrap gap-2 px-3 py-2 border-bottom" id="procurementBulkSupplier">
+            <span class="small fw-semibold">批量选择供应商</span>
+            <span class="badge text-bg-secondary">已选 <span id="procSelectedCount">0</span> 项</span>
+            <select class="form-select form-select-sm" id="procBulkSupplier" aria-label="批量选择供应商" style="width:220px;max-width:100%;">
+                <option value="">— 选择供应商 —</option>
+                {% for supplier in suppliers %}<option value="{{ supplier.id }}">{{ supplier.name }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-primary btn-sm" id="procBulkSupplierApply" onclick="applyBulkSupplier()" disabled>应用到已选产品</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="procClearSelection" onclick="clearProcurementSelection()" disabled>清空选择</button>
+            <small class="text-muted ms-lg-auto">勾选产品后批量填写供应商；采购单价仍需逐项填写。</small>
+        </div>
+        {% endif %}
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle" id="itemsTable">
                 <thead class="table-light small">
                     <tr>
+                        <th class="text-center" style="width:40px;">
+                            {% if not pi.procurement_confirmed %}<input type="checkbox" class="form-check-input" id="procSelectAll" aria-label="选择当前显示的全部产品">{% endif %}
+                        </th>
                         <th class="text-center" style="width:56px;">序号</th>
                         <th style="width:46px;"></th>
                         <th style="width:210px;">产品</th>
@@ -690,6 +777,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 <tbody>
                     {% for item in pi.items %}
                     <tr data-item-id="{{ item.id }}" data-pi-unit-price="{{ item.unit_price }}" data-pi-quantity="{{ item.quantity }}" data-product-name="{{ (item.product.name if item.product else '未知产品')|e }}" data-product-code="{{ (item.product.product_code if item.product else '')|e }}" data-product-spec="{{ (item.product.specification if item.product else '')|e }}">
+                        <td class="text-center">
+                            {% if not pi.procurement_confirmed %}<input type="checkbox" class="form-check-input proc-row-select" aria-label="选择第 {{ loop.index }} 项产品">{% endif %}
+                        </td>
                         <td class="text-center proc-sequence">{{ loop.index }}</td>
                         <td class="proc-image-cell">
                             {% if item.product and item.product.image %}
@@ -731,7 +821,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </tbody>
                 <tfoot class="table-light">
                     <tr>
-                        <th colspan="5" class="text-end">订单产品总金额（RMB）</th>
+                        <th colspan="6" class="text-end">订单产品总金额（RMB）</th>
                         <th class="text-end text-primary" id="orderFooterTotal">¥0.00</th>
                         <th colspan="3" class="text-end">采购产品总金额</th>
                         <th class="text-end text-danger" id="purchaseFooterTotal">¥0.00</th>
