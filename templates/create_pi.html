@@ -196,6 +196,10 @@ var adjustmentUsd = 0;
         renumberRows(); showHideEmpty(); updateTotal();
     }
 
+    function addQuickProduct(product) {
+        addProductObj({id: product.id, name: product.name, code: product.product_code,
+                       spec: product.specification, priceUsd: product.unit_price, img: product.image});
+    }
     function repriceForCurrency() {
         var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) {
@@ -712,7 +716,7 @@ var adjustmentUsd = 0;
         var fd=new FormData(); fd.append('name',name); fd.append('product_code',document.getElementById('qa_product_code').value.trim()); fd.append('specification',document.getElementById('qa_specification').value.trim()); fd.append('unit_price',document.getElementById('qa_unit_price').value); fd.append('notes',document.getElementById('qa_notes').value.trim()); var imgFile=document.getElementById('qa_image').files[0]; if(imgFile)fd.append('image',imgFile);
         fetch('{{ url_for("api_product_add") }}',{method:'POST',body:fd})
         .then(function(r){return r.json();})
-        .then(function(d){if(d.success){clear();bootstrap.Modal.getInstance(modalEl).hide();window.location.reload();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
+        .then(function(d){if(d.success){addQuickProduct(d.product);clear();bootstrap.Modal.getInstance(modalEl).hide();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
         .catch(function(){errorEl.textContent='网络错误。';errorEl.classList.remove('d-none');})
         .finally(function(){btn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加产品';});
     });
