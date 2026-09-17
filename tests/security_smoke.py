@@ -2871,6 +2871,11 @@ class SecuritySmokeTests(unittest.TestCase):
                     application._apply_export_form(MultiDict({
                         'bank_info': 'FAKE RECIPIENT', 'shipping_cost': '0',
                     }), copy)
+                saved_bank_info = copy.bank_info
+                copy.bank_info = 'FAKE BANK TEXT'
+                with self.assertRaises(ValueError):
+                    application._validate_export_account_brand(copy)
+                copy.bank_info = saved_bank_info
                 copy._company_name_override = 'FAKE COMPANY'
                 with self.assertRaises(ValueError):
                     application._validate_export_account_brand(copy)

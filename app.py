@@ -1598,6 +1598,26 @@ def _validate_export_account_brand(export_pi, template=None):
     account = _matching_account_for_pi(export_pi)
     if not account:
         raise ValueError('无法确认当前收款账户，请选择收款账户；旧账户不存在或信息不唯一时需先完善账户。')
+    # Verify the outward bank text still belongs to the saved bank group.
+    # Account edits may change current metadata; reconstruct the historical
+    # snapshot instead of comparing it to the current account details.
+    if any(getattr(export_pi, field, '') for field in BANK_SNAPSHOT_FIELDS):
+        snapshot = Account(**{
+            field: getattr(export_pi, bank_field, '') or ''
+            for field, bank_field in (
+                ('company_name', 'bank_beneficiary_name'), ('account_no', 'bank_account_no'),
+                ('country_region', 'bank_country_region'), ('beneficiary_address', 'bank_beneficiary_address'),
+                ('bank_name', 'bank_name'), ('bank_address', 'bank_address'),
+                ('swift_code', 'bank_swift_code'), ('bank_code', 'bank_code'),
+                ('branch_code', 'bank_branch_code'), ('currency', 'bank_currency'),
+            )
+        })
+    else:
+        snapshot = account
+    if (export_pi.bank_info or '').strip() not in {
+        snapshot.bank_info().strip(), _legacy_account_bank_info(snapshot).strip()
+    }:
+        raise ValueError('银行信息与已关联收款账户快照不一致，禁止预览和导出。请通过收款账户选择整组切换。')
     if not account.brands:
         raise ValueError('收款账户未设置所属品牌，请先在收款账户管理中补充品牌。')
     if export_pi.company not in account.brands:
