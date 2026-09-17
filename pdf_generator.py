@@ -344,7 +344,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
             Paragraph(getattr(item, 'display_name', item.product.name if item.product else ''), table_cell_left),
             Paragraph(getattr(item, 'display_specification', item.product.specification if item.product else ''), table_cell_style),
             Paragraph(str(item.quantity), amount_style),
-            Paragraph(f'{sym}{item.unit_price:,.2f}', amount_style),
+            Paragraph(f'{sym}{item.unit_price:,.3f}', amount_style),
             Paragraph(f'{sym}{item.amount:,.2f}', amount_style),
         ]
         table_data.append(row)

@@ -276,7 +276,7 @@ function updateCalculations() {
         var orderPriceRmb = piCurrency === 'RMB' ? sourceUnitPrice : sourceUnitPrice * rate;
         var orderPrice = row.querySelector('.order-unit-price-rmb');
         var purchaseTotalCell = row.querySelector('.purchase-line-total');
-        if (orderPrice) orderPrice.textContent = '¥' + orderPriceRmb.toFixed(2);
+        if (orderPrice) orderPrice.textContent = '¥' + orderPriceRmb.toFixed(3);
         if (purchaseTotalCell) purchaseTotalCell.textContent = '¥' + rowPurchaseTotal(row).toFixed(2);
     });
 
@@ -880,7 +880,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </td>
                         <td class="small">{{ item.product.specification if item.product else '—' }}</td>
                         <td class="text-end">{{ item.quantity }}</td>
-                        <td class="text-end fw-semibold">{% if pi.currency == 'USD' %}<div>${{ '%.2f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.2f'|format(item.unit_price) }}</div>{% endif %}</td>
+                        <td class="text-end fw-semibold">{% if pi.currency == 'USD' %}<div>${{ '%.3f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.3f'|format(item.unit_price) }}</div>{% endif %}</td>
                         <td>
                             <div class="input-group input-group-sm" style="min-width:180px;">
                                 <select class="form-select proc-supplier" {% if pi.procurement_confirmed %}disabled{% endif %}>

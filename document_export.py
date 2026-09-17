@@ -225,7 +225,7 @@ def _item_values(item, index):
         'item.name': getattr(item, 'display_name', getattr(product, 'name', '')) or '',
         'item.specification': getattr(item, 'display_specification', getattr(product, 'specification', '')) or '',
         'item.quantity': int(getattr(item, 'quantity', 0) or 0),
-        'item.unit_price': round(float(getattr(item, 'unit_price', 0) or 0), 2),
+        'item.unit_price': float(getattr(item, 'unit_price', 0) or 0),
         'item.amount': round(float(getattr(item, 'amount', 0) or 0), 2),
     }
 
@@ -370,7 +370,7 @@ def create_placeholder_template(output_path):
         cell.alignment = centered if column != 4 else wrapped
         cell.border = border
         if column in (7, 8):
-            cell.number_format = '#,##0.00'
+            cell.number_format = '#,##0.000' if column == 7 else '#,##0.00'
     sheet.row_dimensions[12].height = 48
 
     totals = [
@@ -609,6 +609,8 @@ def _replace_cell(sheet, cell, values, upload_dir):
                 cell.number_format = 'yyyy-mm-dd'
         elif isinstance(value, (int, float)):
             cell.value = value
+            if key == 'item.unit_price':
+                cell.number_format = '#,##0.000'
         else:
             _set_safe_excel_text(cell, value)
         return
@@ -620,7 +622,8 @@ def _replace_cell(sheet, cell, values, upload_dir):
             replacement = ''
         else:
             value = values.get(key, '')
-            replacement = value.strftime('%Y-%m-%d') if isinstance(value, (date, datetime)) else str(value)
+            replacement = (format(value, '.3f') if key == 'item.unit_price' and isinstance(value, (int, float))
+                           else value.strftime('%Y-%m-%d') if isinstance(value, (date, datetime)) else str(value))
         result = result.replace(match.group(0), replacement)
     _set_safe_excel_text(cell, result)
 

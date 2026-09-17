@@ -103,7 +103,7 @@
                                     {% if item.display_specification %}<br><small class="text-muted">{{ item.display_specification }}</small>{% endif %}
                                 </td>
                                 <td>{{ item.display_code or '-' }}</td>
-                                <td class="text-end">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>
+                                <td class="text-end">{{ sym }}{{ '%.3f'|format(item.unit_price) }}</td>
                                 <td>{{ item.quantity }}</td>
                                 <td class="text-end fw-bold">{{ sym }}{{ '%.2f'|format(item.amount) }}</td>
                             </tr>

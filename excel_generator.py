@@ -134,7 +134,7 @@ def generate_pi_excel(pi, output_dir):
         vals = [idx, desc, item.quantity, item.unit_price, item.amount]
         for j, v in enumerate(vals):
             c = ws.cell(row=r, column=j+1, value=v); c.font = n8; c.border = thin
-            if j >= 2: c.alignment = rgt; c.number_format = '#,##0.00' if j > 2 else '#,##0'
+            if j >= 2: c.alignment = rgt; c.number_format = '#,##0.000' if j == 3 else '#,##0.00' if j > 2 else '#,##0'
             elif j == 0: c.alignment = ctr
             else: c.alignment = lft
             if idx % 2 == 0: c.fill = light_fill

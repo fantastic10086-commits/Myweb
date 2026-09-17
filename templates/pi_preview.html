@@ -61,7 +61,7 @@
                 {% if item.display_code %}<br><span style="color:#999;">Code: {{ item.display_code }}</span>{% endif %}
             </td>
             <td style="padding:4px 6px;text-align:center;">{{ item.quantity }}</td>
-            <td style="padding:4px 6px;text-align:right;">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>
+            <td style="padding:4px 6px;text-align:right;">{{ sym }}{{ '%.3f'|format(item.unit_price) }}</td>
             <td style="padding:4px 6px;text-align:right;font-weight:bold;">{{ sym }}{{ '%.2f'|format(item.amount) }}</td>
         </tr>
         {% endfor %}

@@ -443,6 +443,52 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(customer.total_deal_usd, 160.0)
             db.session.rollback()
 
+    def test_pi_three_decimal_prices_survive_save_copy_and_all_templates(self):
+        from document_export import _item_values, render_excel_template
+        self.login('alice')
+        with application.app.app_context():
+            product_id = Product.query.first().id
+        data = {'csrf_token': self.token('/pi/create'), 'customer_id': self.alice_customer,
+                'salesperson': 'Alice', 'notes': 'three decimal PI', 'account_id': self.approved_account,
+                'currency': 'USD', 'exchange_rate': '7', 'product_order': '1,-1000000000',
+                'selected_1': 'on', 'row_product_1': product_id, 'qty_1': '1', 'unit_price_1': '0.005',
+                'selected_-1000000000': 'on', 'row_product_-1000000000': product_id,
+                'qty_-1000000000': '3', 'unit_price_-1000000000': '1.235'}
+        with patch.object(application, '_generate_default_pi_documents', return_value=('precision.pdf', 'precision.xlsx')):
+            response = self.client.post('/pi/create', data=data)
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            pi = PI.query.filter_by(notes='three decimal PI').one()
+            self.assertEqual([item.unit_price for item in pi.items], [0.005, 1.235])
+            self.assertEqual([item.amount for item in pi.items], [0.01, 3.71])
+            self.assertEqual(pi.total_amount, 3.72)
+            export = application._pi_export_copy(pi)
+            self.assertEqual(_item_values(export.items[1], 2)['item.unit_price'], 1.235)
+            templates = [application.SYSTEM_DEFAULT_TEMPLATE_SOURCE, application.QISUO_LEGACY_TEMPLATE_SOURCE]
+            for index, path in enumerate(templates):
+                output = os.path.join(TEST_ROOT.name, 'precision-%s.xlsx' % index)
+                render_excel_template(path, export, output)
+                workbook = load_workbook(output)
+                prices = [cell for sheet in workbook for row in sheet for cell in row if cell.number_format == '#,##0.000' and isinstance(cell.value, (int, float))]
+                self.assertEqual([cell.value for cell in prices], [0.005, 1.235])
+                workbook.close()
+            # An uploaded template's old two-place format cannot truncate prices.
+            workbook = Workbook()
+            workbook.active['A1'] = '{{item.unit_price}}'
+            workbook.active['A1'].number_format = '0.00'
+            workbook.active['B1'] = 'USD {{item.unit_price}}'
+            workbook.active['C1'] = '{{pi_number}}'
+            path = os.path.join(TEST_ROOT.name, 'precision-custom.xlsx')
+            workbook.save(path)
+            render_excel_template(path, export, output)
+            workbook = load_workbook(output)
+            self.assertEqual(workbook.active['A2'].value, 1.235)
+            self.assertEqual(workbook.active['A2'].number_format, '#,##0.000')
+            self.assertEqual(workbook.active['B2'].value, 'USD 1.235')
+            workbook.close()
+        detail = self.client.get(response.location).get_data(as_text=True)
+        self.assertIn('1.235', detail)
+
     def test_submitted_pi_items_preserve_explicit_selection_order(self):
         with application.app.app_context():
             first = Product(name='Order First', product_code='ORDER-FIRST', unit_price=11)

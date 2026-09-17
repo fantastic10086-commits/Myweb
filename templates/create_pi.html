@@ -10,6 +10,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='pi_prices.js') }}"></script>
 <script src="{{ url_for('static', filename='pi_item_images.js') }}"></script>
 <script src="{{ url_for('static', filename='pi_row_drag.js') }}"></script>
 <div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS：等待中……</div>
@@ -55,7 +56,7 @@ var adjustmentUsd = 0;
         var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) {
             var p = selectedProducts[keys[i]];
-            total += (p.price || 0) * (p.qty || 0);
+            total += PIPrices.amount(p.price || 0, p.qty || 0);
         }
         var subtotalDisplay = document.getElementById('subtotal_display');
         if (subtotalDisplay) subtotalDisplay.textContent = sym + total.toFixed(2);
@@ -92,7 +93,7 @@ var adjustmentUsd = 0;
             code: String(p.code || p.product_code || ''),
             originalCode: String(p.originalCode != null ? p.originalCode : p.code || p.product_code || ''), originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''),
             priceUsd: usdPrice,
-            price: fromUsd(usdPrice),
+            price: PIPrices.price(fromUsd(usdPrice)),
             qty: Math.max(1, Number(p.qty) || 1),
             img: String(p.img || ''), originalImage: p.originalImage != null ? p.originalImage : p.img || '', imageSource: p.imageSource || '', imageMode: p.imageMode || 'keep', imageFile: p.imageFile || null
         };
@@ -101,6 +102,7 @@ var adjustmentUsd = 0;
         p = normalizeProduct(p);
         var tr = document.createElement('tr');
         tr.id = 'product_row_' + p.id;
+        selectedProducts[p.id].price = p.price;
         selectedProducts[p.id].productId = p.productId;
         selectedProducts[p.id].itemId = p.itemId;
         selectedProducts[p.id].originalName = p.originalName;
@@ -111,31 +113,34 @@ var adjustmentUsd = 0;
             '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-drag py-0 px-1" style="cursor:grab;touch-action:none;" title="按住拖动排序；方向键上下移动" aria-label="拖动产品排序"><i class="bi bi-grip-vertical"></i></button></div></td>' +
             '<td><div class="d-flex align-items-start gap-2">' + PIItemImages.markup(p.id) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore">恢复原品名、规格和编码</button></div></div></td>' +
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '" style="min-width:110px;"></td>' +
-            '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
+            '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.001" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(3) + '" style="min-width:0;"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
-            '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
+            '<td class="text-end fw-bold sel-amt">' + sym + PIPrices.amount(p.price, p.qty).toFixed(2) + '</td>' +
             '<td><div class="d-flex gap-1"><button type="button" title="复制此产品行" aria-label="复制此产品行" class="btn btn-sm btn-outline-primary sel-copy"><i class="bi bi-copy"></i></button><button type="button" class="btn btn-sm btn-outline-danger">&times;</button></div></td>' +
             '<input type="hidden" name="row_product_' + p.id + '" value="' + p.productId + '">' +
             (p.itemId ? '<input type="hidden" name="row_item_' + p.id + '" value="' + p.itemId + '">' : '') +
             '<input type="hidden" name="selected_' + p.id + '" value="on">' +
             '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
-            '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(2) + '">';
+            '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(3) + '">';
 
         tr.querySelector('.sel-qty').addEventListener('input', function() {
             var qty = parseInt(this.value) || 1; if (qty < 1) qty = 1;
             var price = parseFloat(tr.querySelector('.sel-price').value) || 0;
             selectedProducts[p.id].qty = qty;
-            tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
+            tr.querySelector('.sel-amt').textContent = getSymbol() + PIPrices.amount(price, qty).toFixed(2);
             tr.querySelector('input[name="qty_' + p.id + '"]').value = qty;
             updateTotal();
         });
+        tr.querySelector('.sel-price').addEventListener('blur', function() {
+            if (this.value !== '') this.value = PIPrices.price(this.value).toFixed(3);
+        });
         tr.querySelector('.sel-price').addEventListener('input', function() {
-            var price = parseFloat(this.value) || 0;
+            var price = PIPrices.price(parseFloat(this.value) || 0);
             var qty = parseInt(tr.querySelector('.sel-qty').value) || 1;
             selectedProducts[p.id].price = price;
             selectedProducts[p.id].priceUsd = toUsd(price);
-            tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
-            tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2);
+            tr.querySelector('.sel-amt').textContent = getSymbol() + PIPrices.amount(price, qty).toFixed(2);
+            tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(3);
             updateTotal();
         });
         // Remove button
@@ -197,13 +202,13 @@ var adjustmentUsd = 0;
         var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) {
             var p = selectedProducts[keys[i]];
-            p.price = fromUsd(Number(p.priceUsd) || 0);
+            p.price = PIPrices.price(fromUsd(Number(p.priceUsd) || 0));
             var row = document.getElementById('product_row_' + keys[i]);
             if (!row) continue;
             row.querySelector('.sel-price-symbol').textContent = getSymbol();
-            row.querySelector('.sel-price').value = p.price.toFixed(2);
-            row.querySelector('input[name="unit_price_' + keys[i] + '"]').value = p.price.toFixed(2);
-            row.querySelector('.sel-amt').textContent = getSymbol() + (p.price * p.qty).toFixed(2);
+            row.querySelector('.sel-price').value = p.price.toFixed(3);
+            row.querySelector('input[name="unit_price_' + keys[i] + '"]').value = p.price.toFixed(3);
+            row.querySelector('.sel-amt').textContent = getSymbol() + PIPrices.amount(p.price, p.qty).toFixed(2);
         }
         var shippingEl = document.getElementById('shipping_cost');
         if (shippingEl) shippingEl.value = fromUsd(adjustmentUsd).toFixed(2);
@@ -261,7 +266,7 @@ var adjustmentUsd = 0;
                 '<td><div class="fw-semibold">' + escHtml(p.name) + '</div>' + (p.chinese_name ? '<small class="text-muted">' + escHtml(p.chinese_name) + '</small>' : '') + '</td>' +
                 '<td><span class="font-monospace">' + escHtml(p.code || '—') + '</span></td>' +
                 '<td class="text-muted">' + escHtml(p.spec || '—') + '</td>' +
-                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(2) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(2) + '</small>' : '') + '</td>' +
+                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(3) + '</small>' : '') + '</td>' +
                 '<td class="text-center">' + (alreadyAdded ? '<span class="badge bg-secondary">已加入</span>' : '') + '</td>';
             body.appendChild(tr);
         }
@@ -750,7 +755,7 @@ var adjustmentUsd = 0;
             <div id="quickAddError" class="alert alert-danger d-none"></div>
             <div class="mb-3"><label class="form-label">产品名称 <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_name" placeholder="产品名称"></div>
             <div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">产品编码</label><input type="text" class="form-control" id="qa_product_code" placeholder="SKU"></div><div class="col-md-6"><label class="form-label">规格</label><input type="text" class="form-control" id="qa_specification" placeholder="尺寸、颜色、材质等"></div></div>
-            <div class="mb-3"><label class="form-label">单价 (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.01" min="0" class="form-control" id="qa_unit_price" value="0.00"></div></div>
+            <div class="mb-3"><label class="form-label">单价 (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.001" min="0" class="form-control" id="qa_unit_price" value="0.000"></div></div>
             <div class="mb-3"><label class="form-label">图片</label><input type="file" class="form-control" id="qa_image" accept="image/*"><small class="text-muted">点击选择或 <strong>Ctrl+V</strong> 粘贴</small><img id="qa_img_preview" src="#" style="display:none;max-height:60px;max-width:150px;margin-top:4px;border-radius:4px;border:1px solid #ddd;"></div>
             <div class="mb-3"><label class="form-label">备注</label><input type="text" class="form-control" id="qa_notes" placeholder="选填"></div>
         </div>
@@ -764,7 +769,7 @@ var adjustmentUsd = 0;
         var items = e.clipboardData && e.clipboardData.items; if (!items) return;
         for (var i = 0; i < items.length; i++) { if (items[i].type.indexOf('image') !== -1) { e.preventDefault(); var blob = items[i].getAsFile(); var dt = new DataTransfer(); dt.items.add(blob); document.getElementById('qa_image').files = dt.files; var preview = document.getElementById('qa_img_preview'); var reader = new FileReader(); reader.onload = function(ev) { preview.src = ev.target.result; preview.style.display = ''; }; reader.readAsDataURL(blob); return; } }
     }
-    function clear() { document.getElementById('qa_name').value=''; document.getElementById('qa_product_code').value=''; document.getElementById('qa_specification').value=''; document.getElementById('qa_unit_price').value='0.00'; document.getElementById('qa_notes').value=''; document.getElementById('qa_image').value=''; document.getElementById('qa_img_preview').style.display='none'; errorEl.classList.add('d-none'); }
+    function clear() { document.getElementById('qa_name').value=''; document.getElementById('qa_product_code').value=''; document.getElementById('qa_specification').value=''; document.getElementById('qa_unit_price').value='0.000'; document.getElementById('qa_notes').value=''; document.getElementById('qa_image').value=''; document.getElementById('qa_img_preview').style.display='none'; errorEl.classList.add('d-none'); }
     btn.addEventListener('click', function() {
         errorEl.classList.add('d-none'); var name = document.getElementById('qa_name').value.trim();
         if (!name) { errorEl.textContent='产品名称不能为空。'; errorEl.classList.remove('d-none'); return; }

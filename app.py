@@ -16,6 +16,7 @@ import tempfile
 import math
 import json
 import re
+from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from types import SimpleNamespace
 from datetime import datetime, date, timedelta
@@ -1413,6 +1414,14 @@ def _positive_int(value, field_name):
         raise ValueError(f'{field_name}必须大于 0。')
     return number
 
+def _pi_unit_price(value):
+    return float(Decimal(str(value)).quantize(Decimal('0.001'), rounding=ROUND_HALF_UP))
+
+
+def _pi_line_amount(price, quantity):
+    return float((Decimal(str(price)) * quantity).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+
 def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=None):
     """Load selected products in the explicit order maintained by the UI."""
     allow_inactive_ids = set(allow_inactive_ids or ())
@@ -1521,7 +1530,8 @@ def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=Non
             _validate_pi_item_image(image_file)
         else:
             image_file = None
-        amount = round(unit_price * quantity, 2)
+        unit_price = _pi_unit_price(unit_price)
+        amount = _pi_line_amount(unit_price, quantity)
         selected_items.append({
             'product': product,
             'item_id': form.get(f'row_item_{row_id}', type=int) if hasattr(form, 'get') else None,
@@ -6836,7 +6846,8 @@ def _apply_export_form(form, export_pi):
             )
             item.product.product_code = form.get(f'prod_code_{item.id}', '').strip()
             item.product.specification = form.get(f'prod_spec_{item.id}', '').strip()
-        item.amount = round(item.quantity * item.unit_price, 2)
+        item.unit_price = _pi_unit_price(item.unit_price)
+        item.amount = _pi_line_amount(item.unit_price, item.quantity)
         total += item.amount
     export_pi.total_amount = round(total, 2)
 
