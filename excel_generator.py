@@ -127,9 +127,10 @@ def generate_pi_excel(pi, output_dir):
     r += 1
 
     for idx, item in enumerate(pi.items, 1):
-        desc = item.product.name if item.product else ''
-        if item.product and item.product.specification:
-            desc += f'\n{item.product.specification}'
+        desc = getattr(item, 'display_name', item.product.name if item.product else '')
+        spec = getattr(item, 'display_specification', item.product.specification if item.product else '')
+        if spec:
+            desc += '\n' + spec
         vals = [idx, desc, item.quantity, item.unit_price, item.amount]
         for j, v in enumerate(vals):
             c = ws.cell(row=r, column=j+1, value=v); c.font = n8; c.border = thin

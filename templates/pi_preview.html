@@ -56,8 +56,8 @@
         <tr style="border:0.5px solid #ddd;{% if loop.index % 2 == 0 %}background:#f4f6f9;{% endif %}">
             <td style="padding:4px 6px;text-align:center;">{{ loop.index }}</td>
             <td style="padding:4px 6px;">
-                <strong>{{ item.product.name if item.product else '-' }}</strong>
-                {% if item.product and item.product.specification %}<br><span style="color:#666;">{{ item.product.specification }}</span>{% endif %}
+                <strong>{{ item.display_name or '-' }}</strong>
+                {% if item.display_specification %}<br><span style="color:#666;">{{ item.display_specification }}</span>{% endif %}
                 {% if item.product and item.product.product_code %}<br><span style="color:#999;">Code: {{ item.product.product_code }}</span>{% endif %}
             </td>
             <td style="padding:4px 6px;text-align:center;">{{ item.quantity }}</td>

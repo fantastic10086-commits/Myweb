@@ -99,8 +99,8 @@
                                     {% if item.product and item.product.image %}
                                     <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" alt="" loading="lazy" decoding="async" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">
                                     {% endif %}
-                                    <strong>{{ item.product.name if item.product else '-' }}</strong>
-                                    {% if item.product and item.product.specification %}<br><small class="text-muted">{{ item.product.specification }}</small>{% endif %}
+                                    <strong>{{ item.display_name or '-' }}</strong>
+                                    {% if item.display_specification %}<br><small class="text-muted">{{ item.display_specification }}</small>{% endif %}
                                 </td>
                                 <td>{{ item.product.product_code if item.product else '-' }}</td>
                                 <td class="text-end">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>

@@ -30,7 +30,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
-from sqlalchemy import event, func
+from sqlalchemy import event, func, case
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
@@ -318,6 +318,7 @@ def _migrate_db():
             'branch_code': 'VARCHAR(50)',
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
+        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL')},
         'suppliers': {},  # table auto-created by create_all
         'procurements': {},  # table auto-created by create_all
         'packing_lists': {},  # tables auto-created by create_all
@@ -1483,9 +1484,21 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             continue
         if quantity <= 0:
             continue
+        name = form.get(f'item_name_{product_id}')
+        spec = form.get(f'item_spec_{product_id}')
+        if name is not None:
+            name = name.strip()
+            if not name or len(name) > 200:
+                abort(400, description='PI 产品名称不能为空且不能超过 200 个字符。')
+        if spec is not None:
+            spec = spec.strip()
+            if len(spec) > 200:
+                abort(400, description='PI 产品规格不能超过 200 个字符。')
         amount = round(unit_price * quantity, 2)
         selected_items.append({
             'product': product,
+            'name_override': name,
+            'spec_override': spec,
             'quantity': quantity,
             'unit_price': unit_price,
             'amount': amount,
@@ -3238,14 +3251,16 @@ def api_product_search():
         }
 
     query = Product.query.filter(Product.active.is_(True))
+    search_fields = (Product.name, Product.chinese_name, Product.product_code, Product.specification)
+    ordering = [Product.name.asc(), Product.id.asc()]
     if q:
-        pattern = f'%{q}%'
-        query = query.filter(db.or_(
-            Product.name.ilike(pattern),
-            Product.chinese_name.ilike(pattern),
-            Product.product_code.ilike(pattern),
-            Product.specification.ilike(pattern),
-        ))
+        # Each keyword can match any searchable field; SQL wildcards are literal.
+        def matches(value):
+            return db.or_(*(func.lower(field).contains(value.lower(), autoescape=True) for field in search_fields))
+        for token in q.split():
+            query = query.filter(matches(token))
+        exact = db.or_(*(func.lower(field) == q.lower() for field in search_fields))
+        ordering.insert(0, case((exact, 0), (matches(q), 1), else_=2))
     elif not picker_mode:
         return jsonify([])
 
@@ -3262,7 +3277,7 @@ def api_product_search():
         total = query.count()
         pages = max(1, (total + per_page - 1) // per_page)
         page = min(page, pages)
-        products = query.order_by(Product.name.asc(), Product.id.asc()).offset(
+        products = query.order_by(*ordering).offset(
             (page - 1) * per_page
         ).limit(per_page).all()
         return jsonify({
@@ -3273,7 +3288,7 @@ def api_product_search():
             'total': total,
         })
 
-    products = query.order_by(Product.name.asc(), Product.id.asc()).limit(50).all()
+    products = query.order_by(*ordering).limit(50).all()
     return jsonify([serialize(product) for product in products])
 
 
@@ -4334,6 +4349,8 @@ def pi_create():
             pi_item = PIItem(
                 pi_id=pi.id,
                 product_id=item['product'].id,
+                name_override=item['name_override'],
+                spec_override=item['spec_override'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 amount=item['amount'],
@@ -4521,9 +4538,9 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
         product = item.product
         pi_items.append({
             'id': item.id,
-            'name': product.name if product else '',
+            'name': item.display_name,
             'product_code': product.product_code if product else '',
-            'specification': product.specification if product else '',
+            'specification': item.display_specification,
             'image': product.image if product else '',
             'quantity': int(item.quantity or 0),
         })
@@ -4670,9 +4687,9 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False):
                 'quantity': quantity,
                 'note': _packing_text(raw_item.get('note'), '产品备注', 500),
                 'sort_order': item_index,
-                'product_name': product.name if product else '',
+                'product_name': pi_items[pi_item_id].display_name,
                 'product_code': product.product_code if product else '',
-                'specification': product.specification if product else '',
+                'specification': pi_items[pi_item_id].display_specification,
             })
 
         result.append({
@@ -5685,6 +5702,8 @@ def pi_copy(id):
         new_item = PIItem(
             pi_id=new_pi.id,
             product_id=item.product_id,
+            name_override=item.name_override,
+            spec_override=item.spec_override,
             quantity=item.quantity,
             unit_price=item.unit_price,
             amount=item.amount,
@@ -5717,8 +5736,9 @@ def _preload_products(pi):
         prod = item.product
         if prod:
             price_usd = item.unit_price if pi.currency != 'RMB' else item.unit_price / pi_rate
-            preload.append({'id': prod.id, 'name': prod.name, 'code': prod.product_code,
-                            'spec': prod.specification or '', 'price': item.unit_price,
+            preload.append({'id': prod.id, 'name': item.display_name, 'code': prod.product_code,
+                            'originalName': prod.name, 'originalSpec': prod.specification or '',
+                            'spec': item.display_specification, 'price': item.unit_price,
                             'price_usd': price_usd,
                             'img': prod.image or '', 'qty': item.quantity})
     return preload
@@ -5823,6 +5843,10 @@ def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
             details.append('数量')
         if abs(float(item.unit_price or 0) - float(submitted['unit_price'])) > 0.005:
             details.append('单价')
+        if submitted.get('name_override') is not None and submitted['name_override'] != item.display_name:
+            details.append('品名')
+        if submitted.get('spec_override') is not None and submitted['spec_override'] != item.display_specification:
+            details.append('规格')
         if details:
             modified.append(
                 f"{item.product.name if item.product else product_id}（{'、'.join(details)}）"
@@ -5883,6 +5907,10 @@ def _reconcile_pi_items(pi, selected_items):
         if item is None:
             item = PIItem(product_id=product_id)
             pi.items.append(item)
+        if submitted.get('name_override') is not None:
+            item.name_override = submitted['name_override']
+        if submitted.get('spec_override') is not None:
+            item.spec_override = submitted['spec_override']
         item.quantity = submitted['quantity']
         item.unit_price = submitted['unit_price']
         item.amount = submitted['amount']
@@ -6232,9 +6260,9 @@ def _pi_export_copy(pi):
     for item in pi.items:
         product = item.product
         product_copy = SimpleNamespace(
-            name=product.name if product else '',
+            name=item.display_name,
             product_code=product.product_code if product else '',
-            specification=product.specification if product else '',
+            specification=item.display_specification,
             image=product.image if product else '',
         )
         item_copies.append(SimpleNamespace(

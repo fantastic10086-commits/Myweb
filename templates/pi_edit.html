@@ -62,7 +62,7 @@
         if (!isFinite(usdPrice)) usdPrice = toUsd(currentPrice);
         return {
             id: Number(p.id), name: String(p.name || ''), code: String(p.code || p.product_code || ''),
-            spec: String(p.spec || ''), priceUsd: usdPrice, price: fromUsd(usdPrice),
+            originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''), priceUsd: usdPrice, price: fromUsd(usdPrice),
             qty: Math.max(1, Number(p.qty) || 1), img: String(p.img || '')
         };
     }
@@ -72,7 +72,7 @@
         var sym = getSymbol();
         tr.innerHTML =
             '<td class="row-num"></td>' +
-            '<td>' + imgTag(p.img) + '<strong>' + escHtml(p.name) + '</strong>' + (p.spec ? '<br><small class="text-muted">' + escHtml(p.spec) + '</small>' : '') + '</td>' +
+            '<td><div class="d-flex align-items-start gap-2">' + imgTag(p.img) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name pi-structural-control" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec pi-structural-control" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore pi-structural-control">恢复原品名和规格</button></div></div></td>' +
             '<td>' + escHtml(p.code) + '</td>' +
             '<td class="text-end"><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price pi-structural-control" value="' + p.price.toFixed(2) + '" style="width:90px;"></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty pi-structural-control" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
@@ -96,7 +96,15 @@
             tr.querySelector('.sel-amt').textContent = getSymbol() + (price * qty).toFixed(2);
             tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2); updateTotal();
         });
-        tr.querySelector('button').addEventListener('click', function() { delete selectedProducts[p.id]; selectedProductOrder = selectedProductOrder.filter(function(id) { return id !== p.id; }); tr.remove(); renumberRows(); showHideEmpty(); updateTotal(); });
+        tr.querySelector('.btn-outline-danger').addEventListener('click', function() { delete selectedProducts[p.id]; selectedProductOrder = selectedProductOrder.filter(function(id) { return id !== p.id; }); tr.remove(); renumberRows(); showHideEmpty(); updateTotal(); });
+        tr.querySelector('.sel-name').addEventListener('input', function() { selectedProducts[p.id].name = this.value; });
+        tr.querySelector('.sel-spec').addEventListener('input', function() { selectedProducts[p.id].spec = this.value; });
+        tr.querySelector('.sel-restore').addEventListener('click', function() {
+            tr.querySelector('.sel-name').value = p.originalName;
+            tr.querySelector('.sel-spec').value = p.originalSpec;
+            selectedProducts[p.id].name = p.originalName;
+            selectedProducts[p.id].spec = p.originalSpec;
+        });
         return tr;
     }
     function renumberRows() { var rows = selectedTableBody.querySelectorAll('tr'); for (var i = 0; i < rows.length; i++) rows[i].querySelector('.row-num').textContent = i + 1; var orderInput = document.getElementById('product_order'); if (orderInput) orderInput.value = selectedProductOrder.join(','); }
@@ -105,7 +113,7 @@
         if (selectedProducts[p.id]) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
+        selectedTableBody.appendChild(makeRow({id: p.id, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
         renumberRows(); showHideEmpty(); updateTotal();
     }
     function repriceForCurrency() {
@@ -166,7 +174,7 @@
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
-        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow({id: p.id, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''})); }
+        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow({id: p.id, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''})); }
         renumberRows(); showHideEmpty(); updateTotal();
         productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
         productSearch.addEventListener('input', function() { renderDropdown(this.value); });
@@ -297,7 +305,8 @@
         <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
             <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn" disabled><i class="bi bi-plus-lg"></i> 添加所选产品</button></div>
             <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
-            <div class="table-responsive mt-2" id="selected_products_area"><table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div></div>
+            <div class="table-responsive mt-2" id="selected_products_area"><small class="text-muted d-block mb-2">品名和规格仅修改当前 PI，产品库资料不变。</small>
+                        <table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div></div>
         </div></div>
         <div class="card mb-3">
             <div class="card-body">

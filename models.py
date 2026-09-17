@@ -509,6 +509,17 @@ class PIItem(db.Model):
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
     amount = db.Column(db.Float, nullable=False, default=0.0)
 
+    name_override = db.Column(db.String(200), nullable=True)
+    spec_override = db.Column(db.String(200), nullable=True)
+
+    @property
+    def display_name(self):
+        return self.name_override if self.name_override is not None else (self.product.name if self.product else '')
+
+    @property
+    def display_specification(self):
+        return self.spec_override if self.spec_override is not None else (self.product.specification if self.product else '')
+
     product = db.relationship('Product', lazy=True)
 
     def to_dict(self):
@@ -516,9 +527,9 @@ class PIItem(db.Model):
             'id': self.id,
             'pi_id': self.pi_id,
             'product_id': self.product_id,
-            'product_name': self.product.name if self.product else '',
+            'product_name': self.display_name,
             'product_code': self.product.product_code if self.product else '',
-            'specification': self.product.specification if self.product else '',
+            'specification': self.display_specification,
             'quantity': self.quantity,
             'unit_price': self.unit_price,
             'amount': self.amount,

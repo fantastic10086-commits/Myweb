@@ -961,6 +961,98 @@ class SecuritySmokeTests(unittest.TestCase):
             db.session.delete(product)
             db.session.commit()
 
+    def test_pi_keyword_search_and_order_descriptions(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            product = Product(name='36KD Gas Nozzle', product_code='FUZZY-NOZZLE',
+                              specification='Copper', unit_price=5)
+            exact = Product(name='36KD nozzle', product_code='FUZZY-EXACT', unit_price=5)
+            unrelated = Product(name='36KD Torch', product_code='FUZZY-TORCH', unit_price=5)
+            db.session.add_all([product, exact, unrelated])
+            db.session.commit()
+            product_id, exact_id = product.id, exact.id
+        for url in ('/api/products/search?q=36kd%20NOZZLE',
+                    '/api/products/search?picker=1&q=36kd%20NOZZLE'):
+            payload = self.client.get(url).get_json()
+            results = payload['items'] if isinstance(payload, dict) else payload
+            self.assertEqual(results[0]['id'], exact_id)
+            self.assertIn(product_id, [row['id'] for row in results])
+            self.assertNotIn('FUZZY-TORCH', [row['code'] for row in results])
+        cross_field = self.client.get('/api/products/search?q=36KD%20Copper').get_json()
+        self.assertIn(product_id, [row['id'] for row in cross_field])
+        data = {
+            'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
+            'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
+            'issue_date': '2026-09-17', 'notes': 'Description override test',
+            f'selected_{product_id}': 'on', f'qty_{product_id}': '2',
+            f'unit_price_{product_id}': '5', 'product_order': str(product_id),
+            f'item_name_{product_id}': 'Customer nozzle', f'item_spec_{product_id}': '',
+            'csrf_token': self.token('/pi/create'),
+        }
+        with patch.object(application, '_generate_default_pi_documents',
+                          return_value=('test.pdf', 'test.xlsx')):
+            response = self.client.post('/pi/create', data=data)
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            pi = PI.query.filter_by(notes='Description override test').one()
+            item = pi.items[0]
+            pi_id, item_id = pi.id, item.id
+            self.assertEqual(item.display_name, 'Customer nozzle')
+            self.assertEqual(item.display_specification, '')
+            self.assertEqual(item.product.name, '36KD Gas Nozzle')
+            self.assertEqual(item.product.specification, 'Copper')
+            from document_export import _item_values, render_excel_template
+            self.assertEqual(_item_values(item, 1)['item.name'], 'Customer nozzle')
+            self.assertEqual(_item_values(item, 1)['item.specification'], '')
+            export_copy = application._pi_export_copy(pi)
+            self.assertEqual(export_copy.items[0].product.name, 'Customer nozzle')
+            template = Workbook()
+            template.active.append(['{{pi_number}}'])
+            template.active.append(['{{item.name}}', '{{item.specification}}', '{{item.code}}'])
+            template_path = os.path.join(TEST_ROOT.name, 'description-template.xlsx')
+            output_path = os.path.join(TEST_ROOT.name, 'description-output.xlsx')
+            template.save(template_path)
+            render_excel_template(template_path, pi, output_path)
+            exported = load_workbook(output_path).active
+            self.assertEqual(exported['A2'].value, 'Customer nozzle')
+            self.assertIsNone(exported['B2'].value)
+            preload = application._preload_products(pi)[0]
+            self.assertEqual(preload['originalName'], '36KD Gas Nozzle')
+            self.assertEqual(preload['name'], 'Customer nozzle')
+            version = pi.version
+        page = self.client.get(f'/pi/{pi_id}/edit').get_data(as_text=True)
+        self.assertIn('sel-name pi-structural-control', page)
+        data.update({'version': str(version), 'csrf_token': self.token(f'/pi/{pi_id}/edit'),
+                     f'item_name_{product_id}': 'Edited nozzle', f'item_spec_{product_id}': 'Custom spec'})
+        with patch.object(application, '_generate_default_pi_documents',
+                          return_value=('test.pdf', 'test.xlsx')):
+            response = self.client.post(f'/pi/{pi_id}/edit', data=data)
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            pi = db.session.get(PI, pi_id)
+            self.assertEqual(pi.items[0].id, item_id)
+            self.assertEqual(pi.items[0].display_name, 'Edited nozzle')
+            self.assertEqual(pi.items[0].display_specification, 'Custom spec')
+            self.assertEqual(pi.items[0].product.name, '36KD Gas Nozzle')
+            submitted, _ = application._submitted_pi_items(MultiDict(dict(data, **{
+                f'item_name_{product_id}': 'Changed after purchase'})))
+            changes = application._pi_structural_changes(
+                pi, customer_id=pi.customer_id, salesperson=pi.salesperson,
+                currency=pi.currency, exchange_rate=pi.exchange_rate, company=pi.company,
+                issue_date=pi.issue_date, shipping_cost=pi.shipping_cost, selected_items=submitted)
+            self.assertTrue(any('品名' in change for change in changes))
+        token = self.token(f'/pi/{pi_id}')
+        with patch.object(application, '_generate_default_pi_documents',
+                          return_value=('test.pdf', 'test.xlsx')):
+            self.client.post(f'/pi/{pi_id}/copy', data={'csrf_token': token})
+        with application.app.app_context():
+            copied = PI.query.filter(PI.notes == 'Description override test', PI.id != pi_id).one()
+            self.assertEqual(copied.items[0].display_name, 'Edited nozzle')
+            self.assertEqual(copied.items[0].display_specification, 'Custom spec')
+        data[f'item_name_{product_id}'] = '   '
+        data['csrf_token'] = self.token('/pi/create')
+        self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
+
     def test_product_picker_supports_pagination_search_and_batch_ui(self):
         self.login()
         create_pi = self.client.get('/pi/create')
