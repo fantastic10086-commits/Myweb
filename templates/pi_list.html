@@ -414,7 +414,7 @@
                     <input type="file" class="form-control" name="attachment" id="payAttachment" required
                            accept="image/jpeg,image/png,image/webp,image/gif"
                            onchange="previewPaymentAttachment(this)">
-                    <small class="text-muted">请上传到账截图或银行回单；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                    <small class="text-muted">选择文件，或在此弹窗按 Ctrl+V / ⌘V 粘贴到账截图、银行回单；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
                     <div id="payAttachmentPreviewWrap" class="d-none mt-2">
                         <img id="payAttachmentPreview" class="img-thumbnail" alt="回款凭证预览"
                              style="max-height:180px;max-width:100%;object-fit:contain;">
@@ -1026,6 +1026,35 @@ function previewPaymentAttachment(input) {
     document.getElementById('payAttachmentPreview').src = paymentAttachmentPreviewUrl;
     document.getElementById('payAttachmentPreviewWrap').classList.remove('d-none');
 }
+function pastePaymentAttachment(event) {
+    var modal = document.getElementById('paymentModal');
+    if (!modal || !modal.classList.contains('show')) return;
+    var items = event.clipboardData && event.clipboardData.items;
+    if (!items) return;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') !== 0) continue;
+        var blob = items[i].getAsFile();
+        if (!blob) continue;
+        event.preventDefault();
+        var extensions = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif'};
+        var extension = extensions[blob.type];
+        if (!extension) {
+            alert('回款凭证必须是 JPG、PNG、WebP 或 GIF 图片。');
+            return;
+        }
+        if (blob.size > 12 * 1024 * 1024) {
+            alert('回款凭证图片不能超过 12 MB。');
+            return;
+        }
+        var transfer = new DataTransfer();
+        transfer.items.add(new File([blob], 'payment-receipt-' + Date.now() + '.' + extension, {type: blob.type}));
+        var input = document.getElementById('payAttachment');
+        input.files = transfer.files;
+        previewPaymentAttachment(input);
+        return;
+    }
+}
+document.addEventListener('paste', pastePaymentAttachment);
 function confirmPayment(id, total, currency, preferredAccountId) {
     var sym = currency === 'RMB' ? '¥' : '$';
     currentPITotal = total;
