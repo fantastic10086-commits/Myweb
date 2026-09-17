@@ -27,7 +27,7 @@
     <div class="card-header bg-primary text-white"><strong><i class="bi bi-sliders me-1"></i>导出设置</strong></div>
     <div class="card-body">
         <div class="row g-3 align-items-end">
-            <div class="col-lg-5">
+            <div class="col-lg-3">
                 <label class="form-label fw-bold" for="template_id">PI 模板</label>
                 <select class="form-select" name="template_id" id="template_id" required>
                     {% for template in templates %}
@@ -36,9 +36,17 @@
                     </option>
                     {% endfor %}
                 </select>
-                <div class="form-text">不同模板可以使用不同版式、公司抬头和字段位置。</div>
+                <div class="form-text">选择版式；公司抬头单独选择。</div>
             </div>
             <div class="col-lg-3">
+                <label class="form-label fw-bold" for="company_header">公司抬头</label>
+                <select class="form-select" name="company_header" id="company_header" onchange="onCompanyHeaderChange()">
+                    <option value="klista" {% if pi.company != 'qisuo' %}selected{% endif %}>KLISTA</option>
+                    <option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>QISUO</option>
+                </select>
+                <div class="form-text">仅本次导出；切换保留银行信息。</div>
+            </div>
+            <div class="col-lg-2">
                 <label class="form-label fw-bold" for="output_format">下载格式</label>
                 <select class="form-select" name="output_format" id="output_format">
                     <option value="pdf">PDF 文件</option>
@@ -252,6 +260,14 @@ function recalculateExport() {
     document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2);
     document.getElementById('adjustmentAmount').textContent = adjustment.toFixed(2);
     document.getElementById('grandTotal').textContent = (subtotal + adjustment).toFixed(2);
+}
+
+const companyHeaders = {{ company_headers|tojson }};
+function onCompanyHeaderChange() {
+    const profile = companyHeaders[document.getElementById('company_header').value];
+    if (!profile) return;
+    document.querySelector('#exportForm [name="company_name"]').value = profile.name;
+    document.querySelector('#exportForm [name="company_addr"]').value = profile.address;
 }
 
 function onExportAccountChange() {

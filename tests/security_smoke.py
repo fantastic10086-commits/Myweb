@@ -2920,6 +2920,8 @@ class SecuritySmokeTests(unittest.TestCase):
             item = pi.items[0]
             template_id = DocumentTemplate.query.filter_by(code='system-default').one().id
             original = {
+                'company': pi.company,
+                'bank_info': pi.bank_info,
                 'issue_date': pi.issue_date,
                 'payment_terms': pi.payment_terms,
                 'shipping_cost': pi.shipping_cost,
@@ -2931,6 +2933,9 @@ class SecuritySmokeTests(unittest.TestCase):
             item_id = item.id
 
         response = self.client.post(f'/pi/{self.alice_pi}/export', data={
+            'company_header': 'qisuo',
+            'company_name': 'FORGED COMPANY',
+            'bank_info': 'FORGED BANK',
             'template_id': template_id,
             'output_format': 'xlsx',
             'mode': 'download',
@@ -2965,6 +2970,9 @@ class SecuritySmokeTests(unittest.TestCase):
         ]
         self.assertTrue(any('仅用于本次导出' in str(value) for value in rendered_values))
         self.assertTrue(any('Freight' in str(value) for value in rendered_values))
+        self.assertTrue(any('Changzhou Qisuo' in str(value) for value in rendered_values))
+        self.assertTrue(any('Jingchuang Road' in str(value) for value in rendered_values))
+        self.assertFalse(any('FORGED COMPANY' in str(value) or 'FORGED BANK' in str(value) for value in rendered_values))
         self.assertIn(25, rendered_values)
         self.assertTrue(any('PI-TEST-001' in str(value) for value in rendered_values))
         self.assertFalse(any('FORGED-EXPORT-PI' in str(value) for value in rendered_values))
@@ -2973,6 +2981,8 @@ class SecuritySmokeTests(unittest.TestCase):
         with application.app.app_context():
             pi = db.session.get(PI, self.alice_pi)
             item = db.session.get(PIItem, item_id)
+            self.assertEqual(pi.company, original['company'])
+            self.assertEqual(pi.bank_info, original['bank_info'])
             self.assertEqual(pi.issue_date, original['issue_date'])
             self.assertEqual(pi.payment_terms, original['payment_terms'])
             self.assertEqual(pi.shipping_cost, original['shipping_cost'])

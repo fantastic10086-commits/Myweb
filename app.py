@@ -45,6 +45,7 @@ from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 from document_export import (
     PLACEHOLDER_GROUPS, TemplateError, apply_system_default_page_setup,
+    _company_name, _company_address,
     convert_excel_to_pdf,
     create_placeholder_template,
     render_excel_template, validate_template,
@@ -6490,9 +6491,17 @@ def _apply_export_form(form, export_pi):
     """Apply one-off export edits to a non-ORM copy.
 
     PI number, owner and currency are intentionally locked for every role.
-    Sales users also cannot alter customer identity, product identity, company,
-    or bank details from the export screen.
+    Sales users cannot alter customer/product identity, custom company text,
+    or bank details. Both roles may select a standard company header.
     """
+    company_header = form.get('company_header')
+    if company_header is not None:
+        if company_header not in {'klista', 'qisuo'}:
+            raise ValueError('公司抬头选项无效。')
+        export_pi.company = company_header
+        profile = SimpleNamespace(company=company_header)
+        export_pi._company_name_override = _company_name(profile)
+        export_pi._company_addr_override = _company_address(profile)
     if form.get('issue_date'):
         try:
             export_pi.issue_date = datetime.strptime(form.get('issue_date'), '%Y-%m-%d').date()
@@ -6562,6 +6571,9 @@ def _apply_export_form(form, export_pi):
 
 def _export_copy_snapshot(export_pi):
     return {
+        'company': export_pi.company,
+        'company_name': _company_name(export_pi),
+        'company_address': _company_address(export_pi),
         'issue_date': export_pi.issue_date.isoformat() if export_pi.issue_date else '',
         'payment_terms': export_pi.payment_terms,
         'price_terms': export_pi.price_terms,
@@ -6900,6 +6912,10 @@ def pi_export(id):
         return render_template(
             'live_edit_pi.html', pi=pi, templates=templates,
             selected_template=selected_template,
+            company_headers={brand: {
+                'name': _company_name(SimpleNamespace(company=brand)),
+                'address': _company_address(SimpleNamespace(company=brand)),
+            } for brand in ('klista', 'qisuo')},
         )
 
     output_format = request.form.get('output_format', 'pdf').lower()
