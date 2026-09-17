@@ -14,6 +14,86 @@ var previewCustomer = {{ (pi.customer.name if pi.customer else '—')|tojson }};
 var previewSalesperson = {{ pi.salesperson|tojson }};
 var activeProcurementFilter = 'all';
 
+function supplierSearchOptions(select, query) {
+    var words = String(query || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return Array.from(select.options).filter(function(option) {
+        return option.value && words.every(function(word) { return option.textContent.toLowerCase().includes(word); });
+    });
+}
+function syncSupplierSearch(select) {
+    if (!select.supplierSearchInput) return;
+    var option = select.options[select.selectedIndex];
+    select.supplierSearchInput.value = select.value && option ? option.textContent : '';
+    select.supplierSearchInput.disabled = select.disabled;
+}
+function installSupplierSearch(select, index) {
+    var input = document.createElement('input');
+    input.type = 'text'; input.className = select.className.replace('proc-supplier', '') + ' supplier-search-input';
+    input.placeholder = '输入供应商名称搜索'; input.autocomplete = 'off';
+    input.setAttribute('role', 'combobox'); input.setAttribute('aria-label', '搜索选择供应商');
+    input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-expanded', 'false');
+    input.style.minWidth = '0';
+    if (select.id === 'procBulkSupplier') { input.style.width = '220px'; input.style.maxWidth = '100%'; }
+    select.before(input); select.classList.add('d-none'); select.setAttribute('aria-hidden', 'true'); select.tabIndex = -1;
+    select.supplierSearchInput = input;
+    syncSupplierSearch(select);
+    var menu = document.createElement('div');
+    menu.id = 'supplier-search-results-' + index;
+    menu.className = 'dropdown-menu shadow supplier-search-results';
+    menu.setAttribute('role', 'listbox');
+    menu.style.cssText = 'position:fixed;z-index:1060;max-height:260px;overflow-y:auto;';
+    input.setAttribute('aria-controls', menu.id); document.body.appendChild(menu);
+    var active = -1;
+    function close() { menu.classList.remove('show'); input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant'); }
+    function position() {
+        var rect = input.getBoundingClientRect();
+        var below = window.innerHeight - rect.bottom - 8;
+        var height = Math.min(260, Math.max(below, rect.top - 8));
+        menu.style.width = Math.max(rect.width, 220) + 'px';
+        menu.style.left = Math.max(4, Math.min(rect.left, window.innerWidth - Math.max(rect.width, 220) - 4)) + 'px';
+        menu.style.maxHeight = height + 'px';
+        menu.style.top = below >= Math.min(260, menu.scrollHeight) ? rect.bottom + 'px' : Math.max(4, rect.top - Math.min(height, menu.scrollHeight)) + 'px';
+    }
+    function choose(value) {
+        select.value = value; syncSupplierSearch(select); close();
+        select.dispatchEvent(new Event('change', {bubbles: true})); input.focus(); close();
+    }
+    function render(query) {
+        menu.replaceChildren(); active = -1;
+        var options = supplierSearchOptions(select, query);
+        [{value: '', textContent: '— 清空供应商 —'}].concat(options).forEach(function(option, optionIndex) {
+            var button = document.createElement('button'); button.type = 'button';
+            button.className = 'dropdown-item'; button.textContent = option.textContent;
+            button.id = menu.id + '-' + optionIndex; button.setAttribute('role', 'option');
+            button.setAttribute('aria-selected', select.value === option.value ? 'true' : 'false');
+            button.addEventListener('mousedown', function(event) { event.preventDefault(); });
+            button.addEventListener('click', function() { choose(option.value); }); menu.appendChild(button);
+        });
+        if (!options.length) { var empty = document.createElement('div'); empty.className = 'dropdown-item-text text-muted'; empty.textContent = '没有匹配的供应商，可点击 + 新增'; menu.appendChild(empty); }
+        menu.classList.add('show'); input.setAttribute('aria-expanded', 'true'); position();
+    }
+    input.addEventListener('focus', function() { if (!input.disabled) render(''); });
+    input.addEventListener('input', function() {
+        select.value = ''; render(input.value);
+        if (select.classList.contains('proc-supplier')) updateCalculations();
+    });
+    input.addEventListener('blur', function() { close(); syncSupplierSearch(select); });
+    input.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') { close(); syncSupplierSearch(select); return; }
+        if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+        if (!menu.classList.contains('show')) { if (event.key === 'Enter') return; render(input.value); }
+        event.preventDefault();
+        var buttons = Array.from(menu.querySelectorAll('button'));
+        if (event.key === 'Enter') { if (active >= 0) buttons[active].click(); return; }
+        active = Math.max(0, Math.min(buttons.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
+        buttons.forEach(function(button, i) { button.classList.toggle('active', i === active); });
+        input.setAttribute('aria-activedescendant', buttons[active].id); buttons[active].scrollIntoView({block: 'nearest'});
+    });
+    select.addEventListener('change', function() { syncSupplierSearch(select); });
+    window.addEventListener('resize', close);
+    document.addEventListener('scroll', function(event) { if (!menu.contains(event.target)) close(); }, true);
+}
+
 function numericValue(elementId) {
     var element = document.getElementById(elementId);
     var value = element ? Number(element.value) : 0;
@@ -141,7 +221,9 @@ function applyBulkSupplier() {
     }
     document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
         if (row.querySelector('.proc-row-select').checked) {
-            row.querySelector('.proc-supplier').value = supplierId;
+            var select = row.querySelector('.proc-supplier');
+            select.value = supplierId;
+            syncSupplierSearch(select);
         }
     });
     updateCalculations();
@@ -162,6 +244,7 @@ function updateProcurementHighlights() {
         if (risk.missing) missingCount += 1;
         if (risk.highPrice) highCount += 1;
         supplier.classList.toggle('proc-missing-field', risk.supplierMissing);
+        if (supplier.supplierSearchInput) supplier.supplierSearchInput.classList.toggle('proc-missing-field', risk.supplierMissing);
         price.classList.toggle('proc-missing-field', risk.priceMissing);
         price.classList.toggle('proc-high-price-field', risk.highPrice);
         supplierWarning.textContent = risk.supplierMissing ? '缺少供应商' : '';
@@ -394,6 +477,7 @@ function installSupplierOption(supplier, selected) {
         }
         option.textContent = supplier.name;
         if (selected && select === supplierTargetSelect) select.value = String(supplier.id);
+        syncSupplierSearch(select);
     });
     var bulkSelect = document.getElementById('procBulkSupplier');
     if (bulkSelect) {
@@ -406,6 +490,7 @@ function installSupplierOption(supplier, selected) {
             bulkSelect.appendChild(bulkOption);
         }
         bulkOption.textContent = supplier.name;
+        syncSupplierSearch(bulkSelect);
     }
 }
 
@@ -631,6 +716,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (freight) freight.addEventListener('input', updateCalculations);
     var rate = document.getElementById('businessRate');
     if (rate) rate.addEventListener('input', updateCalculations);
+    document.querySelectorAll('.proc-supplier, #procBulkSupplier').forEach(installSupplierSearch);
     updateCalculations();
 });
 </script>
