@@ -2828,6 +2828,21 @@ def customer_reassign(id):
 #  ROUTES — Products
 # ═══════════════════════════════════════════════════════════════════════
 
+def _search_product_keywords(query, search):
+    """Use the same literal, case-insensitive keyword matching in both pickers and lists."""
+    fields = (Product.name, Product.chinese_name, Product.product_code, Product.specification)
+
+    def matches(value):
+        return db.or_(*(func.lower(field).contains(value.lower(), autoescape=True)
+                        for field in fields))
+
+    for token in search.split():
+        query = query.filter(matches(token))
+    exact = db.or_(*(func.lower(field) == search.lower() for field in fields))
+    relevance = case((exact, 0), (matches(search), 1), else_=2)
+    return query, relevance
+
+
 @app.route('/products')
 @login_required
 def product_list():
@@ -2844,15 +2859,9 @@ def product_list():
         query = query.filter(Product.active.is_(False))
     else:
         query = query.filter(Product.active.is_(True))
+    relevance = None
     if search:
-        query = query.filter(
-            db.or_(
-                Product.name.ilike(f'%{search}%'),
-                Product.product_code.ilike(f'%{search}%'),
-                Product.specification.ilike(f'%{search}%'),
-                Product.chinese_name.ilike(f'%{search}%'),
-            )
-        )
+        query, relevance = _search_product_keywords(query, search)
     if filter_type == 'no_image':
         query = query.filter((Product.image == None) | (Product.image == ''))
 
@@ -2876,7 +2885,10 @@ def product_list():
     if page < 1: page = 1
     if page > total_pages: page = total_pages
 
-    products = query.order_by(order_by).limit(per_page).offset((page - 1) * per_page).all()
+    ordering = [order_by, Product.id.asc()]
+    if relevance is not None and sort not in sort_map:
+        ordering.insert(0, relevance)
+    products = query.order_by(*ordering).limit(per_page).offset((page - 1) * per_page).all()
     return render_template('products.html', products=products, search=search, filter=filter_type,
                            sort=sort, page=page, total_pages=total_pages, total=total)
 
@@ -3251,16 +3263,10 @@ def api_product_search():
         }
 
     query = Product.query.filter(Product.active.is_(True))
-    search_fields = (Product.name, Product.chinese_name, Product.product_code, Product.specification)
     ordering = [Product.name.asc(), Product.id.asc()]
     if q:
-        # Each keyword can match any searchable field; SQL wildcards are literal.
-        def matches(value):
-            return db.or_(*(func.lower(field).contains(value.lower(), autoescape=True) for field in search_fields))
-        for token in q.split():
-            query = query.filter(matches(token))
-        exact = db.or_(*(func.lower(field) == q.lower() for field in search_fields))
-        ordering.insert(0, case((exact, 0), (matches(q), 1), else_=2))
+        query, relevance = _search_product_keywords(query, q)
+        ordering.insert(0, relevance)
     elif not picker_mode:
         return jsonify([])
 

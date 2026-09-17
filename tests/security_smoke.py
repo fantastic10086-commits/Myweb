@@ -1053,6 +1053,43 @@ class SecuritySmokeTests(unittest.TestCase):
         data['csrf_token'] = self.token('/pi/create')
         self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
 
+    def test_product_list_shares_keyword_search_and_preserves_filters(self):
+        self.login()
+        with application.app.app_context():
+            products = [
+                Product(name='36KD Gas Nozzle', product_code='LIST-FUZZY', specification='Copper'),
+                Product(name='36KD nozzle', product_code='LIST-EXACT', image='test.png'),
+                Product(name='36KD Torch', product_code='LIST-UNRELATED'),
+                Product(name='36KD Inactive Nozzle', product_code='LIST-INACTIVE', active=False),
+            ]
+            db.session.add_all(products)
+            db.session.commit()
+        html = self.client.get('/products?search=36kd%20NOZZLE').get_data(as_text=True)
+        self.assertIn('LIST-FUZZY', html)
+        self.assertIn('LIST-EXACT', html)
+        self.assertNotIn('LIST-UNRELATED', html)
+        self.assertNotIn('LIST-INACTIVE', html)
+        self.assertLess(html.index('LIST-EXACT'), html.index('LIST-FUZZY'))
+        html = self.client.get('/products?search=36KD%20Copper').get_data(as_text=True)
+        self.assertIn('LIST-FUZZY', html)
+        self.assertNotIn('LIST-EXACT', html)
+        html = self.client.get('/products?search=36KD%20nozzle&filter=no_image').get_data(as_text=True)
+        self.assertIn('LIST-FUZZY', html)
+        self.assertNotIn('LIST-EXACT', html)
+        html = self.client.get('/products?search=36KD%20nozzle&filter=inactive').get_data(as_text=True)
+        self.assertIn('LIST-INACTIVE', html)
+        self.assertNotIn('LIST-FUZZY', html)
+        html = self.client.get('/products?search=36KD%20nozzle&filter=all&sort=name_asc').get_data(as_text=True)
+        self.assertIn('LIST-INACTIVE', html)
+        self.assertLess(html.index('LIST-FUZZY'), html.index('LIST-EXACT'))
+        html = self.client.get('/products?search=%25').get_data(as_text=True)
+        self.assertNotIn('LIST-FUZZY', html)
+        with application.app.app_context():
+            Product.query.filter(Product.product_code.in_([
+                'LIST-FUZZY', 'LIST-EXACT', 'LIST-UNRELATED', 'LIST-INACTIVE'
+            ])).delete(synchronize_session=False)
+            db.session.commit()
+
     def test_product_picker_supports_pagination_search_and_batch_ui(self):
         self.login()
         create_pi = self.client.get('/pi/create')
