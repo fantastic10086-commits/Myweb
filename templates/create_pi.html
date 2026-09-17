@@ -82,7 +82,7 @@ var adjustmentUsd = 0;
         var usdPrice = Number(p.priceUsd != null ? p.priceUsd : p.price_usd);
         if (!isFinite(usdPrice)) usdPrice = toUsd(currentPrice);
         return {
-            id: Number(p.id),
+            id: Number(p.id), productId: Number(p.productId || p.id), itemId: p.itemId || null,
             name: String(p.name || ''),
             chinese_name: String(p.chinese_name || ''),
             code: String(p.code || p.product_code || ''),
@@ -97,6 +97,8 @@ var adjustmentUsd = 0;
         p = normalizeProduct(p);
         var tr = document.createElement('tr');
         tr.id = 'product_row_' + p.id;
+        selectedProducts[p.id].productId = p.productId;
+        selectedProducts[p.id].itemId = p.itemId;
         var sym = getSymbol();
         tr.innerHTML =
             '<td class="row-num"></td>' +
@@ -105,7 +107,9 @@ var adjustmentUsd = 0;
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
             '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
-            '<td><button type="button" class="btn btn-sm btn-outline-danger">&times;</button></td>' +
+            '<td><div class="d-flex gap-1"><button type="button" title="复制此产品行" aria-label="复制此产品行" class="btn btn-sm btn-outline-primary sel-copy"><i class="bi bi-copy"></i></button><button type="button" class="btn btn-sm btn-outline-danger">&times;</button></div></td>' +
+            '<input type="hidden" name="row_product_' + p.id + '" value="' + p.productId + '">' +
+            (p.itemId ? '<input type="hidden" name="row_item_' + p.id + '" value="' + p.itemId + '">' : '') +
             '<input type="hidden" name="selected_' + p.id + '" value="on">' +
             '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
             '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(2) + '">';
@@ -136,6 +140,13 @@ var adjustmentUsd = 0;
             showHideEmpty();
             updateTotal();
         });
+        tr.querySelector('.sel-copy').addEventListener('click', function() {
+            var copy = Object.assign({}, p, selectedProducts[p.id], {id: nextCopyId--, itemId: null});
+            selectedProducts[copy.id] = Object.assign({}, copy);
+            selectedProductOrder.splice(selectedProductOrder.indexOf(p.id) + 1, 0, copy.id);
+            tr.after(makeRow(copy));
+            renumberRows(); showHideEmpty(); updateTotal();
+        });
         tr.querySelector('.sel-name').addEventListener('input', function() { selectedProducts[p.id].name = this.value; });
         tr.querySelector('.sel-code').addEventListener('input', function() { selectedProducts[p.id].code = this.value; });
         tr.querySelector('.sel-spec').addEventListener('input', function() { selectedProducts[p.id].spec = this.value; });
@@ -159,12 +170,15 @@ var adjustmentUsd = 0;
         if (orderInput) orderInput.value = selectedProductOrder.join(',');
     }
 
+    function productAlreadySelected(productId) {
+        return selectedProductOrder.some(function(key) { return Number(selectedProducts[key].productId || key) === Number(productId); });
+    }
     function addProductObj(p) {
         p = normalizeProduct(p);
-        if (selectedProducts[p.id]) return;
+        if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow({id: p.id, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
+        selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
         renumberRows(); showHideEmpty(); updateTotal();
     }
 
@@ -225,7 +239,7 @@ var adjustmentUsd = 0;
         for (var i = 0; i < items.length; i++) {
             var p = normalizeProduct(items[i]);
             pickerItems[p.id] = p;
-            var alreadyAdded = !!selectedProducts[p.id];
+            var alreadyAdded = productAlreadySelected(p.id);
             var checked = !!pickerSelections[p.id];
             var tr = document.createElement('tr');
             tr.dataset.productId = String(p.id);

@@ -318,7 +318,7 @@ def _migrate_db():
             'branch_code': 'VARCHAR(50)',
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
-        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL')},
+        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
         'suppliers': {},  # table auto-created by create_all
         'procurements': {},  # table auto-created by create_all
         'packing_lists': {},  # tables auto-created by create_all
@@ -1437,7 +1437,7 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             except (TypeError, ValueError):
                 continue
             if (
-                product_id > 0
+                product_id != 0
                 and product_id not in seen
                 and form.get(f'selected_{product_id}') == 'on'
             ):
@@ -1451,10 +1451,18 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             product_id = int(key[len('selected_'):])
         except (TypeError, ValueError):
             continue
-        if product_id > 0 and product_id not in seen:
+        if product_id != 0 and product_id not in seen:
             seen.add(product_id)
             product_ids.append(product_id)
 
+    row_ids = product_ids
+    row_products = {}
+    for row_id in row_ids:
+        try:
+            row_products[row_id] = int(form.get(f'row_product_{row_id}', row_id))
+        except (TypeError, ValueError):
+            abort(400)
+    product_ids = list(set(row_products.values()))
     products_by_id = {}
     # Chunk the lookup so even unusually large PIs stay below SQLite's bound
     # parameter limit.  Normal PIs execute only one small query.
@@ -1466,15 +1474,16 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
 
     selected_items = []
     total_amount = 0.0
-    for product_id in product_ids:
+    for row_id in row_ids:
+        product_id = row_products[row_id]
         product = products_by_id.get(product_id)
         if not product:
             continue
         try:
-            quantity = int(form.get(f'qty_{product_id}', '1').strip() or '1')
+            quantity = int(form.get(f'qty_{row_id}', '1').strip() or '1')
         except (AttributeError, TypeError, ValueError):
             quantity = 1
-        unit_price_raw = form.get(f'unit_price_{product_id}', '')
+        unit_price_raw = form.get(f'unit_price_{row_id}', '')
         try:
             unit_price = _nonnegative_float(
                 unit_price_raw if str(unit_price_raw or '').strip() else product.unit_price,
@@ -1484,8 +1493,8 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             continue
         if quantity <= 0:
             continue
-        name = form.get(f'item_name_{product_id}')
-        spec = form.get(f'item_spec_{product_id}')
+        name = form.get(f'item_name_{row_id}')
+        spec = form.get(f'item_spec_{row_id}')
         if name is not None:
             name = name.strip()
             if not name or len(name) > 200:
@@ -1494,7 +1503,7 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             spec = spec.strip()
             if len(spec) > 200:
                 abort(400, description='PI 产品规格不能超过 200 个字符。')
-        code = form.get(f'item_code_{product_id}')
+        code = form.get(f'item_code_{row_id}')
         if code is not None:
             code = code.strip()
             if len(code) > 200:
@@ -1502,6 +1511,9 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
         amount = round(unit_price * quantity, 2)
         selected_items.append({
             'product': product,
+            'item_id': form.get(f'row_item_{row_id}', type=int) if hasattr(form, 'get') else None,
+            'explicit_row': f'row_product_{row_id}' in form,
+            'sort_order': len(selected_items),
             'name_override': name,
             'spec_override': spec,
             'code_override': code,
@@ -4364,6 +4376,7 @@ def pi_create():
                 name_override=item['name_override'],
                 spec_override=item['spec_override'],
                 code_override=item['code_override'],
+                sort_order=item['sort_order'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 amount=item['amount'],
@@ -5718,6 +5731,7 @@ def pi_copy(id):
             name_override=item.name_override,
             spec_override=item.spec_override,
             code_override=item.code_override,
+            sort_order=item.sort_order,
             quantity=item.quantity,
             unit_price=item.unit_price,
             amount=item.amount,
@@ -5750,7 +5764,7 @@ def _preload_products(pi):
         prod = item.product
         if prod:
             price_usd = item.unit_price if pi.currency != 'RMB' else item.unit_price / pi_rate
-            preload.append({'id': prod.id, 'name': item.display_name, 'code': item.display_code,
+            preload.append({'id': -item.id, 'productId': prod.id, 'itemId': item.id, 'name': item.display_name, 'code': item.display_code,
                             'originalCode': prod.product_code or '',
                             'originalName': prod.name, 'originalSpec': prod.specification or '',
                             'spec': item.display_specification, 'price': item.unit_price,
@@ -5819,6 +5833,23 @@ def _pi_item_usage(pi):
     return usage
 
 
+def _match_pi_rows(pi, selected_items):
+    existing = {item.id: item for item in pi.items}
+    used = set()
+    pairs = []
+    for row in selected_items:
+        item_id = row.get('item_id')
+        item = existing.get(item_id) if item_id else None
+        if item_id and (item is None or item.product_id != row['product'].id or item_id in used):
+            abort(400, description='PI 明细标识无效，请刷新页面。')
+        if not item_id and not row.get('explicit_row'):
+            item = next((i for i in pi.items if i.product_id == row['product'].id and i.id not in used), None)
+        if item is not None:
+            used.add(item.id)
+        pairs.append((row, item))
+    return pairs, [item for item in pi.items if item.id not in used]
+
+
 def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
                            exchange_rate, company, issue_date, shipping_cost,
                            selected_items):
@@ -5841,16 +5872,14 @@ def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
         if different:
             changes.append(label)
 
-    existing_by_product = {item.product_id: item for item in pi.items}
-    submitted_by_product = {row['product'].id: row for row in selected_items}
-    added = [row['product'].name for product_id, row in submitted_by_product.items()
-             if product_id not in existing_by_product]
-    removed = [item.product.name if item.product else str(item.product_id)
-               for product_id, item in existing_by_product.items()
-               if product_id not in submitted_by_product]
+    pairs, removed_items = _match_pi_rows(pi, selected_items)
+    added = [row['product'].name for row, item in pairs if item is None]
+    removed = [item.display_name for item in removed_items]
     modified = []
-    for product_id, item in existing_by_product.items():
-        submitted = submitted_by_product.get(product_id)
+    for submitted, item in pairs:
+        if item is None:
+            continue
+        product_id = item.product_id
         if not submitted:
             continue
         details = []
@@ -5886,10 +5915,11 @@ def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
 def _validate_pi_item_reconciliation(pi, selected_items):
     """Block item changes that would invalidate existing purchase/packing rows."""
     usage = _pi_item_usage(pi)
-    submitted_by_product = {row['product'].id: row for row in selected_items}
+    pairs, removed = _match_pi_rows(pi, selected_items)
+    submitted_by_item = {item.id: row for row, item in pairs if item is not None}
     errors = []
     for item in pi.items:
-        submitted = submitted_by_product.get(item.product_id)
+        submitted = submitted_by_item.get(item.id)
         item_usage = usage.get(item.id, {'procured': 0, 'packed': 0})
         product_name = item.product.name if item.product else str(item.product_id)
         if not submitted:
@@ -5915,15 +5945,12 @@ def _validate_pi_item_reconciliation(pi, selected_items):
 
 def _reconcile_pi_items(pi, selected_items):
     """Update PI items in place so downstream foreign keys remain valid."""
-    existing_by_product = {item.product_id: item for item in pi.items}
-    submitted_product_ids = set()
-    for submitted in selected_items:
-        product_id = submitted['product'].id
-        submitted_product_ids.add(product_id)
-        item = existing_by_product.get(product_id)
+    pairs, removed = _match_pi_rows(pi, selected_items)
+    for position, (submitted, item) in enumerate(pairs):
         if item is None:
-            item = PIItem(product_id=product_id)
+            item = PIItem(product_id=submitted['product'].id)
             pi.items.append(item)
+        item.sort_order = position
         if submitted.get('name_override') is not None:
             item.name_override = submitted['name_override']
         if submitted.get('spec_override') is not None:
@@ -5933,9 +5960,8 @@ def _reconcile_pi_items(pi, selected_items):
         item.quantity = submitted['quantity']
         item.unit_price = submitted['unit_price']
         item.amount = submitted['amount']
-    for product_id, item in existing_by_product.items():
-        if product_id not in submitted_product_ids:
-            pi.items.remove(item)
+    for item in removed:
+        pi.items.remove(item)
 
 
 @app.route('/pi/<int:id>/edit', methods=['GET', 'POST'])

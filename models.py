@@ -370,11 +370,11 @@ class PI(db.Model):
     version = db.Column(db.Integer, nullable=False, default=1)
     __mapper_args__ = {'version_id_col': version}
 
-    # PI rows are inserted in the user's chosen order.  Always load them by
-    # their insertion id so previews and every export reproduce that order.
+    # Explicit row order supports copies inserted between existing rows.
+    # Legacy rows share position zero and retain their original insertion order.
     items = db.relationship(
         'PIItem', backref='pi', lazy=True, cascade='all, delete-orphan',
-        order_by='PIItem.id',
+        order_by='(PIItem.sort_order, PIItem.id)',
     )
 
     @property
@@ -512,6 +512,7 @@ class PIItem(db.Model):
     name_override = db.Column(db.String(200), nullable=True)
     spec_override = db.Column(db.String(200), nullable=True)
     code_override = db.Column(db.String(200), nullable=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
 
     @property
     def display_name(self):

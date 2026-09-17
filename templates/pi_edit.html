@@ -13,6 +13,7 @@
 <script>
     var existingItems = {{ existing_items|tojson }};
     var selectedProducts = {};
+    var nextCopyId = -1000000000;
     var selectedProductOrder = [];
     var pendingProducts = {};
     var pendingProductOrder = [];
@@ -69,7 +70,7 @@
         var usdPrice = Number(p.priceUsd != null ? p.priceUsd : p.price_usd);
         if (!isFinite(usdPrice)) usdPrice = toUsd(currentPrice);
         return {
-            id: Number(p.id), name: String(p.name || ''), code: String(p.code || p.product_code || ''),
+            id: Number(p.id), productId: Number(p.productId || p.id), itemId: p.itemId || null, name: String(p.name || ''), code: String(p.code || p.product_code || ''),
             originalCode: String(p.originalCode != null ? p.originalCode : p.code || p.product_code || ''), originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''), priceUsd: usdPrice, price: fromUsd(usdPrice),
             qty: Math.max(1, Number(p.qty) || 1), img: String(p.img || '')
         };
@@ -77,6 +78,8 @@
     function makeRow(p) {
         p = normalizeProduct(p);
         var tr = document.createElement('tr'); tr.id = 'product_row_' + p.id;
+        selectedProducts[p.id].productId = p.productId;
+        selectedProducts[p.id].itemId = p.itemId;
         var sym = getSymbol();
         tr.innerHTML =
             '<td class="row-num"></td>' +
@@ -85,7 +88,9 @@
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price pi-structural-control" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty pi-structural-control" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
             '<td class="text-end fw-bold sel-amt">' + sym + (p.price * p.qty).toFixed(2) + '</td>' +
-            '<td><button type="button" class="btn btn-sm btn-outline-danger pi-structural-control">&times;</button></td>' +
+            '<td><div class="d-flex gap-1"><button type="button" title="复制此产品行" aria-label="复制此产品行" class="btn btn-sm btn-outline-primary sel-copy pi-structural-control"><i class="bi bi-copy"></i></button><button type="button" class="btn btn-sm btn-outline-danger pi-structural-control">&times;</button></div></td>' +
+            '<input type="hidden" name="row_product_' + p.id + '" value="' + p.productId + '">' +
+            (p.itemId ? '<input type="hidden" name="row_item_' + p.id + '" value="' + p.itemId + '">' : '') +
             '<input type="hidden" name="selected_' + p.id + '" value="on">' +
             '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
             '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(2) + '">';
@@ -105,6 +110,14 @@
             tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2); updateTotal();
         });
         tr.querySelector('.btn-outline-danger').addEventListener('click', function() { delete selectedProducts[p.id]; selectedProductOrder = selectedProductOrder.filter(function(id) { return id !== p.id; }); tr.remove(); renumberRows(); showHideEmpty(); updateTotal(); });
+        tr.querySelector('.sel-copy').addEventListener('click', function() {
+            var copy = Object.assign({}, p, selectedProducts[p.id], {id: nextCopyId--, itemId: null});
+            selectedProducts[copy.id] = Object.assign({}, copy);
+            selectedProductOrder.splice(selectedProductOrder.indexOf(p.id) + 1, 0, copy.id);
+            tr.after(makeRow(copy));
+            renumberRows(); showHideEmpty(); updateTotal();
+            applyStructuralLock();
+        });
         tr.querySelector('.sel-name').addEventListener('input', function() { selectedProducts[p.id].name = this.value; });
         tr.querySelector('.sel-code').addEventListener('input', function() { selectedProducts[p.id].code = this.value; });
         tr.querySelector('.sel-spec').addEventListener('input', function() { selectedProducts[p.id].spec = this.value; });
@@ -119,12 +132,15 @@
         return tr;
     }
     function renumberRows() { var rows = selectedTableBody.querySelectorAll('tr'); for (var i = 0; i < rows.length; i++) rows[i].querySelector('.row-num').textContent = i + 1; var orderInput = document.getElementById('product_order'); if (orderInput) orderInput.value = selectedProductOrder.join(','); }
+    function productAlreadySelected(productId) {
+        return selectedProductOrder.some(function(key) { return Number(selectedProducts[key].productId || key) === Number(productId); });
+    }
     function addProductObj(p) {
         p = normalizeProduct(p);
-        if (selectedProducts[p.id]) return;
+        if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow({id: p.id, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
+        selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
         renumberRows(); showHideEmpty(); updateTotal();
     }
     function repriceForCurrency() {
@@ -167,7 +183,7 @@
             var html = '';
             for (var i = 0; i < data.length; i++) {
                 var p = data[i];
-                if (selectedProducts[p.id]) continue;
+                if (productAlreadySelected(p.id)) continue;
                 var checked = pendingProducts[p.id] ? ' checked' : '';
                 var normalized = normalizeProduct(p);
                 html += '<label class="dropdown-item d-flex align-items-center gap-2 mb-0" data-p=\'' + JSON.stringify(p).replace(/'/g,'&#39;') + '\'><input type="checkbox" class="form-check-input mt-0 product-result-check"' + checked + '>' + imgTag(p.img) + '<span class="flex-grow-1"><strong>' + escHtml(String(p.name || '')) + '</strong>  <small class="text-muted">' + escHtml(String(p.code || '')) + '</small></span><span>$' + normalized.priceUsd.toFixed(2) + '</span></label>';
@@ -186,7 +202,7 @@
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
-        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow({id: p.id, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''})); }
+        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''})); }
         renumberRows(); showHideEmpty(); updateTotal();
         productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
         productSearch.addEventListener('input', function() { renderDropdown(this.value); });

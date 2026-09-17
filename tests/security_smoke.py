@@ -1073,6 +1073,62 @@ class SecuritySmokeTests(unittest.TestCase):
         data['csrf_token'] = self.token('/pi/create')
         self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
 
+    def test_duplicate_pi_rows_remain_independent_and_protect_references(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            product = Product(name='Duplicate source', product_code='DUP-SOURCE', unit_price=3)
+            pi = PI(pi_number='PI-DUP-ROWS', customer_id=self.alice_customer,
+                    salesperson='Alice', currency='USD', exchange_rate=7, total_amount=6)
+            db.session.add_all([product, pi])
+            db.session.flush()
+            original = PIItem(pi_id=pi.id, product_id=product.id, quantity=2, unit_price=3, amount=6)
+            db.session.add(original)
+            db.session.commit()
+            pi_id, product_id, original_id = pi.id, product.id, original.id
+            form = MultiDict({'product_order': '-1,-2', 'selected_-1': 'on', 'selected_-2': 'on',
+                              'row_product_-1': str(product_id), 'row_product_-2': str(product_id),
+                              'row_item_-1': str(original_id), 'qty_-1': '2', 'qty_-2': '4',
+                              'unit_price_-1': '3', 'unit_price_-2': '5',
+                              'item_spec_-1': 'Original', 'item_spec_-2': 'Copied spec',
+                              'item_code_-2': 'CUSTOM-COPY'})
+            rows, total = application._submitted_pi_items(form)
+            self.assertEqual(total, 26)
+            application._reconcile_pi_items(pi, rows)
+            db.session.commit()
+            db.session.expire_all()
+            pi = db.session.get(PI, pi_id)
+            self.assertEqual(len(pi.items), 2)
+            self.assertEqual(pi.items[0].id, original_id)
+            copy_id = pi.items[1].id
+            self.assertEqual(pi.items[1].display_code, 'CUSTOM-COPY')
+            self.assertEqual(pi.items[1].display_specification, 'Copied spec')
+            self.assertEqual(product.product_code, 'DUP-SOURCE')
+            supplier = Supplier(name='Duplicate test supplier')
+            db.session.add(supplier)
+            db.session.flush()
+            db.session.add(Procurement(pi_id=pi_id, pi_item_id=copy_id, supplier_id=supplier.id,
+                                       quantity=4, unit_price=1))
+            db.session.commit()
+            form.pop('selected_-2')
+            removed, _ = application._submitted_pi_items(form)
+            self.assertTrue(application._validate_pi_item_reconciliation(pi, removed))
+            form['selected_-2'] = 'on'
+            form['row_item_-2'] = str(copy_id)
+            form['qty_-2'] = '1'
+            reduced, _ = application._submitted_pi_items(form)
+            self.assertTrue(application._validate_pi_item_reconciliation(pi, reduced))
+            form['qty_-2'] = '4'
+            form['product_order'] = '-2,-1'
+            reordered, _ = application._submitted_pi_items(form)
+            application._reconcile_pi_items(pi, reordered)
+            db.session.commit()
+            db.session.expire_all()
+            self.assertEqual([item.id for item in db.session.get(PI, pi_id).items], [copy_id, original_id])
+            form['row_item_-2'] = str(original_id)
+            with self.assertRaises(Exception) as caught:
+                application._match_pi_rows(pi, application._submitted_pi_items(form)[0])
+            self.assertEqual(caught.exception.code, 400)
+
     def test_product_list_shares_keyword_search_and_preserves_filters(self):
         self.login()
         with application.app.app_context():
