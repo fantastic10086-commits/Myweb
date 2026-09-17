@@ -339,7 +339,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         row = [
             Paragraph(str(i), table_cell_style),
             img_cell,
-            Paragraph(item.product.product_code if item.product else '', table_cell_style),
+            Paragraph(getattr(item, 'display_code', item.product.product_code if item.product else ''), table_cell_style),
             Paragraph(getattr(item, 'display_name', item.product.name if item.product else ''), table_cell_left),
             Paragraph(getattr(item, 'display_specification', item.product.specification if item.product else ''), table_cell_style),
             Paragraph(str(item.quantity), amount_style),

@@ -318,7 +318,7 @@ def _migrate_db():
             'branch_code': 'VARCHAR(50)',
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
-        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL')},
+        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL')},
         'suppliers': {},  # table auto-created by create_all
         'procurements': {},  # table auto-created by create_all
         'packing_lists': {},  # tables auto-created by create_all
@@ -1494,11 +1494,17 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             spec = spec.strip()
             if len(spec) > 200:
                 abort(400, description='PI 产品规格不能超过 200 个字符。')
+        code = form.get(f'item_code_{product_id}')
+        if code is not None:
+            code = code.strip()
+            if len(code) > 200:
+                abort(400, description='PI 产品编码不能超过 200 个字符。')
         amount = round(unit_price * quantity, 2)
         selected_items.append({
             'product': product,
             'name_override': name,
             'spec_override': spec,
+            'code_override': code,
             'quantity': quantity,
             'unit_price': unit_price,
             'amount': amount,
@@ -4357,6 +4363,7 @@ def pi_create():
                 product_id=item['product'].id,
                 name_override=item['name_override'],
                 spec_override=item['spec_override'],
+                code_override=item['code_override'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 amount=item['amount'],
@@ -5710,6 +5717,7 @@ def pi_copy(id):
             product_id=item.product_id,
             name_override=item.name_override,
             spec_override=item.spec_override,
+            code_override=item.code_override,
             quantity=item.quantity,
             unit_price=item.unit_price,
             amount=item.amount,
@@ -5742,7 +5750,8 @@ def _preload_products(pi):
         prod = item.product
         if prod:
             price_usd = item.unit_price if pi.currency != 'RMB' else item.unit_price / pi_rate
-            preload.append({'id': prod.id, 'name': item.display_name, 'code': prod.product_code,
+            preload.append({'id': prod.id, 'name': item.display_name, 'code': item.display_code,
+                            'originalCode': prod.product_code or '',
                             'originalName': prod.name, 'originalSpec': prod.specification or '',
                             'spec': item.display_specification, 'price': item.unit_price,
                             'price_usd': price_usd,
@@ -5853,6 +5862,8 @@ def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
             details.append('品名')
         if submitted.get('spec_override') is not None and submitted['spec_override'] != item.display_specification:
             details.append('规格')
+        if submitted.get('code_override') is not None and submitted['code_override'] != item.display_code:
+            details.append('编码')
         if details:
             modified.append(
                 f"{item.product.name if item.product else product_id}（{'、'.join(details)}）"
@@ -5917,6 +5928,8 @@ def _reconcile_pi_items(pi, selected_items):
             item.name_override = submitted['name_override']
         if submitted.get('spec_override') is not None:
             item.spec_override = submitted['spec_override']
+        if submitted.get('code_override') is not None:
+            item.code_override = submitted['code_override']
         item.quantity = submitted['quantity']
         item.unit_price = submitted['unit_price']
         item.amount = submitted['amount']
@@ -6267,7 +6280,7 @@ def _pi_export_copy(pi):
         product = item.product
         product_copy = SimpleNamespace(
             name=item.display_name,
-            product_code=product.product_code if product else '',
+            product_code=item.display_code,
             specification=item.display_specification,
             image=product.image if product else '',
         )

@@ -58,7 +58,7 @@
             <td style="padding:4px 6px;">
                 <strong>{{ item.display_name or '-' }}</strong>
                 {% if item.display_specification %}<br><span style="color:#666;">{{ item.display_specification }}</span>{% endif %}
-                {% if item.product and item.product.product_code %}<br><span style="color:#999;">Code: {{ item.product.product_code }}</span>{% endif %}
+                {% if item.display_code %}<br><span style="color:#999;">Code: {{ item.display_code }}</span>{% endif %}
             </td>
             <td style="padding:4px 6px;text-align:center;">{{ item.quantity }}</td>
             <td style="padding:4px 6px;text-align:right;">{{ sym }}{{ '%.2f'|format(item.unit_price) }}</td>

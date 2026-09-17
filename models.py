@@ -511,6 +511,7 @@ class PIItem(db.Model):
 
     name_override = db.Column(db.String(200), nullable=True)
     spec_override = db.Column(db.String(200), nullable=True)
+    code_override = db.Column(db.String(200), nullable=True)
 
     @property
     def display_name(self):
@@ -520,6 +521,10 @@ class PIItem(db.Model):
     def display_specification(self):
         return self.spec_override if self.spec_override is not None else (self.product.specification if self.product else '')
 
+    @property
+    def display_code(self):
+        return self.code_override if self.code_override is not None else (self.product.product_code if self.product else '')
+
     product = db.relationship('Product', lazy=True)
 
     def to_dict(self):
@@ -528,7 +533,7 @@ class PIItem(db.Model):
             'pi_id': self.pi_id,
             'product_id': self.product_id,
             'product_name': self.display_name,
-            'product_code': self.product.product_code if self.product else '',
+            'product_code': self.display_code,
             'specification': self.display_specification,
             'quantity': self.quantity,
             'unit_price': self.unit_price,

@@ -987,6 +987,7 @@ class SecuritySmokeTests(unittest.TestCase):
             f'selected_{product_id}': 'on', f'qty_{product_id}': '2',
             f'unit_price_{product_id}': '5', 'product_order': str(product_id),
             f'item_name_{product_id}': 'Customer nozzle', f'item_spec_{product_id}': '',
+            f'item_code_{product_id}': 'CLIENT-001',
             'csrf_token': self.token('/pi/create'),
         }
         with patch.object(application, '_generate_default_pi_documents',
@@ -997,6 +998,9 @@ class SecuritySmokeTests(unittest.TestCase):
             pi = PI.query.filter_by(notes='Description override test').one()
             item = pi.items[0]
             pi_id, item_id = pi.id, item.id
+            self.assertEqual(item.display_code, 'CLIENT-001')
+            self.assertEqual(item.product.product_code, 'FUZZY-NOZZLE')
+            self.assertEqual(item.to_dict()['product_code'], 'CLIENT-001')
             self.assertEqual(item.display_name, 'Customer nozzle')
             self.assertEqual(item.display_specification, '')
             self.assertEqual(item.product.name, '36KD Gas Nozzle')
@@ -1016,6 +1020,8 @@ class SecuritySmokeTests(unittest.TestCase):
             exported = load_workbook(output_path).active
             self.assertEqual(exported['A2'].value, 'Customer nozzle')
             self.assertIsNone(exported['B2'].value)
+            self.assertEqual(exported['C2'].value, 'CLIENT-001')
+            self.assertEqual(export_copy.items[0].product.product_code, 'CLIENT-001')
             preload = application._preload_products(pi)[0]
             self.assertEqual(preload['originalName'], '36KD Gas Nozzle')
             self.assertEqual(preload['name'], 'Customer nozzle')
@@ -1023,7 +1029,8 @@ class SecuritySmokeTests(unittest.TestCase):
         page = self.client.get(f'/pi/{pi_id}/edit').get_data(as_text=True)
         self.assertIn('sel-name pi-structural-control', page)
         data.update({'version': str(version), 'csrf_token': self.token(f'/pi/{pi_id}/edit'),
-                     f'item_name_{product_id}': 'Edited nozzle', f'item_spec_{product_id}': 'Custom spec'})
+                     f'item_name_{product_id}': 'Edited nozzle', f'item_spec_{product_id}': 'Custom spec',
+                     f'item_code_{product_id}': ''})
         with patch.object(application, '_generate_default_pi_documents',
                           return_value=('test.pdf', 'test.xlsx')):
             response = self.client.post(f'/pi/{pi_id}/edit', data=data)
@@ -1031,22 +1038,26 @@ class SecuritySmokeTests(unittest.TestCase):
         with application.app.app_context():
             pi = db.session.get(PI, pi_id)
             self.assertEqual(pi.items[0].id, item_id)
+            self.assertEqual(pi.items[0].display_code, '')
+            self.assertEqual(pi.items[0].product.product_code, 'FUZZY-NOZZLE')
             self.assertEqual(pi.items[0].display_name, 'Edited nozzle')
             self.assertEqual(pi.items[0].display_specification, 'Custom spec')
             self.assertEqual(pi.items[0].product.name, '36KD Gas Nozzle')
             submitted, _ = application._submitted_pi_items(MultiDict(dict(data, **{
-                f'item_name_{product_id}': 'Changed after purchase'})))
+                f'item_name_{product_id}': 'Changed after purchase', f'item_code_{product_id}': 'CHANGED'})))
             changes = application._pi_structural_changes(
                 pi, customer_id=pi.customer_id, salesperson=pi.salesperson,
                 currency=pi.currency, exchange_rate=pi.exchange_rate, company=pi.company,
                 issue_date=pi.issue_date, shipping_cost=pi.shipping_cost, selected_items=submitted)
             self.assertTrue(any('品名' in change for change in changes))
+            self.assertTrue(any('编码' in change for change in changes))
         token = self.token(f'/pi/{pi_id}')
         with patch.object(application, '_generate_default_pi_documents',
                           return_value=('test.pdf', 'test.xlsx')):
             self.client.post(f'/pi/{pi_id}/copy', data={'csrf_token': token})
         with application.app.app_context():
             copied = PI.query.filter(PI.notes == 'Description override test', PI.id != pi_id).one()
+            self.assertEqual(copied.items[0].display_code, '')
             self.assertEqual(copied.items[0].display_name, 'Edited nozzle')
             self.assertEqual(copied.items[0].display_specification, 'Custom spec')
         data[f'item_name_{product_id}'] = '   '
