@@ -6,6 +6,13 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-09-18 00:02 线上替换模板交易条款修正）
+
+- 用户截图 PI-20260917-004 仍显示 Customer Notes，根因为 document_templates 的 system-default 行 filename 已由管理员替换为 9298dc325c2941c18d745b7069cb4d47.xlsx；启动保留替换模板，故此前内置 assets 模板两处修改未作用到实际替换版。
+- 下载当前替换模板，使用 artifact-tool 编辑 A12/B12 为 Trade Terms: / {{price_terms}}；为保留原生格式，转入原 ZIP 的 sharedStrings.xml，仅两个文本变化，其他所有组件字节相同。修正文件 outputs/pi-live-trade-20260917/default_pi_template.xlsx（输出目录不提交）。已更新线上原替换文件名，既有版式、抬头、其他字段不变；无需发布新代码。内置源模板已包含正确贸易条款。
+- 操作前完整备份 /var/lib/pi-manager/backups/pi-manager_20260917_235801.tar.gz（禁用 OSS 上传和清理），另留原替换模板 /var/lib/pi-manager/backups/default-template-before-trade-terms-20260917.xlsx。
+- 仅重新生成 PI-20260917-004 的现有 PDF/Excel 文件，校验 A12 Trade Terms、实际 PDF 包含 Trade Terms 且无 Customer Notes；数据库事务回滚，不修改金额、版本或条款。该 PI price_terms 当前为空，未擅自填 FOB。文件归属 pi-manager、0640，服务 active、内部登录 HTTP 200。其他旧 PI 文件未批量重生成，需要重新导出才应用更新。
+
 ## 最新接续（2026-09-17 系统盘清理）
 
 - 用户授权清理确认可清理文件后，检查 `/tmp/pi-manager-*`，仅选择含 app.py 和 ops/update_server.sh 的部署副本，排除符号链接，核对 /proc 进程工作目录、打开文件及内存映射无引用；删除 72 个未使用临时部署目录，并运行 apt-get clean 清理下载的软件包缓存。
