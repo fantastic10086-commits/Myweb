@@ -1051,12 +1051,21 @@ class SecuritySmokeTests(unittest.TestCase):
                 issue_date=pi.issue_date, shipping_cost=pi.shipping_cost, selected_items=submitted)
             self.assertTrue(any('品名' in change for change in changes))
             self.assertTrue(any('编码' in change for change in changes))
-        token = self.token(f'/pi/{pi_id}')
+        with application.app.app_context():
+            source = db.session.get(PI, pi_id)
+            source.issue_date = date(2020, 1, 1)
+            db.session.commit()
+        list_page = self.client.get('/pi/list').get_data(as_text=True)
+        self.assertIn('复制 PI', list_page)
+        self.assertIn(f'action="/pi/{pi_id}/copy"', list_page)
+        token = self.token('/pi/list')
         with patch.object(application, '_generate_default_pi_documents',
                           return_value=('test.pdf', 'test.xlsx')):
             self.client.post(f'/pi/{pi_id}/copy', data={'csrf_token': token})
         with application.app.app_context():
             copied = PI.query.filter(PI.notes == 'Description override test', PI.id != pi_id).one()
+            self.assertEqual(copied.issue_date, date.today())
+            self.assertTrue(copied.pi_number.startswith('PI-' + date.today().strftime('%Y%m%d') + '-'))
             self.assertEqual(copied.items[0].display_code, '')
             self.assertEqual(copied.items[0].display_name, 'Edited nozzle')
             self.assertEqual(copied.items[0].display_specification, 'Custom spec')

@@ -249,6 +249,14 @@
                                     更多
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end text-start">
+                                    <li>
+                                        <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="dropdown-item" title="复制为新 PI，日期使用今天">
+                                                <i class="bi bi-copy text-primary"></i>复制 PI
+                                            </button>
+                                        </form>
+                                    </li>
                                     {% set expense_count = pi.expenses|length %}
                                     <li>
                                         <button type="button" id="expenseBtn-{{ pi.id }}" class="dropdown-item"
