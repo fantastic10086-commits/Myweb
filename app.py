@@ -4141,6 +4141,19 @@ def supplier_statement(id):
     )
 
 
+def _supplier_name_error(name, exclude_id=None):
+    if not name:
+        return '供应商名称不能为空。'
+    if len(name) > 200:
+        return '供应商名称不能超过 200 个字符。'
+    query = Supplier.query.filter(func.lower(func.trim(Supplier.name)) == name.lower())
+    if exclude_id is not None:
+        query = query.filter(Supplier.id != exclude_id)
+    if query.first():
+        return '该供应商名称已经存在。'
+    return None
+
+
 @app.route('/suppliers/add', methods=['GET', 'POST'])
 @admin_required
 def supplier_add():
@@ -4154,8 +4167,9 @@ def supplier_add():
             address=request.form.get('address','').strip(),
             notes=request.form.get('notes','').strip(),
         )
-        if not s.name:
-            flash('供应商名称不能为空。', 'danger')
+        error = _supplier_name_error(s.name)
+        if error:
+            flash(error, 'danger')
             return render_template('supplier_form.html', s=s, editing=False)
         db.session.add(s)
         db.session.commit()
@@ -4169,15 +4183,14 @@ def supplier_edit(id):
     if not is_admin(): return redirect(url_for('index'))
     s = Supplier.query.get_or_404(id)
     if request.method == 'POST':
-        s.name = request.form.get('name','').strip()
-        s.contact_person = request.form.get('contact_person','').strip()
-        s.phone = request.form.get('phone','').strip()
-        s.email = request.form.get('email','').strip()
-        s.address = request.form.get('address','').strip()
-        s.notes = request.form.get('notes','').strip()
-        if not s.name:
-            flash('供应商名称不能为空。', 'danger')
-            return render_template('supplier_form.html', s=s, editing=True)
+        values = {field: request.form.get(field, '').strip() for field in
+                  ('name', 'contact_person', 'phone', 'email', 'address', 'notes')}
+        error = _supplier_name_error(values['name'], exclude_id=s.id)
+        if error:
+            flash(error, 'danger')
+            return render_template('supplier_form.html', s=SimpleNamespace(id=s.id, **values), editing=True)
+        for field, value in values.items():
+            setattr(s, field, value)
         db.session.commit()
         flash('供应商已更新。', 'success')
         return redirect(url_for('supplier_list'))
@@ -4200,17 +4213,13 @@ def api_supplier_list():
     if request.method == 'POST':
         data = request.get_json(silent=True) or {}
         name = str(data.get('name', '') or '').strip()
-        if not name:
-            return jsonify({'success': False, 'error': '供应商名称不能为空。'}), 400
-        if len(name) > 200:
-            return jsonify({'success': False, 'error': '供应商名称不能超过 200 个字符。'}), 400
-        existing = Supplier.query.filter(func.lower(Supplier.name) == name.lower()).first()
-        if existing:
-            return jsonify({
-                'success': False,
-                'error': '该供应商名称已经存在。',
-                'supplier': existing.to_dict(),
-            }), 409
+        error = _supplier_name_error(name)
+        if error:
+            existing = Supplier.query.filter(func.lower(func.trim(Supplier.name)) == name.lower()).first() if name else None
+            payload = {'success': False, 'error': error}
+            if existing:
+                payload['supplier'] = existing.to_dict()
+            return jsonify(payload), 409 if existing else 400
         supplier = Supplier(
             name=name,
             contact_person=str(data.get('contact_person', '') or '').strip()[:100],

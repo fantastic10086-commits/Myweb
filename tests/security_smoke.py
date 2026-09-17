@@ -1073,6 +1073,40 @@ class SecuritySmokeTests(unittest.TestCase):
         data['csrf_token'] = self.token('/pi/create')
         self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
 
+    def test_supplier_forms_block_duplicate_names_without_changing_existing_data(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            first = Supplier(name='Duplicate Supplier Alpha', phone='Original phone')
+            second = Supplier(name='Duplicate Supplier Beta', phone='Second phone')
+            db.session.add_all([first, second])
+            db.session.commit()
+            first_id, second_id = first.id, second.id
+            count = Supplier.query.count()
+        response = self.client.post('/suppliers/add', data={
+            'name': '  DUPLICATE SUPPLIER ALPHA  ', 'phone': 'Keep my input',
+            'csrf_token': self.token('/suppliers/add')})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('该供应商名称已经存在。', response.get_data(as_text=True))
+        self.assertIn('Keep my input', response.get_data(as_text=True))
+        response = self.client.post(f'/suppliers/{second_id}/edit', data={
+            'name': 'Duplicate Supplier Alpha', 'phone': 'Rejected phone',
+            'csrf_token': self.token(f'/suppliers/{second_id}/edit')})
+        self.assertIn('该供应商名称已经存在。', response.get_data(as_text=True))
+        with application.app.app_context():
+            self.assertEqual(Supplier.query.count(), count)
+            second = db.session.get(Supplier, second_id)
+            self.assertEqual(second.name, 'Duplicate Supplier Beta')
+            self.assertEqual(second.phone, 'Second phone')
+        response = self.client.post(f'/suppliers/{first_id}/edit', data={
+            'name': 'Duplicate Supplier Alpha', 'phone': 'Updated phone',
+            'csrf_token': self.token(f'/suppliers/{first_id}/edit')})
+        self.assertEqual(response.status_code, 302)
+        api_response = self.client.post('/api/suppliers', json={'name': 'duplicate supplier alpha'},
+            headers={'X-CSRFToken': self.token('/suppliers')})
+        self.assertEqual(api_response.status_code, 409)
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Supplier, first_id).phone, 'Updated phone')
+
     def test_duplicate_pi_rows_remain_independent_and_protect_references(self):
         self.login('admin-test')
         with application.app.app_context():
