@@ -786,3 +786,13 @@ class Procurement(db.Model):
             'procurement_date': self.procurement_date,
             'note': self.note,
         }
+
+
+class PIDraft(db.Model):
+    __tablename__ = 'pi_drafts'
+    id = db.Column(db.Integer, primary_key=True)
+    owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    payload = db.Column(db.Text, nullable=False, default='{}')
+    version = db.Column(db.Integer, nullable=False, default=1)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    converted_pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=True)

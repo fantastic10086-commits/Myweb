@@ -36,7 +36,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
-    db, Customer, Product, PI, PIItem, Salesperson, User, Account,
+    db, Customer, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision,
@@ -1759,6 +1759,8 @@ def _apply_pi_item_image(item, submitted):
 
 
 def _can_access_pi_item_image(filename):
+    if any(filename in _draft_images(draft) for draft in PIDraft.query.filter_by(owner_id=get_current_user().id).all()):
+        return True
     return any(item.pi.deleted_at is None and can_access_pi(item.pi) for item in PIItem.query.filter_by(image_override=filename).all())
 
 
@@ -4516,11 +4518,116 @@ def api_supplier_list():
 #  ROUTES — PI (Proforma Invoice)
 # ═══════════════════════════════════════════════════════════════════════
 
+def _owned_pi_draft(draft_id):
+    draft = db.session.get(PIDraft, draft_id)
+    if not draft or draft.owner_id != get_current_user().id:
+        abort(404)
+    return draft
+
+
+def _draft_images(draft):
+    return {row.get('imageSource') for row in json.loads(draft.payload).get('rows', []) if row.get('imageSource')}
+
+
+@app.route('/pi/drafts')
+@login_required
+def pi_drafts():
+    drafts = PIDraft.query.filter_by(owner_id=get_current_user().id, converted_pi_id=None).order_by(PIDraft.updated_at.desc()).all()
+    entries = [(draft, json.loads(draft.payload)) for draft in drafts]
+    return render_template('pi_drafts.html', entries=entries, timedelta=timedelta)
+
+
+@app.route('/pi/drafts/save', methods=['POST'])
+@login_required
+def pi_draft_save():
+    draft_id = request.form.get('draft_id', type=int)
+    draft = _owned_pi_draft(draft_id) if draft_id else None
+    if draft and (draft.converted_pi_id or draft.version != request.form.get('draft_version', type=int)):
+        return jsonify(error='草稿已更新或已生成正式 PI，请重新打开。'), 409
+    try:
+        rows = json.loads(request.form.get('draft_rows', '[]'))
+        if not isinstance(rows, list) or len(rows) > 500:
+            raise ValueError()
+        allowed = _draft_images(draft) if draft else set()
+        seen = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError()
+            row_id = int(row['id'])
+            if row_id in seen:
+                raise ValueError()
+            seen.add(row_id)
+            product = db.session.get(Product, int(row['productId']))
+            if not product:
+                raise ValueError()
+            source = row.get('imageSource', '')
+            if source and source not in allowed:
+                raise ValueError()
+            mode = row.get('imageMode', 'keep')
+            if mode not in {'keep', 'clear', 'catalog'}:
+                raise ValueError()
+            file = request.files.get('item_image_file_' + str(row_id))
+            if file and file.filename:
+                _validate_pi_item_image(file)
+                source = _save_upload(file)
+                if not source:
+                    raise ValueError()
+                mode = 'keep'
+            if mode in {'clear', 'catalog'}:
+                source = ''
+            row['imageSource'] = source
+            row['imageMode'] = mode
+            row['img'] = source or (product.image if mode != 'clear' else '') or ''
+            row['originalImage'] = product.image or ''
+            row.pop('imageFile', None)
+        fields = {key: value for key, value in request.form.items() if key in {
+            'customer_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
+            'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
+            'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note'}}
+        if fields.get('customer_id'):
+            require_customer_access(Customer.query.get_or_404(int(fields['customer_id'])))
+        if not is_admin():
+            fields['salesperson'] = current_salesperson_name()
+        payload = json.dumps({'fields': fields, 'rows': rows}, ensure_ascii=False)
+        if len(payload) > 1000000:
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        abort(400, description='草稿内容无效，请检查产品和图片。')
+    if draft:
+        count = PIDraft.query.filter_by(id=draft.id, version=draft.version, converted_pi_id=None).update(
+            {'payload': payload, 'version': draft.version + 1, 'updated_at': datetime.utcnow()}, synchronize_session=False)
+        if count != 1:
+            db.session.rollback()
+            return jsonify(error='草稿已更新，请重新打开。'), 409
+        db.session.expire(draft)
+    else:
+        draft = PIDraft(owner_id=get_current_user().id, payload=payload)
+        db.session.add(draft)
+    db.session.commit()
+    return jsonify(id=draft.id, version=draft.version, message='草稿已保存')
+
+
+@app.route('/pi/drafts/<int:id>/delete', methods=['POST'])
+@login_required
+def pi_draft_delete(id):
+    draft = _owned_pi_draft(id)
+    if draft.converted_pi_id:
+        abort(409)
+    db.session.delete(draft)
+    db.session.commit()
+    flash('草稿已删除。', 'success')
+    return redirect(url_for('pi_drafts'))
+
+
 @app.route('/pi/create', methods=['GET', 'POST'])
 @login_required
 def pi_create():
     customers = filter_by_user(Customer.query, Customer, 'salesperson').order_by(Customer.name).all()
     admin_flag = is_admin()
+    draft_id = request.values.get('draft_id', type=int)
+    draft = _owned_pi_draft(draft_id) if draft_id else None
+    if draft and draft.converted_pi_id:
+        return redirect(url_for('pi_detail', id=draft.converted_pi_id))
 
     if request.method == 'POST':
         customer_id = request.form.get('customer_id', type=int)
@@ -4605,7 +4712,7 @@ def pi_create():
         # Load only the rows submitted by the browser.  The former full-table
         # product query became expensive once the catalogue grew into the
         # thousands, even though the picker itself is paginated.
-        selected_items, total_amount = _submitted_pi_items(request.form)
+        selected_items, total_amount = _submitted_pi_items(request.form, allowed_image_sources=_draft_images(draft) if draft else None)
 
         if not selected_items:
             flash('请至少选择一个产品。', 'danger')
@@ -4615,6 +4722,12 @@ def pi_create():
                                    selected_customer_id=customer_id,
                                    is_admin=admin_flag)
 
+        if draft:
+            expected = request.form.get('draft_version', type=int)
+            count = PIDraft.query.filter_by(id=draft.id, version=expected, converted_pi_id=None).update(
+                {'version': PIDraft.version + 1}, synchronize_session=False)
+            if count != 1:
+                abort(409, description='草稿已更新，请重新打开后生成。')
         # Create PI record
         pi_number = _generate_pi_number()
         if not is_admin() and not selected_account:
@@ -4645,6 +4758,9 @@ def pi_create():
         _apply_bank_snapshot(pi, selected_account, bank_info)
         db.session.add(pi)
         db.session.flush()  # Get pi.id
+
+        if draft:
+            draft.converted_pi_id = pi.id
 
         # Create PI items
         for item in selected_items:
@@ -4697,6 +4813,8 @@ def pi_create():
                            pi=None,
                            today=date.today().strftime('%Y-%m-%d'),
                            selected_customer_id=selected_customer_id,
+                           draft_data=json.loads(draft.payload) if draft else None,
+                           draft_id=draft.id if draft else '', draft_version=draft.version if draft else '',
                            preselected_salesperson=preselected_salesperson,
                            is_admin=is_admin())
 

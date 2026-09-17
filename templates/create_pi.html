@@ -11,11 +11,14 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='pi_item_images.js') }}"></script>
+<script src="{{ url_for('static', filename='pi_row_drag.js') }}"></script>
 <div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS：等待中……</div>
 <script>
 document.getElementById('js_status').textContent='脚本运行正常 ✓';
 document.getElementById('js_status').style.background='#e0ffe0';
 document.getElementById('js_status').style.borderColor='green';
+var nextCopyId = -1000000000;
+var draftData = {{ (draft_data or none)|tojson }};
 var selectedProducts = {};
 var selectedProductOrder = [];
 var pickerSelections = {};
@@ -100,9 +103,12 @@ var adjustmentUsd = 0;
         tr.id = 'product_row_' + p.id;
         selectedProducts[p.id].productId = p.productId;
         selectedProducts[p.id].itemId = p.itemId;
+        selectedProducts[p.id].originalName = p.originalName;
+        selectedProducts[p.id].originalSpec = p.originalSpec;
+        selectedProducts[p.id].originalCode = p.originalCode;
         var sym = getSymbol();
         tr.innerHTML =
-            '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-move-up py-0 px-1" title="上移产品" aria-label="上移产品"><i class="bi bi-arrow-up"></i></button><button type="button" class="btn btn-sm btn-outline-secondary sel-move-down py-0 px-1" title="下移产品" aria-label="下移产品"><i class="bi bi-arrow-down"></i></button></div></td>' +
+            '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-drag py-0 px-1" style="cursor:grab;touch-action:none;" title="按住拖动排序；方向键上下移动" aria-label="拖动产品排序"><i class="bi bi-grip-vertical"></i></button></div></td>' +
             '<td><div class="d-flex align-items-start gap-2">' + PIItemImages.markup(p.id) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore">恢复原品名、规格和编码</button></div></div></td>' +
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '" style="min-width:110px;"></td>' +
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
@@ -141,8 +147,6 @@ var adjustmentUsd = 0;
             showHideEmpty();
             updateTotal();
         });
-        tr.querySelector('.sel-move-up').addEventListener('click', function() { moveProductRow(p.id, -1); });
-        tr.querySelector('.sel-move-down').addEventListener('click', function() { moveProductRow(p.id, 1); });
         tr.querySelector('.sel-copy').addEventListener('click', function() {
             var copy = Object.assign({}, p, selectedProducts[p.id], {id: nextCopyId--, itemId: null});
             selectedProducts[copy.id] = Object.assign({}, copy);
@@ -165,23 +169,10 @@ var adjustmentUsd = 0;
         return tr;
     }
 
-    function moveProductRow(id, direction) {
-        var index = selectedProductOrder.indexOf(id);
-        var target = index + direction;
-        if (index < 0 || target < 0 || target >= selectedProductOrder.length) return;
-        var row = document.getElementById('product_row_' + id);
-        var other = document.getElementById('product_row_' + selectedProductOrder[target]);
-        if (direction < 0) other.before(row); else other.after(row);
-        selectedProductOrder[index] = selectedProductOrder[target];
-        selectedProductOrder[target] = id;
-        renumberRows();
-    }
     function renumberRows() {
         var rows = selectedTableBody.querySelectorAll('tr');
         for (var i = 0; i < rows.length; i++) {
             rows[i].querySelector('.row-num').textContent = i + 1;
-            rows[i].querySelector('.sel-move-up').disabled = i === 0;
-            rows[i].querySelector('.sel-move-down').disabled = i === rows.length - 1;
         }
         var orderInput = document.getElementById('product_order');
         if (orderInput) orderInput.value = selectedProductOrder.join(',');
@@ -452,7 +443,62 @@ var adjustmentUsd = 0;
         }
         adjustmentUsd = toUsd(parseFloat(document.getElementById('shipping_cost').value) || 0);
         applyCurrency();
+        PIRowDrag(selectedTableBody, function() {
+            selectedProductOrder = Array.from(selectedTableBody.querySelectorAll('tr')).map(function(row) { return Number(row.id.replace('product_row_', '')); });
+            renumberRows();
+        });
+        if (draftData) {
+            Object.keys(draftData.fields).forEach(function(key) {
+                var el = form.elements.namedItem(key);
+                if (el) el.value = draftData.fields[key];
+            });
+            curSel.value = draftData.fields.currency || 'USD';
+            document.getElementById('cust_search').value = custSelect.selectedOptions.length ? custSelect.selectedOptions[0].text.trim() : '';
+            var sp = document.getElementById('pi_salesperson');
+            document.getElementById('sp_search').value = sp.value;
+            draftData.rows.forEach(function(saved) {
+                var p = Object.assign({}, saved, {priceUsd: toUsd(Number(saved.price) || 0)});
+                selectedProducts[p.id] = p; selectedProductOrder.push(Number(p.id));
+                var row = makeRow(p); selectedTableBody.appendChild(row);
+                row.querySelector('.sel-price').value = saved.priceRaw != null ? saved.priceRaw : saved.price;
+                row.querySelector('.sel-qty').value = saved.qtyRaw != null ? saved.qtyRaw : saved.qty;
+                nextCopyId = Math.min(nextCopyId, Number(p.id) - 1);
+            });
+            adjustmentUsd = toUsd(parseFloat(document.getElementById('shipping_cost').value) || 0);
+            renumberRows(); showHideEmpty(); updateTotal();
+        }
     });
+
+    async function saveDraft() {
+        var button = document.getElementById('save_draft');
+        button.disabled = true;
+        var form = document.getElementById('pi-form');
+        var data = new FormData(form);
+        var rows = selectedProductOrder.map(function(id) {
+            var saved = Object.assign({}, selectedProducts[id], {id: id});
+            delete saved.imageFile;
+            var row = document.getElementById('product_row_' + id);
+            saved.name = row.querySelector('.sel-name').value;
+            saved.spec = row.querySelector('.sel-spec').value;
+            saved.code = row.querySelector('.sel-code').value;
+            saved.priceRaw = row.querySelector('.sel-price').value;
+            saved.qtyRaw = row.querySelector('.sel-qty').value;
+            return saved;
+        });
+        data.set('draft_rows', JSON.stringify(rows));
+        try {
+            var response = await fetch({{ url_for('pi_draft_save')|tojson }}, {method: 'POST', body: data});
+            var result;
+            try { result = await response.json(); } catch (_) { throw new Error('草稿保存失败，请检查图片格式、大小或登录状态。'); }
+            if (!response.ok) throw new Error(result.error || '草稿保存失败');
+            document.getElementById('draft_id').value = result.id;
+            document.getElementById('draft_version').value = result.version;
+            // Reloading is unnecessary: subsequent saves keep selected Files and the original draft sources.
+            history.replaceState(null, '', {{ url_for('pi_create')|tojson }} + '?draft_id=' + result.id);
+            document.getElementById('draft_status').textContent = '草稿已保存，可从“我的草稿”继续填写。';
+        } catch (error) { alert(error.message); }
+        finally { button.disabled = false; }
+    }
 
     function escHtml(s) {
         return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -519,6 +565,9 @@ var adjustmentUsd = 0;
 <div id="submit_status" style="background:#fff3cd;border:2px solid #ffc107;padding:8px 10px;margin:8px 0;font-size:14px;font-weight:bold;">📋 表单已加载，可以创建 PI。</div>
 {% if customers %}
 <form enctype="multipart/form-data" method="post" action="{{ url_for('pi_create') }}" id="pi-form">
+    <div class="mb-3"><a href="{{ url_for('pi_drafts') }}">我的草稿</a><span class="text-muted ms-2">未填写完整也可以暂存，保存后可继续编辑。</span></div>
+    <input type="hidden" id="draft_id" name="draft_id" value="{{ draft_id or '' }}">
+    <input type="hidden" id="draft_version" name="draft_version" value="{{ draft_version or '' }}">
     <input type="hidden" name="product_order" id="product_order" value="">
     <div class="row g-4">
         <div class="col-lg-5">
@@ -622,6 +671,9 @@ var adjustmentUsd = 0;
                 </div>
             </div>
             <div class="mt-3 text-end">
+                <span id="draft_status" class="text-muted me-2"></span>
+                <a class="btn btn-outline-secondary" href="{{ url_for('pi_drafts') }}">我的草稿</a>
+                <button id="save_draft" type="button" class="btn btn-outline-primary" onclick="saveDraft()">暂存草稿</button>
                 <button type="button" class="btn btn-primary btn-lg" onclick="var st=document.getElementById('submit_status');if(st){st.style.display='block';st.textContent='正在提交……';st.style.background='#cce5ff';} var f=document.getElementById('pi-form'); if(f){ var cust=f.querySelector('#customer_id'); var sp=f.querySelector('#pi_salesperson'); var notes=f.querySelector('#notes'); var np=selectedProductOrder.length; if(!cust.value){alert('请选择客户。');return;} if(!sp.value){alert('请选择业务员。');return;} if(!notes.value.trim()){alert('请填写 PI 备注。');notes.focus();return;} if(np===0){alert('请至少添加一个产品。');return;} st.textContent='正在提交……'; updateTotal(); f.submit(); } else { alert('未找到表单！'); }"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
             </div>
         </div>

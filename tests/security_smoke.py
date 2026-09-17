@@ -102,6 +102,57 @@ class SecuritySmokeTests(unittest.TestCase):
         receipt.seek(0)
         return receipt, filename
 
+    def test_pi_draft_incomplete_save_resume_isolated_and_versioned(self):
+        import json
+        from models import PIDraft
+        self.login('alice')
+        token = self.token('/pi/create')
+        with application.app.app_context():
+            before = PI.query.count()
+            product = Product.query.first()
+            product_id = product.id
+        row = {'id': product_id, 'productId': product_id, 'name': '', 'code': '', 'spec': 'draft spec', 'price': 9.5, 'priceUsd': 9.5, 'qty': 2, 'priceRaw': '', 'qtyRaw': '', 'imageMode': 'keep', 'imageSource': ''}
+        result = self.client.post('/pi/drafts/save', data={
+            'csrf_token': token, 'notes': '', 'currency': 'USD', 'draft_rows': json.dumps([row]),
+            'item_image_file_' + str(product_id): self.image_upload(),
+        })
+        self.assertEqual(result.status_code, 200)
+        saved = result.get_json()
+        draft_id = saved['id']
+        self.assertIn('draft spec', self.client.get('/pi/create?draft_id=' + str(draft_id)).get_data(as_text=True))
+        with application.app.app_context():
+            draft = db.session.get(PIDraft, draft_id)
+            source = json.loads(draft.payload)['rows'][0]['imageSource']
+            self.assertTrue(source)
+            self.assertEqual(PI.query.count(), before)
+        self.assertEqual(self.client.get('/uploads/' + source).status_code, 200)
+        stale = self.client.post('/pi/drafts/save', data={'csrf_token': token, 'draft_id': draft_id, 'draft_version': 0, 'draft_rows': '[]'})
+        self.assertEqual(stale.status_code, 409)
+        self.login('bob')
+        self.assertEqual(self.client.get('/pi/create?draft_id=' + str(draft_id)).status_code, 404)
+        self.assertEqual(self.client.get('/uploads/' + source).status_code, 404)
+        self.login('alice')
+        token = self.token('/pi/create')
+        row.update(name='Draft row', imageSource=source)
+        updated = self.client.post('/pi/drafts/save', data={'csrf_token': token, 'draft_id': draft_id, 'draft_version': saved['version'], 'draft_rows': json.dumps([row]), 'notes': 'draft saved'}).get_json()
+        with patch.object(application, '_generate_default_pi_documents', return_value=('draft.pdf', 'draft.xlsx')):
+            response = self.client.post('/pi/create', data={
+                'csrf_token': token, 'draft_id': draft_id, 'draft_version': updated['version'],
+                'customer_id': self.alice_customer, 'notes': 'converted', 'salesperson': 'Alice',
+                'account_id': self.approved_account, 'currency': 'USD', 'exchange_rate': '7',
+                'selected_' + str(product_id): 'on', 'qty_' + str(product_id): '2',
+                'unit_price_' + str(product_id): '9.5', 'item_image_source_' + str(product_id): source,
+            })
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            draft = db.session.get(PIDraft, draft_id)
+            self.assertTrue(draft.converted_pi_id)
+            self.assertEqual(db.session.get(PI, draft.converted_pi_id).items[0].image_override, source)
+            after = PI.query.count()
+        self.client.post('/pi/create', data={'csrf_token': token, 'draft_id': draft_id, 'draft_version': updated['version']})
+        with application.app.app_context():
+            self.assertEqual(PI.query.count(), after)
+
     def test_login_account_resolves_username_and_authenticates(self):
         token = self.token()
         lookup = self.client.post('/login/account-name', json={
