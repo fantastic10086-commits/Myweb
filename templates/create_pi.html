@@ -388,6 +388,8 @@ var adjustmentUsd = 0;
             var opt = sel.options[sel.selectedIndex];
             var bank = opt.getAttribute('data-bank') || '';
             var brand = opt.getAttribute('data-brand') || 'klista';
+            var currentBrand = document.getElementById('company_hidden').value;
+            if ((opt.getAttribute('data-brands') || '').split(',').includes(currentBrand)) brand = currentBrand;
             var currency = opt.getAttribute('data-currency') || '';
             document.getElementById('bank_info').value = bank;
             document.getElementById('company_hidden').value = brand;
@@ -549,7 +551,7 @@ var adjustmentUsd = 0;
                         <div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
                     <div class="mb-3"><label for="notes" class="form-label">PI 备注 <span class="text-danger">*</span></label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="该 PI 的其他备注……" required>{{ request.form.get('notes', '') }}</textarea></div>
-                    <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— 选择收款账户 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">选择后会整组带入收款人、账号、银行地址、SWIFT、Bank Code、Branch Code 和币种。</div></div>
+                    <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select" name="account_id" id="account_select" onchange="onAccountChange()"><option value="">— 选择收款账户 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">选择后会整组带入收款人、账号、银行地址、SWIFT、Bank Code、Branch Code 和币种。</div></div>
                     <div class="mb-3"><label class="form-label">币种</label><select class="form-select" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value="USD"></div>
                     <div class="mb-3">
                         <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>

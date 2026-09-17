@@ -56,7 +56,7 @@ class SecuritySmokeTests(unittest.TestCase):
                      role='admin', salesperson_name='', must_change_password=False),
                 Customer(name='Alice Customer', salesperson='Alice'),
                 Customer(name='Bob Customer', salesperson='Bob'),
-                Account(name='Approved', bank_name='SAFE BANK', account_no='123', swift_code='SAFE'),
+                Account(name='Approved', bank_name='SAFE BANK', account_no='123', swift_code='SAFE', brand='klista,qisuo'),
                 Product(name='Original Product', product_code='ORIG', specification='Original spec', unit_price=10),
             ])
             db.session.commit()
@@ -2808,6 +2808,137 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(pi.customs_note, 'KEEP-CUSTOMS-NOTE')
             self.assertEqual(pi.effective_procurement_status, '发货完成')
 
+    def test_account_brand_multiselect_validation_and_legacy_preservation(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            a = Account(name='Brand Test', brand='qisuo', currency='USD')
+            db.session.add(a)
+            db.session.commit()
+            account_id = a.id
+        url = f'/accounts/{account_id}/edit'
+        data = {'name': 'Brand Test', 'currency': 'USD',
+                'current_password': 'AdminPass123!', 'brand': ['klista', 'qisuo']}
+        data['csrf_token'] = self.token(url)
+        self.assertEqual(self.client.post(url, data=data).status_code, 302)
+        with application.app.app_context():
+            a = db.session.get(Account, account_id)
+            self.assertEqual(a.brands, ['klista', 'qisuo'])
+            self.assertEqual(a.brand, 'klista,qisuo')
+        for values in ([], ['klista', 'invalid']):
+            data['brand'] = values
+            data['name'] = 'Must not change'
+            data['csrf_token'] = self.token(url)
+            self.assertEqual(self.client.post(url, data=data).status_code, 400)
+            with application.app.app_context():
+                a = db.session.get(Account, account_id)
+                self.assertEqual(a.name, 'Brand Test')
+                self.assertEqual(a.brands, ['klista', 'qisuo'])
+        self.assertIn('type="checkbox" name="brand"', self.client.get(url).get_data(as_text=True))
+
+    def test_receiving_account_association_and_ambiguous_legacy_snapshot(self):
+        with application.app.test_request_context('/pi/test'):
+            pi = db.session.get(PI, self.alice_pi)
+            copy = application._pi_export_copy(pi)
+            a = db.session.get(Account, self.approved_account)
+            application._apply_bank_snapshot(copy, a)
+            self.assertEqual(copy.bank_receiving_account_id, a.id)
+            self.assertEqual(application._matching_account_for_pi(copy).id, a.id)
+            application._validate_export_account_brand(copy)
+            workbook = Workbook()
+            workbook.active['A1'] = 'CHANGZHOU QISUO CO., LTD'
+            source = os.path.join(TEST_ROOT.name, 'fixed-company-test.xlsx')
+            workbook.save(source)
+            workbook.close()
+            with patch.object(application, '_template_file_path', return_value=source):
+                with self.assertRaises(ValueError):
+                    application._validate_export_account_brand(copy, SimpleNamespace(template_type='xlsx'))
+            clone = Account(name='Ambiguous account', brand='qisuo',
+                            bank_name=a.bank_name, account_no=a.account_no,
+                            swift_code=a.swift_code, currency=a.currency)
+            db.session.add(clone)
+            db.session.flush()
+            try:
+                copy.bank_receiving_account_id = None
+                self.assertIsNone(application._matching_account_for_pi(copy))
+                with self.assertRaises(ValueError):
+                    application._validate_export_account_brand(copy)
+                copy.bank_receiving_account_id = a.id
+                application._validate_export_account_brand(copy)
+                user = User.query.filter_by(username='admin-test').one()
+                application.session['user_id'] = user.id
+                application.session['auth_version'] = user.auth_version
+                with self.assertRaises(ValueError):
+                    application._apply_export_form(MultiDict({
+                        'bank_info': 'FAKE RECIPIENT', 'shipping_cost': '0',
+                    }), copy)
+                copy._company_name_override = 'FAKE COMPANY'
+                with self.assertRaises(ValueError):
+                    application._validate_export_account_brand(copy)
+            finally:
+                db.session.rollback()
+
+    def test_export_brand_mismatch_blocks_preview_download_and_direct_routes(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            pi = db.session.get(PI, self.alice_pi)
+            old = (pi.company, pi.bank_info, pi.bank_receiving_account_id)
+            a = Account(name='Export Brand Guard', bank_name='GUARD BANK',
+                        account_no='brand-guard-123', brand='klista')
+            db.session.add(a)
+            db.session.flush()
+            account_id = a.id
+            pi.company = 'qisuo'
+            pi.bank_info = application._legacy_account_bank_info(a)
+            # Legacy PI deliberately has no account ID: uniquely match its snapshot.
+            pi.bank_receiving_account_id = None
+            db.session.commit()
+            template_id = DocumentTemplate.query.filter_by(code='system-default').one().id
+        url = f'/pi/{self.alice_pi}/export'
+        try:
+            for mode, fmt in [('preview', 'pdf'), ('download', 'pdf'), ('download', 'xlsx')]:
+                data = {'company_header': 'qisuo', 'template_id': template_id,
+                        'mode': mode, 'output_format': fmt, 'shipping_cost': '0',
+                        'csrf_token': self.token(url)}
+                with patch.object(application, '_render_pi_export') as renderer:
+                    response = self.client.post(url, data=data)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn('不一致', response.get_json()['error'])
+                    renderer.assert_not_called()
+            with patch.object(application, '_render_pi_export') as renderer:
+                self.assertEqual(self.client.get(f'/pi/{self.alice_pi}/download').status_code, 302)
+                renderer.assert_not_called()
+            self.assertEqual(self.client.get(f'/pi/{self.alice_pi}/excel').status_code, 302)
+            # Mismatch fixed by selecting a matching company; real xlsx generation succeeds.
+            data.update(company_header='klista', mode='download', output_format='xlsx')
+            response = self.client.post(url, data=data)
+            self.assertEqual(response.status_code, 200)
+            response.close()
+            with application.app.app_context():
+                a = db.session.get(Account, account_id)
+                a.brand = 'klista,qisuo'
+                db.session.commit()
+            data['company_header'] = 'qisuo'
+            response = self.client.post(url, data=data)
+            self.assertEqual(response.status_code, 200)
+            response.close()
+            with application.app.app_context():
+                a = db.session.get(Account, account_id)
+                a.brand = ''
+                db.session.commit()
+            self.assertEqual(self.client.post(url, data=data).status_code, 400)
+            data['account_id'] = '99999999'
+            self.assertEqual(self.client.post(url, data=data).status_code, 400)
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                self.assertEqual(pi.company, 'qisuo')
+                self.assertEqual(pi.bank_receiving_account_id, None)
+                self.assertEqual(pi.bank_info, 'GUARD BANK\nA/C: brand-guard-123')
+        finally:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                pi.company, pi.bank_info, pi.bank_receiving_account_id = old
+                db.session.commit()
+
     def test_bank_account_change_requires_current_admin_password(self):
         self.login('admin-test')
         token = self.token('/accounts/add')
@@ -2818,7 +2949,7 @@ class SecuritySmokeTests(unittest.TestCase):
         with application.app.app_context():
             self.assertIsNone(Account.query.filter_by(name='Protected Account').first())
         allowed = self.client.post('/accounts/add', data={
-            'name': 'Protected Account', 'current_password': 'AdminPass123!',
+            'name': 'Protected Account', 'brand': 'klista', 'current_password': 'AdminPass123!',
             'csrf_token': self.token('/accounts/add'),
         })
         self.assertEqual(allowed.status_code, 302)

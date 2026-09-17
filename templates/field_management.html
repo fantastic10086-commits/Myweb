@@ -164,7 +164,7 @@
                         <td>{{ a.bank_name[:30] }}</td>
                         <td>{{ a.account_no }}</td>
                         <td>{{ a.swift_code }}{% if a.bank_code %}<div class="small text-muted">Bank: {{ a.bank_code }}</div>{% endif %}{% if a.branch_code %}<div class="small text-muted">Branch: {{ a.branch_code }}</div>{% endif %}</td>
-                        <td>{{ 'QISUO' if a.brand == 'qisuo' else '克利斯达' }}</td>
+                        <td>{{ a.brand_label }}</td>
                         <td class="text-end text-nowrap">
                             <a href="{{ url_for('account_edit', id=a.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
                             <form action="{{ url_for('account_delete', id=a.id) }}" method="post" class="d-inline" onsubmit="return confirmAccountDelete(this, {{ a.name|tojson }});">

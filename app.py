@@ -299,7 +299,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '7.0'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '7.0'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -1536,6 +1536,7 @@ BANK_SNAPSHOT_FIELDS = (
 def _apply_bank_snapshot(pi, account, freeform='', preserve_existing=False):
     """Apply a complete, historical receiving-account snapshot to one PI."""
     if account:
+        pi.bank_receiving_account_id = account.id
         pi.bank_info = account.bank_info()
         for field, value in account.snapshot().items():
             setattr(pi, field, value)
@@ -1545,6 +1546,7 @@ def _apply_bank_snapshot(pi, account, freeform='', preserve_existing=False):
             pi.bank_info if preserve_existing else ''
         )
         if not preserve_existing:
+            pi.bank_receiving_account_id = None
             for field in BANK_SNAPSHOT_FIELDS:
                 setattr(pi, field, '')
 
@@ -1562,17 +1564,64 @@ def _legacy_account_bank_info(account):
 
 def _matching_account_for_pi(pi):
     """Return the account originally saved on the PI when it still exists."""
+    account_id = getattr(pi, 'bank_receiving_account_id', None)
+    if account_id:
+        return db.session.get(Account, account_id)
     pi_currency = (pi.currency or 'USD').upper()
     saved_bank_info = (pi.bank_info or '').strip()
     saved_account_no = (getattr(pi, 'bank_account_no', '') or '').strip()
+    candidates = []
     for account in Account.query.filter_by(currency=pi_currency).order_by(Account.name).all():
         if saved_account_no and saved_account_no == (account.account_no or '').strip():
-            return account
-        if saved_bank_info in {
+            saved_bank = (getattr(pi, 'bank_name', '') or '').strip()
+            saved_beneficiary = (getattr(pi, 'bank_beneficiary_name', '') or '').strip()
+            if saved_bank and saved_bank != (account.bank_name or '').strip():
+                continue
+            if saved_beneficiary and saved_beneficiary != (account.company_name or '').strip():
+                continue
+            candidates.append(account)
+        elif saved_bank_info and saved_bank_info in {
             account.bank_info().strip(), _legacy_account_bank_info(account).strip()
         }:
-            return account
-    return None
+            candidates.append(account)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _account_brands_from_form(form):
+    values = form.getlist('brand')
+    if not values or any(b not in {'klista', 'qisuo'} for b in values):
+        raise ValueError('请至少选择一个有效的所属品牌。')
+    return ','.join(b for b in ('klista', 'qisuo') if b in values)
+
+
+def _validate_export_account_brand(export_pi, template=None):
+    account = _matching_account_for_pi(export_pi)
+    if not account:
+        raise ValueError('无法确认当前收款账户，请选择收款账户；旧账户不存在或信息不唯一时需先完善账户。')
+    if not account.brands:
+        raise ValueError('收款账户未设置所属品牌，请先在收款账户管理中补充品牌。')
+    if export_pi.company not in account.brands:
+        raise ValueError(f'公司抬头 {str(export_pi.company).upper()} 与收款账户“{account.name}”所属品牌（{account.brand_label}）不一致，禁止预览和导出。请更换抬头或收款账户。')
+    expected = _company_name(SimpleNamespace(company=export_pi.company))
+    normalize = lambda value: ''.join(c for c in value.casefold() if c.isalnum())
+    if normalize(_company_name(export_pi)) != normalize(expected):
+        raise ValueError('当前公司名称与所选公司抬头不一致，禁止预览和导出。请恢复所选公司的标准名称。')
+    if template and template.template_type == 'xlsx':
+        from openpyxl import load_workbook
+        workbook = load_workbook(_template_file_path(template), read_only=True, data_only=False)
+        try:
+            # Existing company headers are in the first six rows. Detect fixed
+            # KLISTA/QISUO titles in uploaded sources, alongside dynamic headers.
+            for row in workbook.active.iter_rows(min_row=1, max_row=6):
+                for cell in row:
+                    text = str(cell.value or '').casefold()
+                    fixed_brands = [brand for brand in ('klista', 'qisuo') if brand in text]
+                    if any(brand != export_pi.company for brand in fixed_brands):
+                        raise ValueError('模板顶部包含与所选公司不一致的固定抬头，禁止预览和导出。请更换模板或使用动态公司抬头。')
+        finally:
+            workbook.close()
+
+
 
 def _normalize_payment_reference(value):
     return ''.join(str(value or '').split()).casefold()
@@ -4009,6 +4058,11 @@ def account_add():
     if request.method == 'POST':
         if not _require_current_password():
             return render_template('account_form.html', a=None, editing=False), 403
+        try:
+            brands = _account_brands_from_form(request.form)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return render_template('account_form.html', a=None, editing=False), 400
         currency = request.form.get('currency', 'USD').strip().upper()
         if currency not in {'USD', 'RMB'}:
             flash('收款账户币种只能选择美元或人民币。', 'danger')
@@ -4024,7 +4078,7 @@ def account_add():
             swift_code=request.form.get('swift_code','').strip(),
             bank_code=request.form.get('bank_code','').strip(),
             branch_code=request.form.get('branch_code','').strip(),
-            brand=request.form.get('brand','klista').strip(),
+            brand=brands,
             currency=currency,
             notes=request.form.get('notes','').strip(),
         )
@@ -4048,6 +4102,11 @@ def account_edit(id):
     if request.method == 'POST':
         if not _require_current_password():
             return render_template('account_form.html', a=a, editing=True), 403
+        try:
+            brands = _account_brands_from_form(request.form)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return render_template('account_form.html', a=a, editing=True), 400
         currency = request.form.get('currency', 'USD').strip().upper()
         if currency not in {'USD', 'RMB'}:
             flash('收款账户币种只能选择美元或人民币。', 'danger')
@@ -4066,7 +4125,7 @@ def account_edit(id):
         a.swift_code = request.form.get('swift_code','').strip()
         a.bank_code = request.form.get('bank_code','').strip()
         a.branch_code = request.form.get('branch_code','').strip()
-        a.brand = request.form.get('brand','klista').strip()
+        a.brand = brands
         a.currency = currency
         a.notes = request.form.get('notes','').strip()
         _audit('update', 'account', a.id, f'修改收款账户：{a.name}', before=before,
@@ -4425,7 +4484,7 @@ def pi_create():
         selected_account = db.session.get(Account, account_id) if account_id else None
         if not is_admin() and selected_account:
             currency = selected_account.currency or 'USD'
-            company = selected_account.brand or 'klista'
+            company = company if company in selected_account.brands else selected_account.primary_brand
         if currency not in {'USD', 'RMB'} or company not in {'klista', 'qisuo'}:
             abort(400)
 
@@ -4545,7 +4604,7 @@ def pi_create():
                                    is_admin=admin_flag)
 
         _audit('create', 'pi', pi.id, f'新增 PI：{pi.pi_number}',
-               after=_snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
+               after=_snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
         db.session.commit()
         flash(f'PI {pi_number} 已创建并生成 PDF。', 'success')
         return redirect(url_for('pi_detail', id=pi.id))
@@ -5422,6 +5481,7 @@ def pi_download(id):
     try:
         template = _export_template()
         export_pi = _pi_export_copy(pi)
+        _validate_export_account_brand(export_pi, template)
         output_path, mimetype = _render_pi_export(
             export_pi, template, 'pdf', work_dir, preview=False
         )
@@ -5462,6 +5522,11 @@ def pi_excel_download(id):
         joinedload(PI.items).joinedload(PIItem.product),
     ).get_or_404(id)
     require_pi_access(pi)
+    try:
+        _validate_export_account_brand(_pi_export_copy(pi))
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('pi_export', id=id))
     # Auto-generate if missing
     if not pi.excel_path or not os.path.exists(os.path.join(app.config['PDF_DIR'], pi.excel_path)):
         try:
@@ -5851,6 +5916,7 @@ def pi_copy(id):
         price_terms=original.price_terms,
         delivery_time=original.delivery_time,
         bank_info=original.bank_info,
+        bank_receiving_account_id=original.bank_receiving_account_id,
         salesperson=original.salesperson,
         currency=original.currency or 'USD',
         exchange_rate=_pi_exchange_rate(original),
@@ -6134,7 +6200,7 @@ def pi_edit(id):
             db.session.rollback()
             flash('该 PI 已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('pi_edit', id=id))
-        before = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        before = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         before['items'] = [item.to_dict() for item in pi.items]
         old_customer_id = pi.customer_id
         customer_id = request.form.get('customer_id', type=int)
@@ -6171,7 +6237,7 @@ def pi_edit(id):
         if not is_admin():
             if selected_account:
                 currency = selected_account.currency or pi.currency or 'USD'
-                company = selected_account.brand or pi.company or 'klista'
+                company = pi.company if pi.company in selected_account.brands else selected_account.primary_brand
             else:
                 currency = pi.currency or 'USD'
                 company = pi.company or 'klista'
@@ -6312,7 +6378,7 @@ def pi_edit(id):
             return render_edit_page()
 
         pi.version = (pi.version or 1) + 1
-        after = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        after = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         after['items'] = [item.to_dict() for item in pi.items]
         if structural_changes:
             after['structural_changes'] = structural_changes
@@ -6472,6 +6538,7 @@ def _pi_export_copy(pi):
         price_terms=pi.price_terms,
         delivery_time=pi.delivery_time,
         bank_info=pi.bank_info,
+        bank_receiving_account_id=pi.bank_receiving_account_id,
         shipping_address=pi.shipping_address,
         shipping_note=pi.shipping_note,
         shipping_note_en=pi.shipping_note_en,
@@ -6533,6 +6600,10 @@ def _apply_export_form(form, export_pi):
     if is_admin():
         account_id = form.get('account_id', type=int)
         account = db.session.get(Account, account_id) if account_id else None
+        if form.get('account_id') and not account:
+            raise ValueError('所选收款账户不存在，请重新选择。')
+        if not account and 'bank_info' in form and form.get('bank_info', '').strip() != (export_pi.bank_info or '').strip():
+            raise ValueError('请通过收款账户选择整组切换银行信息，不能手动改写银行信息后导出。')
         _apply_bank_snapshot(
             export_pi, account, form.get('bank_info', ''), preserve_existing=not account
         )
@@ -6579,6 +6650,7 @@ def _export_copy_snapshot(export_pi):
         'price_terms': export_pi.price_terms,
         'delivery_time': export_pi.delivery_time,
         'bank_info': export_pi.bank_info,
+        'bank_receiving_account_id': export_pi.bank_receiving_account_id,
         'bank_snapshot': {
             field: getattr(export_pi, field, '') or ''
             for field in BANK_SNAPSHOT_FIELDS
@@ -6912,6 +6984,7 @@ def pi_export(id):
         return render_template(
             'live_edit_pi.html', pi=pi, templates=templates,
             selected_template=selected_template,
+            current_receiving_account=_matching_account_for_pi(pi),
             company_headers={brand: {
                 'name': _company_name(SimpleNamespace(company=brand)),
                 'address': _company_address(SimpleNamespace(company=brand)),
@@ -6928,6 +7001,7 @@ def pi_export(id):
         export_pi = _pi_export_copy(pi)
         original_snapshot = _export_copy_snapshot(export_pi)
         _apply_export_form(request.form, export_pi)
+        _validate_export_account_brand(export_pi, template)
         export_snapshot = _export_copy_snapshot(export_pi)
         output_path, mimetype = _render_pi_export(
             export_pi, template, output_format, work_dir, preview=(mode == 'preview')

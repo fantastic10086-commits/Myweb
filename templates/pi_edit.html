@@ -243,6 +243,8 @@
             var opt = sel.options[sel.selectedIndex];
             var bank = opt.getAttribute('data-bank') || '';
             var brand = opt.getAttribute('data-brand') || 'klista';
+            var currentBrand = document.getElementById('company_hidden').value;
+            if ((opt.getAttribute('data-brands') || '').split(',').includes(currentBrand)) brand = currentBrand;
             var currency = opt.getAttribute('data-currency') || '';
             document.getElementById('bank_info').value = bank;
             document.getElementById('company_hidden').value = brand;
@@ -339,7 +341,7 @@
             <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{{ pi.customer.notes if pi.customer and pi.customer.notes else '—' }}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
             <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
-            <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select pi-structural-control" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
+            <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select pi-structural-control" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
             <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
             <div class="mb-3">
                 <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>

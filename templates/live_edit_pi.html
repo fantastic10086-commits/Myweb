@@ -44,7 +44,7 @@
                     <option value="klista" {% if pi.company != 'qisuo' %}selected{% endif %}>KLISTA</option>
                     <option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>QISUO</option>
                 </select>
-                <div class="form-text">仅本次导出；切换保留银行信息。</div>
+                <div class="form-text">仅本次导出；抬头须匹配账户所属品牌。</div>
             </div>
             <div class="col-lg-2">
                 <label class="form-label fw-bold" for="output_format">下载格式</label>
@@ -221,17 +221,17 @@
             <div class="col-md-4">
                 <label class="form-label fw-bold small">收款账户（整组切换）</label>
                 <select class="form-select form-select-sm" name="account_id" id="export_account_select" onchange="onExportAccountChange()">
-                    <option value="" selected>— 保留当前快照 —</option>
+                    <option value="" selected>— 保留当前快照{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>
                     {% for a in all_accounts %}
-                    <option value="{{ a.id }}" data-bank="{{ a.bank_info() }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>
+                    <option value="{{ a.id }}" data-bank="{{ a.bank_info() }}" data-brands="{{ a.brand }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %} / {{ a.brand_label }}</option>
                     {% endfor %}
                 </select>
-                <div class="form-text">仅影响本次导出副本。</div>
+                <div class="form-text">仅影响本次导出副本；通过账户选择切换银行信息。</div>
             </div>
             {% endif %}
             <div class="{% if is_admin %}col-md-8{% else %}col-md-12{% endif %}">
                 <label class="form-label fw-bold small">银行信息快照{% if not is_admin %}（只读）{% endif %}</label>
-                <textarea class="form-control form-control-sm" id="export_bank_info" name="bank_info" rows="6" {% if not is_admin %}readonly{% endif %}>{{ pi.bank_info or '' }}</textarea>
+                <textarea class="form-control form-control-sm" id="export_bank_info" readonly name="bank_info" rows="6">{{ pi.bank_info or '' }}</textarea>
             </div>
             <div class="col-md-6">
                 <label class="form-label fw-bold small">收货地址</label>
@@ -300,9 +300,20 @@ function setExportBusy(busy, message, error) {
     status.textContent = message || '';
 }
 
+const currentAccountBrands = {{ (current_receiving_account.brands if current_receiving_account else [])|tojson }};
+function exportBrandError() {
+    const select = document.getElementById('export_account_select');
+    let brands = currentAccountBrands;
+    if (select && select.value) brands = (select.options[select.selectedIndex].getAttribute('data-brands') || '').split(',');
+    if (!brands.length || !brands.some(b => b === 'klista' || b === 'qisuo')) return '当前收款账户无法确认或未设置所属品牌，请先完善收款账户。';
+    if (!brands.includes(document.getElementById('company_header').value)) return '公司抬头与收款账户所属品牌不一致，禁止预览和导出。请更换抬头或收款账户。';
+    return '';
+}
 async function exportDocument(mode) {
     const form = document.getElementById('exportForm');
     if (!form.reportValidity()) return;
+    const brandError = exportBrandError();
+    if (brandError) { alert(brandError); setExportBusy(false, brandError, true); return; }
     const data = new FormData(form);
     data.set('mode', mode);
     setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false);
@@ -331,6 +342,7 @@ async function exportDocument(mode) {
             setExportBusy(false, '文件已导出；原始 PI 未被修改。', false);
         }
     } catch (error) {
+        alert(error.message || '导出失败。');
         setExportBusy(false, error.message || '导出失败。', true);
     }
 }

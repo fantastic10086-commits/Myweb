@@ -68,10 +68,22 @@ class Account(db.Model):
     swift_code = db.Column(db.String(50), default='')
     bank_code = db.Column(db.String(50), default='')
     branch_code = db.Column(db.String(50), default='')
-    brand = db.Column(db.String(20), default='klista')  # 'klista' or 'qisuo'
+    brand = db.Column(db.String(20), default='klista')  # comma-separated klista/qisuo; old single values remain valid
     currency = db.Column(db.String(3), default='USD')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    @property
+    def brands(self):
+        return [b for b in ('klista', 'qisuo') if b in (self.brand or '').split(',')]
+
+    @property
+    def brand_label(self):
+        return ' / '.join(b.upper() for b in self.brands) or '未设置'
+
+    @property
+    def primary_brand(self):
+        return self.brands[0] if self.brands else 'klista'
 
     def bank_info(self):
         parts = []
@@ -111,7 +123,7 @@ class Account(db.Model):
             'bank_address': self.bank_address,
             'swift_code': self.swift_code, 'bank_code': self.bank_code,
             'branch_code': self.branch_code,
-            'brand': self.brand, 'currency': self.currency, 'notes': self.notes,
+            'brand': self.brand, 'brands': self.brands, 'currency': self.currency, 'notes': self.notes,
         }
 
 
@@ -330,6 +342,7 @@ class PI(db.Model):
     price_terms = db.Column(db.String(200), default='')
     delivery_time = db.Column(db.String(200), default='')
     bank_info = db.Column(db.Text, default='')
+    bank_receiving_account_id = db.Column(db.Integer, nullable=True)
     # Complete receiving-account snapshot.  Changing an account later must not
     # silently rewrite historical outward documents.
     bank_beneficiary_name = db.Column(db.String(300), default='')
@@ -451,6 +464,7 @@ class PI(db.Model):
             'price_terms': self.price_terms,
             'delivery_time': self.delivery_time,
             'bank_info': self.bank_info,
+            'bank_receiving_account_id': self.bank_receiving_account_id,
             'bank_beneficiary_name': self.bank_beneficiary_name,
             'bank_account_no': self.bank_account_no,
             'bank_country_region': self.bank_country_region,

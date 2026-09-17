@@ -4,7 +4,7 @@
 <div class="row mb-3 align-items-center"><div class="col-md-6"><h2><i class="bi bi-bank me-2"></i>收款账户</h2></div><div class="col-md-6 text-md-end"><a href="{{ url_for('account_add') }}" class="btn btn-primary"><i class="bi bi-plus"></i> 新增账户</a></div></div>
 <div class="card"><div class="card-body p-0">
 {% if accounts %}<div class="table-responsive"><table class="table table-hover mb-0 align-middle"><thead class="table-light"><tr><th>名称</th><th>公司</th><th>银行</th><th>账号</th><th>SWIFT</th><th>品牌</th><th class="text-end">操作</th></tr></thead><tbody>{% for a in accounts %}<tr>
-<td><strong>{{ a.name }}</strong></td><td>{{ a.company_name[:30] }}</td><td>{{ a.bank_name[:30] }}</td><td>{{ a.account_no }}</td><td>{{ a.swift_code }}</td><td>{{ 'QISUO' if a.brand == 'qisuo' else '克利斯达' }}</td><td class="text-end"><a href="{{ url_for('account_edit', id=a.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
+<td><strong>{{ a.name }}</strong></td><td>{{ a.company_name[:30] }}</td><td>{{ a.bank_name[:30] }}</td><td>{{ a.account_no }}</td><td>{{ a.swift_code }}</td><td>{{ a.brand_label }}</td><td class="text-end"><a href="{{ url_for('account_edit', id=a.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
 <form action="{{ url_for('account_delete', id=a.id) }}" method="post" class="d-inline" onsubmit="return confirmAccountDelete(this, {{ a.name|tojson }});"><input type="hidden" name="confirm_value"><input type="hidden" name="current_password"><button class="btn btn-sm btn-outline-danger">删除</button></form></td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="text-center py-5 text-muted">暂无收款账户。</div>{% endif %}
 </div></div>
 {% endblock %}
