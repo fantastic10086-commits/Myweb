@@ -10,6 +10,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='pi_item_images.js') }}"></script>
 <script>
     var existingItems = {{ existing_items|tojson }};
     var selectedProducts = {};
@@ -72,7 +73,7 @@
         return {
             id: Number(p.id), productId: Number(p.productId || p.id), itemId: p.itemId || null, name: String(p.name || ''), code: String(p.code || p.product_code || ''),
             originalCode: String(p.originalCode != null ? p.originalCode : p.code || p.product_code || ''), originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''), priceUsd: usdPrice, price: fromUsd(usdPrice),
-            qty: Math.max(1, Number(p.qty) || 1), img: String(p.img || '')
+            qty: Math.max(1, Number(p.qty) || 1), img: String(p.img || ''), originalImage: p.originalImage != null ? p.originalImage : p.img || '', imageSource: p.imageSource || '', imageMode: p.imageMode || 'keep', imageFile: p.imageFile || null
         };
     }
     function makeRow(p) {
@@ -83,7 +84,7 @@
         var sym = getSymbol();
         tr.innerHTML =
             '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-move-up py-0 px-1" title="上移产品" aria-label="上移产品"><i class="bi bi-arrow-up"></i></button><button type="button" class="btn btn-sm btn-outline-secondary sel-move-down py-0 px-1" title="下移产品" aria-label="下移产品"><i class="bi bi-arrow-down"></i></button></div></td>' +
-            '<td><div class="d-flex align-items-start gap-2">' + imgTag(p.img) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name pi-structural-control" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec pi-structural-control" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore pi-structural-control">恢复原品名、规格和编码</button></div></div></td>' +
+            '<td><div class="d-flex align-items-start gap-2">' + PIItemImages.markup(p.id) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name pi-structural-control" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec pi-structural-control" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore pi-structural-control">恢复原品名、规格和编码</button></div></div></td>' +
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code pi-structural-control" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '" style="min-width:110px;"></td>' +
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price pi-structural-control" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty pi-structural-control" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
@@ -120,6 +121,7 @@
             renumberRows(); showHideEmpty(); updateTotal();
             applyStructuralLock();
         });
+        PIItemImages.mount(tr, p.id, selectedProducts[p.id], p);
         tr.querySelector('.sel-name').addEventListener('input', function() { selectedProducts[p.id].name = this.value; });
         tr.querySelector('.sel-code').addEventListener('input', function() { selectedProducts[p.id].code = this.value; });
         tr.querySelector('.sel-spec').addEventListener('input', function() { selectedProducts[p.id].spec = this.value; });
@@ -162,7 +164,7 @@
         if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
+        selectedTableBody.appendChild(makeRow(p));
         renumberRows(); showHideEmpty(); updateTotal();
     }
     function addQuickProduct(product) {
@@ -229,7 +231,7 @@
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
-        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''})); }
+        for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow(p)); }
         renumberRows(); showHideEmpty(); updateTotal();
         productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
         productSearch.addEventListener('input', function() { renderDropdown(this.value); });
@@ -334,7 +336,7 @@
     {% endif %}
 </div>
 {% endif %}
-<form method="post" id="pi-form"><input type="hidden" name="version" value="{{ pi.version or 1 }}"><input type="hidden" name="product_order" id="product_order" value=""><div class="row g-4">
+<form enctype="multipart/form-data" method="post" id="pi-form"><input type="hidden" name="version" value="{{ pi.version or 1 }}"><input type="hidden" name="product_order" id="product_order" value=""><div class="row g-4">
     <div class="col-lg-5">
         <div class="card mb-3"><div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div><div class="card-body">
             <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input pi-structural-control" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none pi-structural-control" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
@@ -362,7 +364,7 @@
         <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
             <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn" disabled><i class="bi bi-plus-lg"></i> 添加所选产品</button></div>
             <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
-            <div class="table-responsive mt-2" id="selected_products_area"><small class="text-muted d-block mb-2">品名、规格和编码仅修改当前 PI，产品库资料不变。</small>
+            <div class="table-responsive mt-2" id="selected_products_area"><small class="text-muted d-block mb-2">品名、规格、编码和图片仅修改当前 PI，产品库资料不变。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div></div>
         </div></div>
         <div class="card mb-3">

@@ -537,7 +537,12 @@ class PIItem(db.Model):
     name_override = db.Column(db.String(200), nullable=True)
     spec_override = db.Column(db.String(200), nullable=True)
     code_override = db.Column(db.String(200), nullable=True)
+    image_override = db.Column(db.String(500), nullable=True)
     sort_order = db.Column(db.Integer, nullable=False, default=0)
+
+    @property
+    def display_image(self):
+        return self.image_override if self.image_override is not None else (self.product.image if self.product else '')
 
     @property
     def display_name(self):
@@ -561,6 +566,7 @@ class PIItem(db.Model):
             'product_name': self.display_name,
             'product_code': self.display_code,
             'specification': self.display_specification,
+            'image': self.display_image,
             'quantity': self.quantity,
             'unit_price': self.unit_price,
             'amount': self.amount,

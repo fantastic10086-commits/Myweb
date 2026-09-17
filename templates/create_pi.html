@@ -10,6 +10,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='pi_item_images.js') }}"></script>
 <div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS：等待中……</div>
 <script>
 document.getElementById('js_status').textContent='脚本运行正常 ✓';
@@ -90,7 +91,7 @@ var adjustmentUsd = 0;
             priceUsd: usdPrice,
             price: fromUsd(usdPrice),
             qty: Math.max(1, Number(p.qty) || 1),
-            img: String(p.img || '')
+            img: String(p.img || ''), originalImage: p.originalImage != null ? p.originalImage : p.img || '', imageSource: p.imageSource || '', imageMode: p.imageMode || 'keep', imageFile: p.imageFile || null
         };
     }
     function makeRow(p) {
@@ -102,7 +103,7 @@ var adjustmentUsd = 0;
         var sym = getSymbol();
         tr.innerHTML =
             '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-move-up py-0 px-1" title="上移产品" aria-label="上移产品"><i class="bi bi-arrow-up"></i></button><button type="button" class="btn btn-sm btn-outline-secondary sel-move-down py-0 px-1" title="下移产品" aria-label="下移产品"><i class="bi bi-arrow-down"></i></button></div></td>' +
-            '<td><div class="d-flex align-items-start gap-2">' + imgTag(p.img) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore">恢复原品名、规格和编码</button></div></div></td>' +
+            '<td><div class="d-flex align-items-start gap-2">' + PIItemImages.markup(p.id) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore">恢复原品名、规格和编码</button></div></div></td>' +
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '" style="min-width:110px;"></td>' +
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
@@ -149,6 +150,7 @@ var adjustmentUsd = 0;
             tr.after(makeRow(copy));
             renumberRows(); showHideEmpty(); updateTotal();
         });
+        PIItemImages.mount(tr, p.id, selectedProducts[p.id], p);
         tr.querySelector('.sel-name').addEventListener('input', function() { selectedProducts[p.id].name = this.value; });
         tr.querySelector('.sel-code').addEventListener('input', function() { selectedProducts[p.id].code = this.value; });
         tr.querySelector('.sel-spec').addEventListener('input', function() { selectedProducts[p.id].spec = this.value; });
@@ -192,7 +194,7 @@ var adjustmentUsd = 0;
         if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow({id: p.id, productId: p.productId, itemId: p.itemId, originalCode: p.originalCode, originalName: p.originalName, originalSpec: p.originalSpec, name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''}));
+        selectedTableBody.appendChild(makeRow(p));
         renumberRows(); showHideEmpty(); updateTotal();
     }
 
@@ -516,7 +518,7 @@ var adjustmentUsd = 0;
 
 <div id="submit_status" style="background:#fff3cd;border:2px solid #ffc107;padding:8px 10px;margin:8px 0;font-size:14px;font-weight:bold;">📋 表单已加载，可以创建 PI。</div>
 {% if customers %}
-<form method="post" action="{{ url_for('pi_create') }}" id="pi-form">
+<form enctype="multipart/form-data" method="post" action="{{ url_for('pi_create') }}" id="pi-form">
     <input type="hidden" name="product_order" id="product_order" value="">
     <div class="row g-4">
         <div class="col-lg-5">
@@ -581,7 +583,7 @@ var adjustmentUsd = 0;
                         <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button>
                     </div>
                     <div class="table-responsive mt-2" id="selected_products_area">
-                        <small class="text-muted d-block mb-2">品名、规格和编码仅修改当前 PI，产品库资料不变。</small>
+                        <small class="text-muted d-block mb-2">品名、规格、编码和图片仅修改当前 PI，产品库资料不变。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table">
                             <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
                             <tbody></tbody>

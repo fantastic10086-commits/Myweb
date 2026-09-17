@@ -319,8 +319,9 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     for i, item in enumerate(pi.items, 1):
         # Product image
         img_cell = Paragraph('', table_cell_style)
-        if item.product and item.product.image:
-            img_path = os.path.join(upload_dir, item.product.image)
+        item_image = getattr(item, 'display_image', item.product.image if item.product else '')
+        if item_image:
+            img_path = os.path.join(upload_dir, item_image)
             if os.path.exists(img_path):
                 try:
                     source_width, source_height = ImageReader(img_path).getSize()

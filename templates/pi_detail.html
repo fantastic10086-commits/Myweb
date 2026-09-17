@@ -96,8 +96,8 @@
                             <tr>
                                 <td>{{ loop.index }}</td>
                                 <td>
-                                    {% if item.product and item.product.image %}
-                                    <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" alt="" loading="lazy" decoding="async" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">
+                                    {% if item.display_image %}
+                                    <img src="{{ url_for('uploaded_product_thumbnail', filename=item.display_image) }}" alt="" loading="lazy" decoding="async" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">
                                     {% endif %}
                                     <strong>{{ item.display_name or '-' }}</strong>
                                     {% if item.display_specification %}<br><small class="text-muted">{{ item.display_specification }}</small>{% endif %}

@@ -445,6 +445,118 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertEqual(pdf_name, 'PI-TEST-001.pdf')
         self.assertEqual(excel_name, 'PI-TEST-001.xlsx')
 
+    def test_pi_row_image_upload_copy_restore_and_export_are_per_pi(self):
+        from PIL import Image
+        image = BytesIO()
+        Image.new('RGB', (20, 20), 'red').save(image, format='PNG')
+        image.seek(0)
+        self.login('admin-test')
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='ORIG').one()
+            product_id = product.id
+            catalog_image = product.image
+        data = {
+            'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
+            'notes': 'per-pi-image-test', 'issue_date': '2026-09-17',
+            'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
+            'shipping_cost': '0', 'account_id': str(self.approved_account),
+            'product_order': str(product_id), f'selected_{product_id}': 'on',
+            f'qty_{product_id}': '1', f'unit_price_{product_id}': '10',
+            f'item_image_file_{product_id}': (image, 'clipboard.png'),
+            'csrf_token': self.token('/pi/create'),
+        }
+        with patch.object(application, '_generate_default_pi_documents', return_value=('test.pdf', 'test.xlsx')):
+            response = self.client.post('/pi/create', data=data, content_type='multipart/form-data')
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            pi = PI.query.filter_by(notes='per-pi-image-test').one()
+            pi_id = pi.id
+            item = pi.items[0]
+            item_id = item.id
+            filename = item.image_override
+            current_version = pi.version
+            self.assertTrue(filename.endswith('.png'))
+            self.assertEqual(item.display_image, filename)
+            self.assertEqual(application._pi_export_copy(pi).items[0].product.image, filename)
+            self.assertEqual(db.session.get(Product, product_id).image, catalog_image)
+        response = self.client.get('/uploads/' + filename)
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        response = self.client.get('/uploads/thumb/' + filename)
+        self.assertEqual(response.status_code, 200)
+        response.close()
+        self.client.get('/logout')
+        self.login('bob')
+        self.assertEqual(self.client.get('/uploads/' + filename).status_code, 404)
+        self.assertEqual(self.client.get('/uploads/thumb/' + filename).status_code, 404)
+        self.client.get('/logout')
+        self.login('admin-test')
+        url = f'/pi/{pi_id}/edit'
+        row = -item_id
+        copied_row = -1000000000
+        edit = {
+            'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
+            'notes': 'per-pi-image-test', 'issue_date': '2026-09-17',
+            'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
+            'shipping_cost': '0', 'product_order': f'{row},{copied_row}', 'version': str(current_version),
+            f'row_item_{row}': str(item_id),
+            'csrf_token': self.token(url),
+        }
+        for key in (row, copied_row):
+            edit.update({f'selected_{key}': 'on', f'row_product_{key}': str(product_id),
+                         f'qty_{key}': '1', f'unit_price_{key}': '10',
+                         f'item_image_source_{key}': filename, f'item_image_mode_{key}': 'keep'})
+        with patch.object(application, '_generate_default_pi_documents', return_value=('test.pdf', 'test.xlsx')):
+            self.assertEqual(self.client.post(url, data=edit).status_code, 302)
+        with application.app.app_context():
+            pi = db.session.get(PI, pi_id)
+            self.assertEqual([item.display_image for item in pi.items], [filename, filename])
+            copied_item_id = pi.items[1].id
+            export = application._pi_export_copy(pi)
+            template = application._export_template()
+            work_dir = tempfile.mkdtemp(dir=TEST_ROOT.name)
+            output, _ = application._render_pi_export(export, template, 'xlsx', work_dir)
+            workbook = load_workbook(output)
+            self.assertEqual(len(workbook.active._images), 2)
+            workbook.close()
+        with application.app.app_context():
+            edit['version'] = str(db.session.get(PI, pi_id).version)
+        edit[f'row_item_{copied_row}'] = str(copied_item_id)
+        edit[f'item_image_source_{row}'] = ''
+        edit[f'item_image_mode_{row}'] = 'catalog'
+        edit[f'item_image_source_{copied_row}'] = ''
+        edit[f'item_image_mode_{copied_row}'] = 'clear'
+        with patch.object(application, '_generate_default_pi_documents', return_value=('test.pdf', 'test.xlsx')):
+            self.assertEqual(self.client.post(url, data=edit).status_code, 302)
+        with application.app.app_context():
+            pi = db.session.get(PI, pi_id)
+            self.assertIsNone(pi.items[0].image_override)
+            self.assertEqual(pi.items[1].image_override, '')
+            self.assertEqual(db.session.get(Product, product_id).image, catalog_image)
+        copied = self.client.post(f'/pi/{pi_id}/copy', data={'csrf_token': self.token(url)})
+        self.assertEqual(copied.status_code, 302)
+        with application.app.app_context():
+            copy = PI.query.order_by(PI.id.desc()).first()
+            self.assertEqual([item.image_override for item in copy.items], [None, ''])
+
+    def test_pi_row_image_rejects_invalid_upload_and_foreign_sources(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            product_id = Product.query.filter_by(product_code='ORIG').one().id
+            before = PI.query.count()
+        data = {'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
+                'notes': 'invalid-image-test', 'currency': 'USD', 'company': 'klista',
+                'exchange_rate': '7', 'shipping_cost': '0',
+                f'selected_{product_id}': 'on', f'qty_{product_id}': '1',
+                f'unit_price_{product_id}': '10', 'csrf_token': self.token('/pi/create'),
+                f'item_image_file_{product_id}': (BytesIO(b'not an image'), 'invalid.png')}
+        self.assertEqual(self.client.post('/pi/create', data=data, content_type='multipart/form-data').status_code, 400)
+        data.pop(f'item_image_file_{product_id}')
+        data[f'item_image_source_{product_id}'] = 'foreign-private-image.png'
+        self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
+        with application.app.app_context():
+            self.assertEqual(PI.query.count(), before)
+
     def test_new_pi_redirects_to_its_preview_after_creation(self):
         self.login('admin-test')
         with application.app.app_context():

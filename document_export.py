@@ -220,7 +220,7 @@ def _item_values(item, index):
     product = getattr(item, 'product', None)
     return {
         'item.no': index,
-        'item.image': getattr(product, 'image', '') or '',
+        'item.image': getattr(item, 'display_image', getattr(product, 'image', '')) or '',
         'item.code': getattr(item, 'display_code', getattr(product, 'product_code', '')) or '',
         'item.name': getattr(item, 'display_name', getattr(product, 'name', '')) or '',
         'item.specification': getattr(item, 'display_specification', getattr(product, 'specification', '')) or '',

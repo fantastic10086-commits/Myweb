@@ -320,7 +320,7 @@ def _migrate_db():
             'branch_code': 'VARCHAR(50)',
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
-        'pi_items': {'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
+        'pi_items': {'image_override': ('VARCHAR(500)', 'NULL'), 'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
         'suppliers': {},  # table auto-created by create_all
         'procurements': {},  # table auto-created by create_all
         'packing_lists': {},  # tables auto-created by create_all
@@ -1327,7 +1327,7 @@ def create_app():
             response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
             response.headers.pop('Pragma', None)
             response.headers.pop('Expires', None)
-        elif request.endpoint == 'uploaded_product_thumbnail':
+        elif request.endpoint == 'uploaded_product_thumbnail' and not getattr(g, 'private_pi_image', False):
             response.headers['Cache-Control'] = 'private, max-age=604800, immutable'
             response.headers.pop('Pragma', None)
             response.headers.pop('Expires', None)
@@ -1413,7 +1413,7 @@ def _positive_int(value, field_name):
         raise ValueError(f'{field_name}必须大于 0。')
     return number
 
-def _submitted_pi_items(form, allow_inactive_ids=None):
+def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=None):
     """Load selected products in the explicit order maintained by the UI."""
     allow_inactive_ids = set(allow_inactive_ids or ())
     product_ids = []
@@ -1510,12 +1510,24 @@ def _submitted_pi_items(form, allow_inactive_ids=None):
             code = code.strip()
             if len(code) > 200:
                 abort(400, description='PI 产品编码不能超过 200 个字符。')
+        image_mode = form.get(f'item_image_mode_{row_id}', 'keep')
+        image_source = form.get(f'item_image_source_{row_id}', '') or ''
+        if image_mode not in {'keep', 'catalog', 'clear'}:
+            abort(400, description='产品图片操作无效。')
+        if image_source and image_source not in (allowed_image_sources or set()):
+            abort(400, description='不能引用其他 PI 的产品图片。')
+        image_file = request.files.get(f'item_image_file_{row_id}') if has_request_context() else None
+        if image_file and image_file.filename:
+            _validate_pi_item_image(image_file)
+        else:
+            image_file = None
         amount = round(unit_price * quantity, 2)
         selected_items.append({
             'product': product,
             'item_id': form.get(f'row_item_{row_id}', type=int) if hasattr(form, 'get') else None,
             'explicit_row': f'row_product_{row_id}' in form,
             'sort_order': len(selected_items),
+            'image_mode': image_mode, 'image_source': image_source, 'image_file': image_file,
             'name_override': name,
             'spec_override': spec,
             'code_override': code,
@@ -1710,6 +1722,46 @@ def _recalculate_customer_deal(customer):
         total += deal_amount / PERFORMANCE_EXCHANGE_RATE if (pi.currency or 'USD').upper() == 'RMB' else deal_amount
     customer.total_deal_usd = round(total, 2)
 
+def _validate_pi_item_image(file):
+    from PIL import Image
+    ext = os.path.splitext(secure_filename(file.filename or ''))[1].lower()
+    if ext not in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
+        abort(400, description='产品图片仅支持 JPG、PNG、WebP、GIF。')
+    file.stream.seek(0, 2)
+    size = file.stream.tell()
+    file.stream.seek(0)
+    if size > 12 * 1024 * 1024:
+        abort(400, description='单张产品图片最大 12 MB。')
+    try:
+        with Image.open(file.stream) as image:
+            if image.width * image.height > 25_000_000:
+                raise ValueError('Image dimensions are too large')
+            image.verify()
+    except Exception:
+        abort(400, description='产品图片文件无效或尺寸过大。')
+    finally:
+        file.stream.seek(0)
+
+
+def _apply_pi_item_image(item, submitted):
+    file = submitted.get('image_file')
+    if file:
+        filename = _save_upload(file)
+        if not filename:
+            abort(400, description='产品图片保存失败。')
+        item.image_override = filename
+    elif submitted.get('image_mode') == 'catalog':
+        item.image_override = None
+    elif submitted.get('image_mode') == 'clear':
+        item.image_override = ''
+    elif submitted.get('image_source'):
+        item.image_override = submitted['image_source']
+
+
+def _can_access_pi_item_image(filename):
+    return any(item.pi.deleted_at is None and can_access_pi(item.pi) for item in PIItem.query.filter_by(image_override=filename).all())
+
+
 def _save_upload(file):
     """Save an uploaded file and return the filename."""
     if not file or file.filename == '':
@@ -1761,7 +1813,7 @@ def _remove_product_image_if_unused(filename):
     safe_name = secure_filename(filename or '')
     if not safe_name or safe_name != filename:
         return
-    if Product.query.filter_by(image=safe_name).first():
+    if Product.query.filter_by(image=safe_name).first() or PIItem.query.filter_by(image_override=safe_name).first():
         return
     try:
         _remove_upload(safe_name)
@@ -3658,7 +3710,7 @@ def uploaded_file(filename):
         abort(404)
     product_image = Product.query.filter_by(image=safe_name).first()
     customer_images = Customer.query.filter_by(image=safe_name).all()
-    if not product_image and not any(can_access_customer(c) for c in customer_images):
+    if not product_image and not any(can_access_customer(c) for c in customer_images) and not _can_access_pi_item_image(safe_name):
         abort(404)
     filepath = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
     if not os.path.isfile(filepath):
@@ -3671,8 +3723,11 @@ def uploaded_file(filename):
 def uploaded_product_thumbnail(filename):
     """Serve a small product-list image while retaining the original for documents."""
     safe_name = secure_filename(filename)
-    if not safe_name or not Product.query.filter_by(image=safe_name).first():
+    product_image = Product.query.filter_by(image=safe_name).first() if safe_name else None
+    if not safe_name or not (product_image or _can_access_pi_item_image(safe_name)):
         abort(404)
+    if not product_image:
+        g.private_pi_image = True
     source_path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
     if not os.path.isfile(source_path):
         abort(404)
@@ -4604,6 +4659,7 @@ def pi_create():
                 unit_price=item['unit_price'],
                 amount=item['amount'],
             )
+            _apply_pi_item_image(pi_item, item)
             db.session.add(pi_item)
 
         db.session.flush()
@@ -4790,7 +4846,7 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
             'name': item.display_name,
             'product_code': product.product_code if product else '',
             'specification': item.display_specification,
-            'image': product.image if product else '',
+            'image': item.display_image,
             'quantity': int(item.quantity or 0),
         })
 
@@ -5961,6 +6017,7 @@ def pi_copy(id):
             name_override=item.name_override,
             spec_override=item.spec_override,
             code_override=item.code_override,
+            image_override=item.image_override,
             sort_order=item.sort_order,
             quantity=item.quantity,
             unit_price=item.unit_price,
@@ -5999,7 +6056,8 @@ def _preload_products(pi):
                             'originalName': prod.name, 'originalSpec': prod.specification or '',
                             'spec': item.display_specification, 'price': item.unit_price,
                             'price_usd': price_usd,
-                            'img': prod.image or '', 'qty': item.quantity})
+                            'img': item.display_image or '', 'originalImage': prod.image or '',
+                            'imageSource': item.image_override or '', 'imageMode': 'clear' if item.image_override == '' else 'keep', 'qty': item.quantity})
     return preload
 
 
@@ -6123,6 +6181,9 @@ def _pi_structural_changes(pi, *, customer_id, salesperson, currency,
             details.append('规格')
         if submitted.get('code_override') is not None and submitted['code_override'] != item.display_code:
             details.append('编码')
+        image_mode = submitted.get('image_mode', 'keep')
+        if submitted.get('image_file') or (image_mode == 'clear' and item.display_image) or (image_mode == 'catalog' and item.image_override is not None) or (submitted.get('image_source') and submitted['image_source'] != item.display_image):
+            details.append('图片')
         if details:
             modified.append(
                 f"{item.product.name if item.product else product_id}（{'、'.join(details)}）"
@@ -6187,6 +6248,7 @@ def _reconcile_pi_items(pi, selected_items):
             item.spec_override = submitted['spec_override']
         if submitted.get('code_override') is not None:
             item.code_override = submitted['code_override']
+        _apply_pi_item_image(item, submitted)
         item.quantity = submitted['quantity']
         item.unit_price = submitted['unit_price']
         item.amount = submitted['amount']
@@ -6300,6 +6362,7 @@ def pi_edit(id):
         selected_items, total_amount = _submitted_pi_items(
             request.form,
             allow_inactive_ids=set(existing_items),
+            allowed_image_sources={item.image_override for item in pi.items if item.image_override},
         )
 
         if not selected_items:
@@ -6538,7 +6601,7 @@ def _pi_export_copy(pi):
             name=item.display_name,
             product_code=item.display_code,
             specification=item.display_specification,
-            image=product.image if product else '',
+            image=item.display_image,
         )
         item_copies.append(SimpleNamespace(
             id=item.id,
@@ -7596,7 +7659,7 @@ def api_procurement_get(pi_id):
         if p.pi_item and p.pi_item.product:
             d['pi_item_name'] = p.pi_item.product.name
             d['pi_item_cn'] = p.pi_item.product.chinese_name or ''
-            d['pi_item_image'] = p.pi_item.product.image or ''
+            d['pi_item_image'] = p.pi_item.display_image or ''
         if p.pi_item:
             d['pi_unit_price'] = p.pi_item.unit_price
             d['pi_quantity'] = p.pi_item.quantity
