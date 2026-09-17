@@ -82,7 +82,7 @@
         selectedProducts[p.id].itemId = p.itemId;
         var sym = getSymbol();
         tr.innerHTML =
-            '<td class="row-num"></td>' +
+            '<td><div class="d-flex flex-column align-items-center gap-1"><span class="row-num"></span><button type="button" class="btn btn-sm btn-outline-secondary sel-move-up py-0 px-1" title="上移产品" aria-label="上移产品"><i class="bi bi-arrow-up"></i></button><button type="button" class="btn btn-sm btn-outline-secondary sel-move-down py-0 px-1" title="下移产品" aria-label="下移产品"><i class="bi bi-arrow-down"></i></button></div></td>' +
             '<td><div class="d-flex align-items-start gap-2">' + imgTag(p.img) + '<div class="flex-grow-1" style="min-width:160px;"><input aria-label="本单产品名称" placeholder="本单产品名称" type="text" maxlength="200" required class="form-control form-control-sm sel-name pi-structural-control" name="item_name_' + p.id + '" value="' + escHtml(p.name) + '"><input aria-label="本单产品规格" placeholder="本单规格（可留空）" type="text" maxlength="200" class="form-control form-control-sm mt-1 sel-spec pi-structural-control" name="item_spec_' + p.id + '" value="' + escHtml(p.spec) + '"><button type="button" class="btn btn-link btn-sm p-0 sel-restore pi-structural-control">恢复原品名、规格和编码</button></div></div></td>' +
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code pi-structural-control" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '" style="min-width:110px;"></td>' +
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap" style="width:110px;"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.01" min="0" class="form-control form-control-sm sel-price pi-structural-control" value="' + p.price.toFixed(2) + '" style="min-width:0;"></div></td>' +
@@ -110,6 +110,8 @@
             tr.querySelector('input[name="unit_price_' + p.id + '"]').value = price.toFixed(2); updateTotal();
         });
         tr.querySelector('.btn-outline-danger').addEventListener('click', function() { delete selectedProducts[p.id]; selectedProductOrder = selectedProductOrder.filter(function(id) { return id !== p.id; }); tr.remove(); renumberRows(); showHideEmpty(); updateTotal(); });
+        tr.querySelector('.sel-move-up').addEventListener('click', function() { moveProductRow(p.id, -1); });
+        tr.querySelector('.sel-move-down').addEventListener('click', function() { moveProductRow(p.id, 1); });
         tr.querySelector('.sel-copy').addEventListener('click', function() {
             var copy = Object.assign({}, p, selectedProducts[p.id], {id: nextCopyId--, itemId: null});
             selectedProducts[copy.id] = Object.assign({}, copy);
@@ -131,7 +133,27 @@
         });
         return tr;
     }
-    function renumberRows() { var rows = selectedTableBody.querySelectorAll('tr'); for (var i = 0; i < rows.length; i++) rows[i].querySelector('.row-num').textContent = i + 1; var orderInput = document.getElementById('product_order'); if (orderInput) orderInput.value = selectedProductOrder.join(','); }
+    function moveProductRow(id, direction) {
+        var index = selectedProductOrder.indexOf(id);
+        var target = index + direction;
+        if (index < 0 || target < 0 || target >= selectedProductOrder.length) return;
+        var row = document.getElementById('product_row_' + id);
+        var other = document.getElementById('product_row_' + selectedProductOrder[target]);
+        if (direction < 0) other.before(row); else other.after(row);
+        selectedProductOrder[index] = selectedProductOrder[target];
+        selectedProductOrder[target] = id;
+        renumberRows();
+    }
+    function renumberRows() {
+        var rows = selectedTableBody.querySelectorAll('tr');
+        for (var i = 0; i < rows.length; i++) {
+            rows[i].querySelector('.row-num').textContent = i + 1;
+            rows[i].querySelector('.sel-move-up').disabled = i === 0;
+            rows[i].querySelector('.sel-move-down').disabled = i === rows.length - 1;
+        }
+        var orderInput = document.getElementById('product_order');
+        if (orderInput) orderInput.value = selectedProductOrder.join(',');
+    }
     function productAlreadySelected(productId) {
         return selectedProductOrder.some(function(key) { return Number(selectedProducts[key].productId || key) === Number(productId); });
     }
