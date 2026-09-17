@@ -1633,6 +1633,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 item_price = item.unit_price
             exported = self.client.post(f'/pi/{self.alice_pi}/export', data={
                 'template_id': template_id,
+                'price_terms': 'FOB Shanghai',
                 'output_format': 'xlsx',
                 'mode': 'download',
                 f'qty_{item_id}': str(item_quantity),
@@ -1647,7 +1648,9 @@ class SecuritySmokeTests(unittest.TestCase):
             ]
             rendered.close()
             exported.close()
-            self.assertIn('External customer instruction', rendered_values)
+            self.assertNotIn('External customer instruction', rendered_values)
+            self.assertIn('Trade Terms:', rendered_values)
+            self.assertIn('FOB Shanghai', rendered_values)
 
             template_path = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -1659,7 +1662,8 @@ class SecuritySmokeTests(unittest.TestCase):
                 if cell.value is not None
             ]
             workbook.close()
-            self.assertTrue(any('{{customer_notes}}' in value for value in values))
+            self.assertIn('{{price_terms}}', values)
+            self.assertNotIn('{{customer_notes}}', values)
         finally:
             with application.app.app_context():
                 customer = db.session.get(Customer, self.alice_customer)
