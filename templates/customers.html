@@ -7,6 +7,7 @@
         <h2><i class="bi bi-people me-2"></i>客户 <small class="text-muted fs-6">({{ total }})</small></h2>
     </div>
     <div class="col-md-6 text-md-end">
+        {% if is_admin %}<a href="{{ url_for('customer_history_import') }}" class="btn btn-outline-primary">历史成交额导入</a>{% endif %}
         <a href="{{ url_for('customer_add') }}" class="btn btn-primary">
             <i class="bi bi-person-plus"></i> 新增客户
         </a>
@@ -61,7 +62,7 @@
 <!-- Summary -->
 <div class="alert alert-light py-1 small mb-3 d-flex justify-content-between border">
     <span><strong>{{ total }}</strong> 位客户</span>
-    <span>总成交额：<strong class="text-success">${{ '%.2f'|format(filter_total_deal) }}</strong></span>
+    <span>累计成交额（USD）：<strong class="text-success">${{ '%.2f'|format(filter_total_deal) }}</strong></span>
 </div>
 
 <div class="card">
@@ -76,7 +77,7 @@
                         <th>业务员</th>
                         <th class="text-end">
                             <a href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort='deal_desc' if sort != 'deal_desc' else 'deal_asc') }}" class="text-decoration-none text-dark">
-                                成交额（USD）
+                                累计成交额（USD）
                                 {% if sort == 'deal_desc' %}<i class="bi bi-caret-down-fill small"></i>
                                 {% elif sort == 'deal_asc' %}<i class="bi bi-caret-up-fill small"></i>
                                 {% else %}<i class="bi bi-caret-down small text-muted"></i>
@@ -96,7 +97,7 @@
                         <td>{{ c.country }}</td>
                         <td style="max-width:100px;" class="text-truncate">{{ c.contact_person }}</td>
                         <td>{{ c.salesperson }}</td>
-                        <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.total_deal_usd or 0) }}</strong></td>
+                        <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.cumulative_deal_usd) }}</strong><small class="text-muted d-block">历史 ${{ '%.2f'|format(c.historical_deal_usd or 0) }} / 系统 ${{ '%.2f'|format(c.total_deal_usd or 0) }}</small></td>
                         <td style="max-width:160px;" class="text-truncate">{{ c.email }}</td>
                         <td style="max-width:120px;" class="text-truncate">{{ c.phone }}</td>
                         <td style="max-width:200px;" class="text-truncate">{% if c.address %}{{ c.address }}{% else %}<span class="text-muted">无</span>{% endif %}</td>

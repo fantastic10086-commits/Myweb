@@ -58,6 +58,7 @@ from packing_list_export import (
     generate_packing_list_workbook,
 )
 from customs_export import build_customs_snapshot, generate_customs_workbook
+from customer_history import DEFAULT_CUTOFF, FIELDS as HISTORY_FIELDS, history_values, preview_workbook
 
 # ── Configuration ────────────────────────────────────────────────────
 # Detect the app root directory (where this file lives)
@@ -278,7 +279,7 @@ def _migrate_db():
     )
     pi_exchange_rate_was_missing = 'exchange_rate' not in pi_columns_before
     expected = {
-        'customers': {'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'products': {
             'image': 'VARCHAR(500)',
             'chinese_name': 'VARCHAR(200)',
@@ -2109,6 +2110,7 @@ def customer_list():
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
 
+    cumulative = func.coalesce(Customer.total_deal_usd, 0) + func.coalesce(Customer.historical_deal_usd, 0)
     query = filter_by_user(Customer.query, Customer, 'salesperson')
     if search:
         query = query.filter(
@@ -2123,12 +2125,12 @@ def customer_list():
         query = query.filter(Customer.salesperson == sp_filter)
     if deal_min_str:
         try:
-            query = query.filter(Customer.total_deal_usd >= float(deal_min_str))
+            query = query.filter(cumulative >= float(deal_min_str))
         except ValueError:
             pass
     if deal_max_str:
         try:
-            query = query.filter(Customer.total_deal_usd <= float(deal_max_str))
+            query = query.filter(cumulative <= float(deal_max_str))
         except ValueError:
             pass
     if date_from:
@@ -2143,9 +2145,9 @@ def customer_list():
             pass
 
     if sort == 'deal_desc':
-        query = query.order_by(Customer.total_deal_usd.desc())
+        query = query.order_by(cumulative.desc())
     elif sort == 'deal_asc':
-        query = query.order_by(Customer.total_deal_usd.asc())
+        query = query.order_by(cumulative.asc())
     else:
         query = query.order_by(Customer.created_at.desc())
 
@@ -2158,7 +2160,7 @@ def customer_list():
     if page > total_pages: page = total_pages
 
     # Totals for current filter
-    filter_total_deal = query.with_entities(func.coalesce(func.sum(Customer.total_deal_usd), 0)).scalar() or 0
+    filter_total_deal = query.with_entities(func.coalesce(func.sum(cumulative), 0)).scalar() or 0
 
     customers = query.limit(per_page).offset((page - 1) * per_page).all()
     return render_template('customers.html', customers=customers, search=search, sort=sort,
@@ -2166,6 +2168,138 @@ def customer_list():
                            date_from=date_from, date_to=date_to, page=page,
                            total_pages=total_pages, total=total,
                            filter_total_deal=filter_total_deal)
+
+
+def _apply_customer_history(customer, values, source):
+    before = _snapshot(customer, [*HISTORY_FIELDS, 'version'])
+    for field, value in values.items():
+        setattr(customer, field, value)
+    customer.version = (customer.version or 1) + 1
+    _audit('update', 'customer', customer.id, f'{source}：{customer.name}',
+           before=before, after=_snapshot(customer, [*HISTORY_FIELDS, 'version']))
+
+
+@app.route('/customers/<int:id>/history', methods=['GET', 'POST'])
+@admin_required
+def customer_history_edit(id):
+    customer = Customer.query.get_or_404(id)
+    require_customer_access(customer)
+    values = {
+        'historical_deal_usd': customer.historical_deal_usd or 0,
+        'historical_deal_cutoff': customer.historical_deal_cutoff or DEFAULT_CUTOFF,
+        'historical_deal_note': customer.historical_deal_note or '',
+    }
+    if request.method == 'POST':
+        values = {field: request.form.get(field, '') for field in HISTORY_FIELDS}
+        try:
+            if _submitted_version(customer) != (customer.version or 1):
+                raise ValueError('客户已被更新，请刷新页面核对后重新保存。')
+            if request.form.get('exclude_system_orders') != '1':
+                raise ValueError('请确认历史金额已扣除新系统内的订单，避免重复累计。')
+            parsed = history_values(values['historical_deal_usd'], values['historical_deal_cutoff'], values['historical_deal_note'])
+            _apply_customer_history(customer, parsed, '修改历史成交额（USD）')
+            db.session.commit()
+            flash('历史成交额已保存，回款、利润和业绩报表保持原口径。', 'success')
+            return redirect(url_for('customer_detail', id=id))
+        except (ValueError, StaleDataError) as exc:
+            db.session.rollback()
+            flash(str(exc) if isinstance(exc, ValueError) else '客户已被更新，请刷新重试。', 'danger')
+    return render_template('customer_history_edit.html', customer=customer, values=values)
+
+
+@app.route('/customers/history/template.xlsx')
+@admin_required
+def customer_history_template():
+    return send_file(os.path.join(APP_ROOT, 'assets', 'customer_history_template.xlsx'),
+                     as_attachment=True, download_name='客户历史成交额模板.xlsx')
+
+
+@app.route('/customers/history/customer-ids.csv')
+@admin_required
+def customer_history_ids():
+    import csv
+    from io import StringIO
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['客户编号', '客户名称', '国家', '业务员'])
+    def csv_text(value):
+        value = str(value or '')
+        return "'" + value if value.startswith(('=', '+', '-', '@', '\t', '\r')) else value
+    for customer in Customer.query.filter(Customer.deleted_at.is_(None)).order_by(Customer.id).all():
+        writer.writerow([customer.id, csv_text(customer.name), csv_text(customer.country), csv_text(customer.salesperson)])
+    return send_file(BytesIO(output.getvalue().encode('utf-8-sig')), as_attachment=True,
+                     download_name='客户编号对照.csv', mimetype='text/csv')
+
+
+def _history_preview_path(token):
+    if not re.fullmatch(r'[a-f0-9]{32}', str(token or '')):
+        raise ValueError('导入预览已失效，请重新上传。')
+    return os.path.join(tempfile.gettempdir(), 'pi-history-' + token + '.json')
+
+
+@app.route('/customers/history/import', methods=['GET', 'POST'])
+@admin_required
+def customer_history_import():
+    entries, errors, token = [], [], None
+    if request.method == 'POST':
+        try:
+            if request.form.get('action') == 'confirm':
+                token = request.form.get('preview_token')
+                if token != session.get('history_preview_token'):
+                    raise ValueError('导入预览已失效，请重新上传。')
+                path = _history_preview_path(token)
+                with open(path, encoding='utf-8') as handle:
+                    preview = json.load(handle)
+                if preview['user_id'] != session.get('user_id') or time.time() - preview['created'] > 1800:
+                    raise ValueError('导入预览已过期，请重新上传。')
+                if request.form.get('exclude_system_orders') != '1':
+                    raise ValueError('请确认历史金额已扣除新系统内的订单。')
+                entries = preview['entries']
+                for row in entries:
+                    customer = db.session.get(Customer, row['id'])
+                    if customer is None or customer.deleted_at is not None or customer.version != row['version']:
+                        raise ValueError(f"客户 {row['name']} 已变更，请重新上传预览。全部记录均未保存。")
+                    values = history_values(row['historical_deal_usd'], row['historical_deal_cutoff'], row['historical_deal_note'])
+                    _apply_customer_history(customer, values, '批量导入历史成交额（USD）')
+                db.session.commit()
+                os.remove(path)
+                session.pop('history_preview_token', None)
+                flash(f'已更新 {len(entries)} 位客户的历史成交额；金额按覆盖保存，不重复相加。', 'success')
+                return redirect(url_for('customer_list'))
+            uploaded = request.files.get('file')
+            if not uploaded or not uploaded.filename.lower().endswith('.xlsx'):
+                raise ValueError('请上传填写好的 .xlsx 模板。')
+            content = uploaded.stream.read(5 * 1024 * 1024 + 1)
+            if len(content) > 5 * 1024 * 1024:
+                raise ValueError('文件不能超过 5 MB。')
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                if sum(info.file_size for info in archive.infolist()) > 30 * 1024 * 1024:
+                    raise ValueError('文件解压后过大，请分批上传。')
+            customers = Customer.query.filter(Customer.deleted_at.is_(None)).all()
+            entries, errors = preview_workbook(BytesIO(content), customers)
+            if not errors:
+                token = uuid.uuid4().hex
+                path = _history_preview_path(token)
+                with open(path, 'x', encoding='utf-8') as handle:
+                    os.chmod(path, 0o600)
+                    json.dump({'user_id': session.get('user_id'), 'created': time.time(), 'entries': entries}, handle, ensure_ascii=False)
+                previous = session.get('history_preview_token')
+                if previous:
+                    old_path = _history_preview_path(previous)
+                    if os.path.isfile(old_path):
+                        os.remove(old_path)
+                session['history_preview_token'] = token
+        except (ValueError, OSError, zipfile.BadZipFile, StaleDataError) as exc:
+            db.session.rollback()
+            errors = [str(exc) if isinstance(exc, ValueError) else '文件无法读取或预览已失效，请重新上传有效模板。']
+            token = None
+        except Exception:
+            db.session.rollback()
+            current_app.logger.exception('History import preview failed')
+            errors = ['文件内容无法读取，请检查模板格式。']
+            token = None
+    return render_template('customer_history_import.html', entries=entries, errors=errors,
+                           preview_token=token, default_cutoff=DEFAULT_CUTOFF)
 
 
 @app.route('/customers/add', methods=['GET', 'POST'])

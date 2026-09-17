@@ -1073,6 +1073,126 @@ class SecuritySmokeTests(unittest.TestCase):
         data['csrf_token'] = self.token('/pi/create')
         self.assertEqual(self.client.post('/pi/create', data=data).status_code, 400)
 
+    def test_customer_history_is_admin_only_and_separate_from_system_turnover(self):
+        with application.app.app_context():
+            customer = Customer(name='History single test', salesperson='Alice', total_deal_usd=25)
+            db.session.add(customer)
+            db.session.commit()
+            customer_id, version = customer.id, customer.version
+        self.login()
+        self.assertEqual(self.client.get(f'/customers/{customer_id}/history').status_code, 403)
+        self.assertEqual(self.client.get('/customers/history/import').status_code, 403)
+        self.login('admin-test')
+        token = self.token(f'/customers/{customer_id}/history')
+        data = {'csrf_token': token, 'version': str(version), 'historical_deal_usd': '1234.56',
+                'historical_deal_cutoff': '2026-09-17', 'historical_deal_note': 'Old USD business',
+                'exclude_system_orders': '1'}
+        response = self.client.post(f'/customers/{customer_id}/history', data=data)
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            customer = db.session.get(Customer, customer_id)
+            self.assertEqual(customer.total_deal_usd, 25)
+            self.assertEqual(customer.cumulative_deal_usd, 1259.56)
+            self.assertEqual(customer.historical_deal_cutoff, date(2026, 9, 17))
+            self.assertTrue(AuditLog.query.filter_by(entity_type='customer', entity_id=customer_id).count())
+            application._recalculate_customer_deal(customer)
+            db.session.commit()
+            self.assertEqual(customer.total_deal_usd, 0)
+            self.assertEqual(customer.historical_deal_usd, 1234.56)
+            self.assertEqual(customer.cumulative_deal_usd, 1234.56)
+        data['historical_deal_usd'] = '999'
+        self.client.post(f'/customers/{customer_id}/history', data=data)
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, customer_id).historical_deal_usd, 1234.56)
+        detail = self.client.get(f'/customers/{customer_id}').get_data(as_text=True)
+        self.assertIn('历史成交额（USD）', detail)
+        listing = self.client.get('/customers?search=History+single+test&deal_min=1000').get_data(as_text=True)
+        self.assertIn('History single test', listing)
+        self.assertIn('$1234.56', listing)
+
+    def test_customer_history_import_preview_confirmation_and_atomic_conflicts(self):
+        from customer_history import HEADERS, preview_workbook, history_values
+        self.login('admin-test')
+        with application.app.app_context():
+            customers = [Customer(name='History import one', salesperson='Alice', historical_deal_usd=10),
+                         Customer(name='History import two', salesperson='Alice'),
+                         Customer(name='History ambiguous', salesperson='Alice'),
+                         Customer(name='History ambiguous', salesperson='Bob')]
+            db.session.add_all(customers)
+            db.session.commit()
+            first_id, second_id = customers[0].id, customers[1].id
+        def workbook_upload(rows):
+            workbook = Workbook()
+            workbook.active.title = '历史成交额'
+            workbook.active.append(list(HEADERS))
+            for row in rows:
+                workbook.active.append(row)
+            output = BytesIO()
+            workbook.save(output)
+            output.seek(0)
+            return output, 'history.xlsx'
+        def preview(rows):
+            response = self.client.post('/customers/history/import', data={
+                'csrf_token': self.token('/customers/history/import'), 'file': workbook_upload(rows)})
+            self.assertEqual(response.status_code, 200)
+            page = response.get_data(as_text=True)
+            match = re.search(r'name="preview_token" value="([a-f0-9]+)"', page)
+            return page, match.group(1) if match else None
+        rows = [[first_id, 'History import one', 100, '2026-09-17', 'First'],
+                [None, 'History import two', 200, None, 'Second']]
+        page, token = preview(rows)
+        self.assertTrue(token)
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, first_id).historical_deal_usd, 10)
+        response = self.client.post('/customers/history/import', data={
+            'csrf_token': self.token('/customers/history/import'), 'action': 'confirm',
+            'preview_token': token, 'exclude_system_orders': '1'})
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, first_id).historical_deal_usd, 100)
+            self.assertEqual(db.session.get(Customer, second_id).historical_deal_usd, 200)
+        page, token = preview(rows)
+        self.client.post('/customers/history/import', data={
+            'csrf_token': self.token('/customers/history/import'), 'action': 'confirm',
+            'preview_token': token, 'exclude_system_orders': '1'})
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, first_id).historical_deal_usd, 100)
+        rows[0][2], rows[1][2] = 500, 600
+        page, token = preview(rows)
+        with application.app.app_context():
+            customer = db.session.get(Customer, second_id)
+            customer.notes = 'Changed after preview'
+            db.session.commit()
+        response = self.client.post('/customers/history/import', data={
+            'csrf_token': self.token('/customers/history/import'), 'action': 'confirm',
+            'preview_token': token, 'exclude_system_orders': '1'})
+        self.assertIn('未保存任何记录', response.get_data(as_text=True))
+        with application.app.app_context():
+            self.assertEqual(db.session.get(Customer, first_id).historical_deal_usd, 100)
+            self.assertEqual(db.session.get(Customer, second_id).historical_deal_usd, 200)
+        for bad in ([first_id, 'Wrong name', 10, None, None],
+                    [None, 'History ambiguous', 10, None, None],
+                    [first_id, None, -1, None, None],
+                    [first_id, None, '=1+1', None, None],
+                    [first_id, None, None, None, None]):
+            page, token = preview([bad])
+            self.assertIsNone(token)
+            self.assertIn('未保存任何记录', page)
+        page, token = preview([rows[0], rows[0]])
+        self.assertIsNone(token)
+        self.assertIn('重复出现', page)
+        for amount in ('NaN', 'Infinity', '-1', '1.001', '', '1e100'):
+            with self.assertRaises(ValueError):
+                history_values(amount, '2026-09-17', '')
+        template_response = self.client.get('/customers/history/template.xlsx')
+        self.assertEqual(template_response.status_code, 200)
+        loaded = load_workbook(BytesIO(template_response.data))
+        self.assertEqual(tuple(cell.value for cell in loaded['历史成交额'][1]), HEADERS)
+        loaded.close()
+        csv_response = self.client.get('/customers/history/customer-ids.csv')
+        self.assertEqual(csv_response.status_code, 200)
+        self.assertIn('客户编号', csv_response.data.decode('utf-8-sig'))
+
     def test_supplier_forms_block_duplicate_names_without_changing_existing_data(self):
         self.login('admin-test')
         with application.app.app_context():

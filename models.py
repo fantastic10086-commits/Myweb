@@ -16,6 +16,9 @@ class Customer(db.Model):
     address = db.Column(db.Text, default='')
     salesperson = db.Column(db.String(100), default='')
     total_deal_usd = db.Column(db.Float, default=0.0)
+    historical_deal_usd = db.Column(db.Float, nullable=False, default=0.0)
+    historical_deal_cutoff = db.Column(db.Date, nullable=True)
+    historical_deal_note = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -24,6 +27,10 @@ class Customer(db.Model):
     __mapper_args__ = {'version_id_col': version}
 
     pis = db.relationship('PI', backref='customer', lazy=True, cascade='all, delete-orphan')
+
+    @property
+    def cumulative_deal_usd(self):
+        return round((self.total_deal_usd or 0) + (self.historical_deal_usd or 0), 2)
 
     def to_dict(self):
         return {
@@ -36,6 +43,10 @@ class Customer(db.Model):
             'address': self.address,
             'salesperson': self.salesperson,
             'total_deal_usd': self.total_deal_usd,
+            'historical_deal_usd': self.historical_deal_usd,
+            'historical_deal_cutoff': self.historical_deal_cutoff.isoformat() if self.historical_deal_cutoff else None,
+            'historical_deal_note': self.historical_deal_note,
+            'cumulative_deal_usd': self.cumulative_deal_usd,
             'image': self.image,
             'notes': self.notes,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',

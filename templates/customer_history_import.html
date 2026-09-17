@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block title %}客户历史成交额导入{% endblock %}
+{% block content %}
+<h2>客户历史成交额导入（USD）</h2>
+<div class="card mb-3"><div class="card-body">
+<p>填写客户编号或唯一的客户名称、历史美元成交额、截止日期及备注。默认截止日期 {{ default_cutoff }}。金额必填，填写 0 可清零；再次导入覆盖历史金额，不重复相加。</p>
+<p class="text-muted">历史金额不计入回款、利润或业务员业绩。请扣除已录入新系统的订单，避免重复累计；未收余额需单独跟踪。</p>
+<a class="btn btn-outline-primary" href="{{ url_for('customer_history_template') }}">下载 Excel 模板</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('customer_history_ids') }}">下载客户编号对照</a>
+<a class="btn btn-outline-secondary" href="{{ url_for('customer_list') }}">返回客户列表</a>
+<form method="post" enctype="multipart/form-data" class="mt-3"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label class="form-label" for="history_file">上传填写好的模板（最多 3000 行、5 MB）</label><input id="history_file" class="form-control mb-2" name="file" type="file" accept=".xlsx" required><button class="btn btn-primary" type="submit">预览匹配结果</button></form>
+</div></div>
+{% if errors %}<div class="alert alert-danger"><strong>未保存任何记录，请修正后重新上传。</strong><ul class="mb-0">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+{% if entries %}
+<div class="card"><div class="card-body">
+<h5>导入预览：{{ entries|length }} 位客户</h5>
+<div class="table-responsive"><table class="table table-sm"><thead><tr><th>客户编号</th><th>客户</th><th>原历史额（USD）</th><th>新历史额（USD）</th><th>系统内（USD）</th><th>新累计（USD）</th><th>截止日期</th><th>备注</th></tr></thead><tbody>{% for row in entries %}<tr><td>{{ row.id }}</td><td>{{ row.name }}</td><td>${{ '%.2f'|format(row.previous) }}</td><td>${{ '%.2f'|format(row.historical_deal_usd) }}</td><td>${{ '%.2f'|format(row.system) }}</td><td>${{ '%.2f'|format(row.historical_deal_usd + row.system) }}</td><td>{{ row.historical_deal_cutoff }}</td><td>{{ row.historical_deal_note }}</td></tr>{% endfor %}</tbody></table></div>
+{% if preview_token and not errors %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="confirm"><input type="hidden" name="preview_token" value="{{ preview_token }}"><div class="form-check mb-3"><input id="confirm_history" class="form-check-input" type="checkbox" name="exclude_system_orders" value="1" required><label class="form-check-label" for="confirm_history">已核对客户匹配和金额，历史金额不含新系统订单，同意覆盖上述客户原历史额。</label></div><button class="btn btn-success" type="submit">确认导入</button><small class="text-muted ms-2">预览有效期 30 分钟；客户变更后需重新预览。</small></form>{% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

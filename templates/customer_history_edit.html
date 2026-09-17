@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block title %}历史成交额 — {{ customer.name }}{% endblock %}
+{% block content %}
+<h2>历史成交额（USD） — {{ customer.name }}</h2>
+<div class="card"><div class="card-body">
+<p class="text-muted">录入启用系统前的客户累计成交金额。历史金额与系统内成交额分开保存，仅用于客户累计展示，不计入回款、利润和业务员业绩报表。</p>
+<p>系统内成交额按现有有效回款（含手续费、每单封顶）累计，人民币按 7 折算为美元。<br>系统内成交额：${{ '%.2f'|format(customer.total_deal_usd or 0) }}；累计成交额：${{ '%.2f'|format(customer.cumulative_deal_usd) }}。</p>
+<form method="post">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ customer.version }}">
+<div class="mb-3"><label class="form-label" for="history_amount">历史成交额（USD）</label><div class="input-group"><span class="input-group-text">$</span><input id="history_amount" class="form-control" type="number" min="0" max="999999999999.99" step="0.01" name="historical_deal_usd" required value="{{ values.historical_deal_usd }}"></div></div>
+<div class="mb-3"><label class="form-label" for="history_cutoff">截止日期</label><input id="history_cutoff" class="form-control" type="date" name="historical_deal_cutoff" required value="{{ values.historical_deal_cutoff }}"></div>
+<div class="mb-3"><label class="form-label" for="history_note">备注</label><textarea id="history_note" class="form-control" name="historical_deal_note" maxlength="1000">{{ values.historical_deal_note }}</textarea></div>
+<div class="form-check mb-3"><input id="exclude_system_orders" class="form-check-input" type="checkbox" name="exclude_system_orders" value="1" required><label class="form-check-label" for="exclude_system_orders">已核对：历史金额不包含已录入新系统的订单，未收款余额另行处理。</label></div>
+<button class="btn btn-success" type="submit">保存历史成交额</button> <a class="btn btn-outline-secondary" href="{{ url_for('customer_detail', id=customer.id) }}">返回客户</a>
+</form></div></div>
+{% endblock %}

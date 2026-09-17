@@ -37,7 +37,7 @@ RELEASE="$APP_DIR/releases/$(date +%Y%m%d%H%M%S)"
 mkdir -p "$RELEASE"
 rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'static/uploads' \
     --exclude 'pdf' --exclude 'backups' --exclude 'settings.json' --exclude '*.log' \
-    --exclude '*.csv' --exclude '*.xlsx' --exclude '__pycache__' --exclude '.DS_Store' \
+    --exclude '*.csv' --include 'assets/customer_history_template.xlsx' --exclude '*.xlsx' --exclude '__pycache__' --exclude '.DS_Store' \
     --exclude 'auth*' "$SOURCE_DIR/" "$RELEASE/"
 ln -sfn "$RELEASE" "$APP_DIR/current"
 

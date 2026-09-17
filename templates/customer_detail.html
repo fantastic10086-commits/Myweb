@@ -37,8 +37,10 @@
                     <tr><th class="ps-0">业务员</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
                     <tr><th class="ps-0">邮箱</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
                     <tr><th class="ps-0">电话</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>
-                    <tr><th class="ps-0">总成交额（USD）</th><td class="pe-0"><strong class="text-success">${{ '%.2f'|format(customer.total_deal_usd or 0) }}</strong></td></tr>
+                    <tr><th class="ps-0">系统内成交额（USD）</th><td class="pe-0"><strong class="text-success">${{ '%.2f'|format(customer.total_deal_usd or 0) }}</strong></td></tr>
 
+                    <tr><th class="ps-0">历史成交额（USD）</th><td>${{ '%.2f'|format(customer.historical_deal_usd or 0) }}<small class="text-muted d-block">截至 {{ customer.historical_deal_cutoff or '未录入' }}</small>{% if customer.historical_deal_note %}<small class="d-block" style="white-space:pre-wrap;">{{ customer.historical_deal_note }}</small>{% endif %}{% if is_admin %}<a href="{{ url_for('customer_history_edit', id=customer.id) }}" class="btn btn-sm btn-outline-primary mt-1">录入 / 修改历史成交额</a>{% endif %}</td></tr>
+                    <tr><th class="ps-0">累计成交额（USD）</th><td><strong class="text-success">${{ '%.2f'|format(customer.cumulative_deal_usd) }}</strong></td></tr>
                     <tr><th class="ps-0">创建时间</th><td class="pe-0">{{ customer.created_at.strftime('%Y-%m-%d %H:%M') if customer.created_at else '-' }}</td></tr>
                     <tr><th class="ps-0">地址</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.address or '-' }}</td></tr>
                     <tr><th class="ps-0">备注</th><td class="pe-0" style="white-space:pre-wrap;">{{ customer.notes or '-' }}</td></tr>

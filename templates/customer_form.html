@@ -43,6 +43,7 @@ document.addEventListener('paste', function(e) {
     <div class="card-body">
         <form method="post" enctype="multipart/form-data">
             {% if editing %}<input type="hidden" name="version" value="{{ customer.version or 1 }}">{% endif %}
+            {% if editing and is_admin %}<div class="alert alert-light border">历史成交额（USD）：${{ '%.2f'|format(customer.historical_deal_usd or 0) }} <a href="{{ url_for('customer_history_edit', id=customer.id) }}">录入 / 修改历史成交额</a></div>{% endif %}
             <div class="row g-3">
                 <div class="col-md-6">
                     <label for="name" class="form-label">客户名称 <span class="text-danger">*</span></label>
