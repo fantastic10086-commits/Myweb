@@ -1584,13 +1584,18 @@ def _legacy_account_bank_info(account):
         parts.append(f'SWIFT: {account.swift_code}')
     return '\n'.join(parts)
 
+def _normalized_bank_text(value):
+    """Ignore transport newline differences, never changes to bank content."""
+    return (value or '').replace('\r\n', '\n').replace('\r', '\n').strip()
+
+
 def _matching_account_for_pi(pi):
     """Return the account originally saved on the PI when it still exists."""
     account_id = getattr(pi, 'bank_receiving_account_id', None)
     if account_id:
         return db.session.get(Account, account_id)
     pi_currency = (pi.currency or 'USD').upper()
-    saved_bank_info = (pi.bank_info or '').strip()
+    saved_bank_info = _normalized_bank_text(pi.bank_info)
     saved_account_no = (getattr(pi, 'bank_account_no', '') or '').strip()
     candidates = []
     for account in Account.query.filter_by(currency=pi_currency).order_by(Account.name).all():
@@ -1603,7 +1608,7 @@ def _matching_account_for_pi(pi):
                 continue
             candidates.append(account)
         elif saved_bank_info and saved_bank_info in {
-            account.bank_info().strip(), _legacy_account_bank_info(account).strip()
+            _normalized_bank_text(account.bank_info()), _normalized_bank_text(_legacy_account_bank_info(account))
         }:
             candidates.append(account)
     return candidates[0] if len(candidates) == 1 else None
@@ -1636,8 +1641,8 @@ def _validate_export_account_brand(export_pi, template=None):
         })
     else:
         snapshot = account
-    if (export_pi.bank_info or '').strip() not in {
-        snapshot.bank_info().strip(), _legacy_account_bank_info(snapshot).strip()
+    if _normalized_bank_text(export_pi.bank_info) not in {
+        _normalized_bank_text(snapshot.bank_info()), _normalized_bank_text(_legacy_account_bank_info(snapshot))
     }:
         raise ValueError('银行信息与已关联收款账户快照不一致，禁止预览和导出。请通过收款账户选择整组切换。')
     if not account.brands:
@@ -6813,10 +6818,10 @@ def _apply_export_form(form, export_pi):
         account = db.session.get(Account, account_id) if account_id else None
         if form.get('account_id') and not account:
             raise ValueError('所选收款账户不存在，请重新选择。')
-        if not account and 'bank_info' in form and form.get('bank_info', '').strip() != (export_pi.bank_info or '').strip():
+        if not account and 'bank_info' in form and _normalized_bank_text(form.get('bank_info', '')) != _normalized_bank_text(export_pi.bank_info):
             raise ValueError('请通过收款账户选择整组切换银行信息，不能手动改写银行信息后导出。')
         _apply_bank_snapshot(
-            export_pi, account, form.get('bank_info', ''), preserve_existing=not account
+            export_pi, account, export_pi.bank_info if not account else '', preserve_existing=not account
         )
         export_pi.customer.name = form.get('cust_name', '').strip() or export_pi.customer.name
         export_pi.customer.country = form.get('cust_country', '').strip()

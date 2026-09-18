@@ -3017,6 +3017,49 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(pi.customs_note, 'KEEP-CUSTOMS-NOTE')
             self.assertEqual(pi.effective_procurement_status, '发货完成')
 
+    def test_export_keeps_saved_account_despite_browser_newlines(self):
+        self.login('admin-test')
+        with application.app.app_context():
+            account = db.session.get(Account, self.approved_account)
+            pi = PI(pi_number='BANK-NEWLINE-TEST', customer_id=self.alice_customer,
+                    salesperson='Alice', company='klista', currency='USD', notes='bank transport')
+            application._apply_bank_snapshot(pi, account)
+            db.session.add(pi)
+            db.session.flush()
+            db.session.add(PIItem(pi_id=pi.id, product_id=Product.query.first().id,
+                                  quantity=1, unit_price=1.235, amount=1.24))
+            db.session.commit()
+            pi_id, original, version = pi.id, pi.bank_info, pi.version
+        url = '/pi/%s/export' % pi_id
+        html = self.client.get(url).get_data(as_text=True)
+        self.assertIn('原账户与抬头匹配时可直接导出', html)
+        for newline in ['\r\n', '\r', '\n']:
+            submitted = original.replace('\n', newline)
+            response = self.client.post(url, data={
+                'csrf_token': self.token(url), 'company_header': 'klista',
+                'account_id': '', 'bank_info': submitted, 'shipping_cost': '0',
+                'mode': 'download', 'output_format': 'xlsx',
+            })
+            self.assertEqual(response.status_code, 200)
+            response.close()
+        with application.app.app_context():
+            pi = db.session.get(PI, pi_id)
+            self.assertEqual((pi.bank_info, pi.bank_receiving_account_id, pi.version),
+                             (original, self.approved_account, version))
+            copied = application._pi_export_copy(pi)
+            copied.bank_info = original.replace('\n', '\r\n')
+            application._validate_export_account_brand(copied)
+            copied.bank_receiving_account_id = None
+            self.assertEqual(application._matching_account_for_pi(copied).id, self.approved_account)
+        with patch.object(application, '_render_pi_export') as renderer:
+            response = self.client.post(url, data={
+                'csrf_token': self.token(url), 'account_id': '',
+                'bank_info': original.replace('123', 'changed-account'),
+                'shipping_cost': '0', 'output_format': 'xlsx', 'mode': 'download',
+            })
+            self.assertEqual(response.status_code, 400)
+            renderer.assert_not_called()
+
     def test_account_brand_multiselect_validation_and_legacy_preservation(self):
         self.login('admin-test')
         with application.app.app_context():

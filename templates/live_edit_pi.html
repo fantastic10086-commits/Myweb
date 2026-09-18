@@ -221,15 +221,16 @@
             <div class="col-md-4">
                 <label class="form-label fw-bold small">收款账户（整组切换）</label>
                 <select class="form-select form-select-sm" name="account_id" id="export_account_select" onchange="onExportAccountChange()">
-                    <option value="" selected>— 保留当前快照{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>
+                    <option value="" selected>— 使用原 PI 收款信息{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>
                     {% for a in all_accounts %}
                     <option value="{{ a.id }}" data-bank="{{ a.bank_info() }}" data-brands="{{ a.brand }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %} / {{ a.brand_label }}</option>
                     {% endfor %}
                 </select>
-                <div class="form-text">仅影响本次导出副本；通过账户选择切换银行信息。</div>
+                <div class="form-text">原账户与抬头匹配时可直接导出。切换仅用于本次导出，不修改原 PI。</div>
             </div>
             {% endif %}
             <div class="{% if is_admin %}col-md-8{% else %}col-md-12{% endif %}">
+                <div class="small text-muted mb-1">原 PI 收款账户：{% if current_receiving_account %}{{ current_receiving_account.name }} / {{ current_receiving_account.brand_label }}{% else %}暂无法确认，请选择有效账户{% endif %}</div>
                 <label class="form-label fw-bold small">银行信息快照{% if not is_admin %}（只读）{% endif %}</label>
                 <textarea class="form-control form-control-sm" id="export_bank_info" readonly name="bank_info" rows="6">{{ pi.bank_info or '' }}</textarea>
             </div>
