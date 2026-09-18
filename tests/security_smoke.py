@@ -672,6 +672,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 'delivery_time': '',
                 'bank_info': 'SAFE BANK',
                 'notes': 'redirect-to-preview-test',
+                'account_id': self.approved_account,
                 'issue_date': '2026-09-09',
                 'currency': 'USD',
                 'exchange_rate': '7',
@@ -1193,6 +1194,7 @@ class SecuritySmokeTests(unittest.TestCase):
             'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
             'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
             'issue_date': '2026-09-17', 'notes': 'Description override test',
+            'account_id': self.approved_account,
             f'selected_{product_id}': 'on', f'qty_{product_id}': '2',
             f'unit_price_{product_id}': '5', 'product_order': str(product_id),
             f'item_name_{product_id}': 'Customer nozzle', f'item_spec_{product_id}': '',
@@ -3016,6 +3018,30 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIs(pi.customs_required, True)
             self.assertEqual(pi.customs_note, 'KEEP-CUSTOMS-NOTE')
             self.assertEqual(pi.effective_procurement_status, '发货完成')
+
+    def test_pi_create_requires_valid_account_for_admin_and_sales_but_not_drafts(self):
+        for user in ['admin-test', 'alice']:
+            self.login(user)
+            token = self.token('/pi/create')
+            with application.app.app_context():
+                count = PI.query.count()
+                product_id = Product.query.first().id
+            data = {'csrf_token': token, 'customer_id': self.alice_customer,
+                    'salesperson': 'Alice', 'notes': 'account required',
+                    'currency': 'USD', 'exchange_rate': '7',
+                    'selected_' + str(product_id): 'on', 'qty_' + str(product_id): '1',
+                    'unit_price_' + str(product_id): '1.235'}
+            for account_id in ['', 'invalid', '999999999']:
+                with patch.object(application, '_generate_default_pi_documents') as renderer:
+                    response = self.client.post('/pi/create', data=dict(data, account_id=account_id))
+                    self.assertEqual(response.status_code, 400)
+                    renderer.assert_not_called()
+                with application.app.app_context():
+                    self.assertEqual(PI.query.count(), count)
+            response = self.client.post('/pi/drafts/save', data={'csrf_token': token, 'draft_rows': '[]'})
+            self.assertEqual(response.status_code, 200)
+            html = self.client.get('/pi/create').get_data(as_text=True)
+            self.assertIn('id="account_select" required', html)
 
     def test_export_keeps_saved_account_despite_browser_newlines(self):
         self.login('admin-test')

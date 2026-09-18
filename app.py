@@ -4679,6 +4679,8 @@ def pi_create():
         company = request.form.get('company', 'klista').strip()
         account_id = request.form.get('account_id', type=int)
         selected_account = db.session.get(Account, account_id) if account_id else None
+        if not selected_account:
+            abort(400, description='请选择有效的收款账户后生成 PI。')
         if not is_admin() and selected_account:
             currency = selected_account.currency or 'USD'
             company = company if company in selected_account.brands else selected_account.primary_brand
@@ -4745,9 +4747,6 @@ def pi_create():
                 abort(409, description='草稿已更新，请重新打开后生成。')
         # Create PI record
         pi_number = _generate_pi_number()
-        if not is_admin() and not selected_account:
-            flash('请选择已审核的收款账户。', 'danger')
-            return redirect(url_for('pi_create'))
 
         # total_amount = product subtotal only (shipping stored separately)
         total_amount = round(total_amount, 2)
