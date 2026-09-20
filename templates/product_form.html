@@ -94,8 +94,8 @@ document.addEventListener('paste', function(e) {
                     <input type="text" class="form-control" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="产品英文描述 / 名称">
                 </div>
                 <div class="col-md-6">
-                    <label for="chinese_name" class="form-label">中文名称 <button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="translateBtn" onclick="translateName()" title="自动翻译英文名称"><i class="bi bi-translate"></i> 翻译</button></label>
-                    <input type="text" class="form-control" id="chinese_name" name="chinese_name" value="{{ product.chinese_name if product else '' }}" placeholder="中文名称（点击翻译自动生成）">
+                    <label for="chinese_name" class="form-label">中文名称 {% if not editing %}<span class="text-danger">*</span>{% endif %}<button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="translateBtn" onclick="translateName()" title="自动翻译英文名称"><i class="bi bi-translate"></i> 翻译</button></label>
+                    <input type="text" class="form-control" id="chinese_name" name="chinese_name" value="{{ product.chinese_name if product else '' }}" placeholder="中文名称（点击翻译自动生成）" {% if not editing %}required{% endif %}>
                 </div>
                 <div class="col-md-6">
                     <label for="product_code" class="form-label">产品编码</label>

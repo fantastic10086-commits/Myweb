@@ -18,7 +18,7 @@
             支持带浮动图片的 <strong>.xlsx</strong> 文件。系统将：
         </p>
         <ul class="text-muted">
-            <li>读取每一行的产品名称、编码、规格和单价</li>
+            <li>读取每一行的产品英文名称、中文名称、编码、规格和单价</li>
             <li>提取每一行对应的浮动图片</li>
             <li>自动识别重复产品（名称和编码相同），并更新已有数据</li>
         </ul>
@@ -50,12 +50,13 @@
                     <strong>Excel 表格格式：</strong>
                     <table class="table table-sm table-bordered mb-0 mt-2" style="font-size:12px;">
                         <thead class="table-secondary">
-                            <tr><th>A：序号</th><th>B：名称</th><th>C：编码</th><th>D：规格</th><th>E：单价</th><th>F：图片</th></tr>
+                            <tr><th>A：序号</th><th>B：产品英文名称</th><th>C：中文名称（必填）</th><th>D：编码</th><th>E：规格</th><th>F：单价</th><th>G：图片</th></tr>
                         </thead>
                         <tbody>
                             <tr>
                                 <td>1</td>
                                 <td>产品名称</td>
+                                <td>产品中文名称</td>
                                 <td>SKU-001</td>
                                 <td>10cm x 20cm</td>
                                 <td>12.50</td>
@@ -63,7 +64,7 @@
                             </tr>
                         </tbody>
                     </table>
-                    <p class="mt-2 mb-0 text-muted">第 1 行为表头，数据从第 2 行开始。F 列图片按所在行提取。</p>
+                    <p class="mt-2 mb-0 text-muted">第 1 行为表头，数据从第 2 行开始。新产品的中文名称必填；浮动图片按所在行提取。</p>
                 </div>
             </div>
 

@@ -3312,6 +3312,24 @@ def product_import():
             wb = load_workbook(tmp_path)
             ws = wb.active
 
+            header_index = {}
+            for index, cell in enumerate(ws[1]):
+                label = str(cell.value or '').strip().lower().replace(' ', '')
+                if label:
+                    header_index[label] = index
+
+            def column_index(aliases, default=None):
+                for alias in aliases:
+                    if alias.lower().replace(' ', '') in header_index:
+                        return header_index[alias.lower().replace(' ', '')]
+                return default
+
+            name_index = column_index(('产品英文名称', '英文名称', '产品名称', '名称', 'name'), 1)
+            chinese_index = column_index(('产品中文名称', '中文名称', '中文名', 'chinese name'))
+            code_index = column_index(('产品编码', '编码', 'sku', 'code'), 2 if chinese_index is None else 3)
+            spec_index = column_index(('规格', 'specification', 'spec'), 3 if chinese_index is None else 4)
+            price_index = column_index(('美元单价', '单价', '价格', 'unit price', 'price'), 4 if chinese_index is None else 5)
+
             # ── Extract floating images and map to rows ──
             row_images = {}  # row -> list of image objects
             for img in ws._images:
@@ -3335,28 +3353,35 @@ def product_import():
             for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=False)):
                 excel_row = row_idx + 1  # 0-indexed row number
 
-                # Read cell values (columns A-E = indices 0-4)
-                # A: No, B: Name, C: Code, D: Specification, E: Unit Price
-                name = str(row[1].value).strip() if row[1].value else ''
+                def cell_text(index):
+                    if index is None or index >= len(row) or row[index].value is None:
+                        return ''
+                    return str(row[index].value).strip()
+
+                name = cell_text(name_index)
                 if not name or name == 'None':
                     skipped += 1
                     continue
                 if len(name) > 200:
                     name = name[:200]
 
-                code = str(row[2].value).strip() if len(row) > 2 and row[2].value else ''
+                chinese_name = cell_text(chinese_index)
+                if len(chinese_name) > 200:
+                    chinese_name = chinese_name[:200]
+
+                code = cell_text(code_index)
                 if len(code) > 100:
                     code = code[:100]
 
-                spec = str(row[3].value).strip() if len(row) > 3 and row[3].value else ''
+                spec = cell_text(spec_index)
                 if len(spec) > 200:
                     spec = spec[:200]
 
                 # Parse price
                 price = 0.0
-                if len(row) > 4 and row[4].value is not None:
+                if price_index is not None and price_index < len(row) and row[price_index].value is not None:
                     try:
-                        price = float(str(row[4].value).strip().replace(',', ''))
+                        price = float(str(row[price_index].value).strip().replace(',', ''))
                     except (ValueError, TypeError):
                         price = 0.0
 
@@ -3387,6 +3412,7 @@ def product_import():
                 existing = Product.query.filter_by(name=name, product_code=code).first()
                 if existing:
                     # Update existing product
+                    existing.chinese_name = chinese_name or existing.chinese_name
                     existing.specification = spec or existing.specification
                     existing.unit_price = price if price > 0 else existing.unit_price
                     if image_filename:
@@ -3395,8 +3421,11 @@ def product_import():
                         existing.image = image_filename
                     imported += 1
                 else:
+                    if not chinese_name:
+                        raise ValueError(f'第 {excel_row + 1} 行是新产品，中文名称不能为空。')
                     product = Product(
                         name=name,
+                        chinese_name=chinese_name,
                         product_code=code,
                         specification=spec,
                         unit_price=price,
@@ -3453,6 +3482,10 @@ def product_add():
         if not product.name:
             _remove_upload(image_filename)
             flash('产品名称不能为空。', 'danger')
+            return render_template('product_form.html', product=product, editing=False)
+        if not product.chinese_name:
+            _remove_upload(image_filename)
+            flash('中文名称不能为空。', 'danger')
             return render_template('product_form.html', product=product, editing=False)
         if not customs_ok:
             _remove_upload(image_filename)
@@ -3598,6 +3631,9 @@ def api_product_add():
     if not product.name:
         _remove_upload(product.image)
         return jsonify({'success': False, 'error': '产品名称不能为空。'}), 400
+    if not product.chinese_name:
+        _remove_upload(product.image)
+        return jsonify({'success': False, 'error': '中文名称不能为空。'}), 400
 
     try:
         db.session.add(product)

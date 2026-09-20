@@ -1123,6 +1123,52 @@ class SecuritySmokeTests(unittest.TestCase):
         )
         self.assertEqual(too_long.status_code, 400)
 
+    def test_every_new_product_entry_requires_a_chinese_name(self):
+        self.login('admin-test')
+        add_page = self.client.get('/products/add').get_data(as_text=True)
+        self.assertRegex(add_page, r'id="chinese_name"[^>]*required')
+
+        rejected = self.client.post('/products/add', data={
+            'name': 'Regular Missing Chinese',
+            'product_code': 'REG-MISSING-CN',
+            'unit_price': '1',
+            'csrf_token': self.token('/products/add'),
+        })
+        self.assertEqual(rejected.status_code, 200)
+        self.assertIn('中文名称不能为空', rejected.get_data(as_text=True))
+        with application.app.app_context():
+            self.assertIsNone(Product.query.filter_by(product_code='REG-MISSING-CN').first())
+
+        def workbook_upload(chinese_name):
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.append(['序号', '产品英文名称', '中文名称', '编码', '规格', '单价', '图片'])
+            sheet.append([1, 'Imported Required Chinese', chinese_name, 'IMPORT-CN-REQ', 'S', 2.5, ''])
+            output = BytesIO()
+            workbook.save(output)
+            workbook.close()
+            output.seek(0)
+            return output, 'products.xlsx'
+
+        missing_import = self.client.post('/products/import', data={
+            'csrf_token': self.token('/products/import'),
+            'excel_file': workbook_upload(''),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn('中文名称不能为空', missing_import.get_data(as_text=True))
+        with application.app.app_context():
+            self.assertIsNone(Product.query.filter_by(product_code='IMPORT-CN-REQ').first())
+
+        imported = self.client.post('/products/import', data={
+            'csrf_token': self.token('/products/import'),
+            'excel_file': workbook_upload('导入中文名称'),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn('已导入 1 个产品', imported.get_data(as_text=True))
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='IMPORT-CN-REQ').one()
+            self.assertEqual(product.chinese_name, '导入中文名称')
+            db.session.delete(product)
+            db.session.commit()
+
     def test_salesperson_can_manage_individual_products_but_not_admin_bulk_tools(self):
         self.login()
         product_page = self.client.get('/products')
@@ -1137,6 +1183,7 @@ class SecuritySmokeTests(unittest.TestCase):
 
         response = self.client.post('/products/add', data={
             'name': 'Sales Added Product',
+            'chinese_name': '业务员新增产品',
             'product_code': 'SALES-ADD',
             'unit_price': '12.5',
             'unit_price_rmb': '87.5',
@@ -1153,16 +1200,34 @@ class SecuritySmokeTests(unittest.TestCase):
 
         create_pi_html = self.client.get('/pi/create').get_data(as_text=True)
         self.assertIn('data-bs-target="#quickAddProductModal"', create_pi_html)
+        self.assertIn('id="qa_chinese_name"', create_pi_html)
+        self.assertIn('id="qa_translate"', create_pi_html)
+        self.assertIn('id="qa_chinese_name" required', create_pi_html)
+        self.assertIn("fd.append('chinese_name'", create_pi_html)
+        self.assertIn("fetch('/api/translate'", create_pi_html)
+        missing_chinese = self.client.post('/api/products/add', data={
+            'name': 'Missing Chinese Product',
+            'product_code': 'MISSING-CN',
+            'csrf_token': self.token('/pi/create'),
+        })
+        self.assertEqual(missing_chinese.status_code, 400)
+        self.assertIn('中文名称不能为空', missing_chinese.get_json()['error'])
         api_response = self.client.post('/api/products/add', data={
             'name': 'Sales Quick Product',
+            'chinese_name': '业务员快速产品',
             'product_code': 'SALES-QUICK',
             'unit_price': '5',
             'csrf_token': self.token('/pi/create'),
         })
         self.assertEqual(api_response.status_code, 200)
         self.assertTrue(api_response.get_json()['success'])
+        self.assertEqual(api_response.get_json()['product']['chinese_name'], '业务员快速产品')
 
         self.assertEqual(self.client.get(f'/products/{product_id}/edit').status_code, 200)
+        edit_pi_html = self.client.get(f'/pi/{self.alice_pi}/edit').get_data(as_text=True)
+        self.assertIn('id="qa_prod_chinese_name"', edit_pi_html)
+        self.assertIn('id="qa_prod_translate"', edit_pi_html)
+        self.assertIn("fd.append('chinese_name'", edit_pi_html)
         edited = self.client.post(f'/products/{product_id}/edit', data={
             'name': 'Sales Edited Product',
             'product_code': 'SALES-EDITED',
