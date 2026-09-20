@@ -216,8 +216,9 @@ var adjustmentUsd = 0;
     }
 
     function applyCurrency() {
+        var selectedCurrency = document.getElementById('currency_select').value;
         var currency = getCurrency();
-        document.getElementById('currency_hidden').value = currency;
+        document.getElementById('currency_hidden').value = selectedCurrency;
         document.getElementById('total_label').textContent = '订单总金额 (' + currency + ')';
         document.getElementById('shipping_sym').textContent = currency === 'RMB' ? '¥' : '$';
         repriceForCurrency();
@@ -399,8 +400,10 @@ var adjustmentUsd = 0;
                 applyCurrency();
             } else {
                 var curSel = document.getElementById('currency_select');
+                curSel.value = '';
                 curSel.disabled = false;
                 curSel.style.background = '';
+                applyCurrency();
             }
         };
 
@@ -423,8 +426,10 @@ var adjustmentUsd = 0;
                 var cust = document.getElementById('customer_id');
                 var sp = document.getElementById('pi_salesperson');
                 var rate = document.getElementById('exchange_rate');
+                var currency = document.getElementById('currency_select');
                 var np = selectedProductOrder.length;
                 if (!document.getElementById('account_select').value) { e.preventDefault(); alert('请选择收款账户。'); document.getElementById('account_select').focus(); return; }
+                if (!currency.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择币种。'; alert('请选择币种。'); currency.focus(); return; }
                 if (!cust.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择客户。'; alert('请选择客户。'); return; }
                 if (!sp.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择业务员。'; alert('请选择业务员。'); return; }
                 if (!(parseFloat(rate.value) > 0)) { e.preventDefault(); if(st)st.textContent='提交失败：本单业务汇率必须大于 0。'; alert('本单业务汇率必须大于 0。'); return; }
@@ -458,7 +463,8 @@ var adjustmentUsd = 0;
                 var el = form.elements.namedItem(key);
                 if (el) el.value = draftData.fields[key];
             });
-            curSel.value = draftData.fields.currency || 'USD';
+            curSel.value = draftData.fields.currency || '';
+            applyCurrency();
             document.getElementById('cust_search').value = custSelect.selectedOptions.length ? custSelect.selectedOptions[0].text.trim() : '';
             var sp = document.getElementById('pi_salesperson');
             document.getElementById('sp_search').value = sp.value;
@@ -609,7 +615,7 @@ var adjustmentUsd = 0;
                     </div>
                     <div class="mb-3"><label for="notes" class="form-label">PI 备注 <span class="text-danger">*</span></label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="该 PI 的其他备注……" required>{{ request.form.get('notes', '') }}</textarea></div>
                     <div class="mb-3"><label for="account_select" class="form-label">收款账户 <span class="text-danger">*</span></label><select class="form-select" name="account_id" id="account_select" required onchange="onAccountChange()"><option value="">— 选择收款账户 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">选择后会整组带入收款人、账号、银行地址、SWIFT、Bank Code、Branch Code 和币种。</div></div>
-                    <div class="mb-3"><label class="form-label">币种</label><select class="form-select" id="currency_select"><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value="USD"></div>
+                    <div class="mb-3"><label class="form-label">币种 <span class="text-danger">*</span></label><select class="form-select" id="currency_select" required><option value="">— 请选择币种 —</option><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value=""></div>
                     <div class="mb-3">
                         <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>
                         <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ request.form.get('exchange_rate', exchange_rate) }}" required><span class="input-group-text">RMB</span></div>

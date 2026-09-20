@@ -4812,7 +4812,9 @@ def pi_create():
             flash('请填写 PI 备注。', 'danger')
             return redirect(url_for('pi_create'))
         issue_date_str = request.form.get('issue_date', '').strip()
-        currency = request.form.get('currency', 'USD').strip()
+        currency = request.form.get('currency', '').strip().upper()
+        if currency not in {'USD', 'RMB'}:
+            abort(400, description='请选择币种后生成 PI。')
         try:
             business_exchange_rate = _nonnegative_float(
                 request.form.get('exchange_rate', str(_get_exchange_rate())),
@@ -4832,7 +4834,7 @@ def pi_create():
         if not is_admin() and selected_account:
             currency = selected_account.currency or 'USD'
             company = company if company in selected_account.brands else selected_account.primary_brand
-        if currency not in {'USD', 'RMB'} or company not in {'klista', 'qisuo'}:
+        if company not in {'klista', 'qisuo'}:
             abort(400)
 
         if not customer_id:

@@ -3161,10 +3161,22 @@ class SecuritySmokeTests(unittest.TestCase):
                     renderer.assert_not_called()
                 with application.app.app_context():
                     self.assertEqual(PI.query.count(), count)
+            without_currency = dict(data, account_id=str(self.approved_account))
+            without_currency.pop('currency')
+            with patch.object(application, '_generate_default_pi_documents') as renderer:
+                response = self.client.post('/pi/create', data=without_currency)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('请选择币种', response.get_data(as_text=True))
+                renderer.assert_not_called()
+            with application.app.app_context():
+                self.assertEqual(PI.query.count(), count)
             response = self.client.post('/pi/drafts/save', data={'csrf_token': token, 'draft_rows': '[]'})
             self.assertEqual(response.status_code, 200)
             html = self.client.get('/pi/create').get_data(as_text=True)
             self.assertIn('id="account_select" required', html)
+            self.assertIn('id="currency_select" required', html)
+            self.assertIn('— 请选择币种 —', html)
+            self.assertIn("alert('请选择币种。')", html)
 
     def test_export_keeps_saved_account_despite_browser_newlines(self):
         self.login('admin-test')
