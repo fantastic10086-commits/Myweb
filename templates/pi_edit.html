@@ -329,12 +329,12 @@
     <div class="small mb-2">备注、收货地址、付款条款、价格条款和交货期仍可直接修改。客户、业务员、币种、汇率、开单日期、产品、数量、单价及订单金额需要管理员解锁。已有采购或装箱引用的产品不能移除，PI 数量也不能低于已采购或已装箱数量。</div>
     {% if is_admin %}
     <div class="form-check mt-2">
-        <input class="form-check-input" type="checkbox" value="1" name="downstream_unlock" id="downstream_unlock">
+        <input class="form-check-input" type="checkbox" value="1" name="downstream_unlock" id="downstream_unlock" form="pi-form">
         <label class="form-check-label fw-semibold" for="downstream_unlock">我已核对以上影响范围，解锁结构信息</label>
     </div>
     <div class="mt-2 d-none" id="downstream_reason_wrap">
         <label class="form-label mb-1" for="downstream_change_reason">修改原因 <span class="text-danger">*</span></label>
-        <textarea class="form-control" name="downstream_change_reason" id="downstream_change_reason" rows="2" maxlength="500" placeholder="说明为什么需要修改，至少 5 个字符；原因会写入审计日志。"></textarea>
+        <textarea class="form-control" name="downstream_change_reason" id="downstream_change_reason" form="pi-form" rows="2" maxlength="500" placeholder="说明为什么需要修改，至少 5 个字符；原因会写入审计日志。"></textarea>
     </div>
     {% else %}
     <div class="small fw-semibold"><i class="bi bi-info-circle me-1"></i>如需修改结构信息，请联系管理员处理。</div>

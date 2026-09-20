@@ -887,6 +887,8 @@ class SecuritySmokeTests(unittest.TestCase):
             self.login('admin-test')
             admin_page = self.client.get(f'/pi/{pi_id}/edit').get_data(as_text=True)
             self.assertIn('id="downstream_unlock"', admin_page)
+            self.assertIn('name="downstream_unlock" id="downstream_unlock" form="pi-form"', admin_page)
+            self.assertIn('name="downstream_change_reason" id="downstream_change_reason" form="pi-form"', admin_page)
             self.assertIn('原因会写入审计日志', admin_page)
 
             with patch.object(
