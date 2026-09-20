@@ -17,12 +17,17 @@
     var selectedProducts = {};
     var nextCopyId = -1000000000;
     var selectedProductOrder = [];
-    var pendingProducts = {};
-    var pendingProductOrder = [];
+    var pickerSelections = {};
+    var pickerSelectionOrder = [];
+    var pickerItems = {};
+    var pickerPage = 1;
+    var pickerPages = 1;
+    var pickerPageSize = 40;
+    var pickerLoading = false;
     var hasDownstreamRecords = {{ downstream_impact.has_downstream|tojson }};
     var downstreamEditAdmin = {{ is_admin|tojson }};
     var adjustmentUsd = {{ ((pi.shipping_cost or 0) / (pi.exchange_rate or 7) if pi.currency == 'RMB' else (pi.shipping_cost or 0))|tojson }};
-    var productSearch, productDropdown, selectedTableBody, noProductMsg, totalDisplay, totalInput;
+    var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
     function getCurrency() {
         var cs = document.getElementById('currency_select');
@@ -50,7 +55,6 @@
         });
         var reasonWrap = document.getElementById('downstream_reason_wrap');
         if (reasonWrap) reasonWrap.classList.toggle('d-none', locked);
-        updateAddProductButton();
     }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
@@ -66,13 +70,13 @@
     }
     function showHideEmpty() { noProductMsg.style.display = selectedProductOrder.length === 0 ? '' : 'none'; }
 
-    function imgTag(img) { return img ? '<img src="/uploads/thumb/' + encodeURIComponent(img) + '" loading="lazy" decoding="async" style="width:36px;height:36px;object-fit:cover;border-radius:3px;margin-right:4px;">' : ''; }
+    function imgTag(img, size) { size = size || 36; return img ? '<img src="/uploads/thumb/' + encodeURIComponent(img) + '" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:3px;margin-right:4px;">' : ''; }
     function normalizeProduct(p) {
         var currentPrice = Number(p.price) || 0;
         var usdPrice = Number(p.priceUsd != null ? p.priceUsd : p.price_usd);
         if (!isFinite(usdPrice)) usdPrice = toUsd(currentPrice);
         return {
-            id: Number(p.id), productId: Number(p.productId || p.id), itemId: p.itemId || null, name: String(p.name || ''), code: String(p.code || p.product_code || ''),
+            id: Number(p.id), productId: Number(p.productId || p.id), itemId: p.itemId || null, name: String(p.name || ''), chinese_name: String(p.chinese_name || ''), code: String(p.code || p.product_code || ''),
             originalCode: String(p.originalCode != null ? p.originalCode : p.code || p.product_code || ''), originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''), priceUsd: usdPrice, price: PIPrices.price(fromUsd(usdPrice)),
             qty: Math.max(1, Number(p.qty) || 1), img: String(p.img || ''), originalImage: p.originalImage != null ? p.originalImage : p.img || '', imageSource: p.imageSource || '', imageMode: p.imageMode || 'keep', imageFile: p.imageFile || null
         };
@@ -200,51 +204,159 @@
         if (shipSym) shipSym.textContent = currency === 'RMB' ? '¥' : '$';
         repriceForCurrency();
     }
-    function updateAddProductButton() {
-        var btn = document.getElementById('add_product_btn');
-        var count = pendingProductOrder.length;
-        btn.disabled = count === 0 || structuralEditLocked();
-        btn.innerHTML = '<i class="bi bi-plus-lg"></i> 添加所选产品' + (count ? ' (' + count + ')' : '');
+    function updatePickerSelectionState() {
+        var count = pickerSelectionOrder.length;
+        var countEl = document.getElementById('picker_selected_count');
+        var addBtn = document.getElementById('picker_add_selected');
+        if (countEl) countEl.textContent = '已选 ' + count + ' 项';
+        if (addBtn) {
+            addBtn.disabled = count === 0;
+            addBtn.innerHTML = '<i class="bi bi-plus-circle me-1"></i>加入已选产品' + (count ? '（' + count + '）' : '');
+        }
+        var selectAll = document.getElementById('picker_select_page');
+        var body = document.getElementById('product_picker_body');
+        if (selectAll && body) {
+            var available = body.querySelectorAll('.picker-check:not(:disabled)');
+            var checkedAvailable = body.querySelectorAll('.picker-check:not(:disabled):checked');
+            selectAll.disabled = available.length === 0;
+            selectAll.checked = available.length > 0 && available.length === checkedAvailable.length;
+            selectAll.indeterminate = checkedAvailable.length > 0 && checkedAvailable.length < available.length;
+        }
     }
-    function renderDropdown(filter) {
-        filter = (filter || '').trim();
-        if (!filter) { productDropdown.classList.remove('show'); return; }
-        productDropdown.innerHTML = '<span class="dropdown-item text-muted">正在搜索……</span>';
-        productDropdown.classList.add('show');
-        fetch('/api/products/search?q=' + encodeURIComponent(filter))
-        .then(function(r){return r.json();})
-        .then(function(data){
-            var html = '';
-            for (var i = 0; i < data.length; i++) {
-                var p = data[i];
-                if (productAlreadySelected(p.id)) continue;
-                var checked = pendingProducts[p.id] ? ' checked' : '';
-                var normalized = normalizeProduct(p);
-                html += '<label class="dropdown-item d-flex align-items-center gap-2 mb-0" data-p=\'' + JSON.stringify(p).replace(/'/g,'&#39;') + '\'><input type="checkbox" class="form-check-input mt-0 product-result-check"' + checked + '>' + imgTag(p.img) + '<span class="flex-grow-1"><strong>' + escHtml(String(p.name || '')) + '</strong>  <small class="text-muted">' + escHtml(String(p.code || '')) + '</small></span><span>$' + normalized.priceUsd.toFixed(3) + '</span></label>';
-            }
-            if (!html) html = '<span class="dropdown-item text-muted">无匹配结果</span>';
-            productDropdown.innerHTML = html;
-        });
+
+    function renderPickerRows(items, total) {
+        var body = document.getElementById('product_picker_body');
+        var empty = document.getElementById('product_picker_empty');
+        var totalEl = document.getElementById('picker_total_count');
+        var selectAll = document.getElementById('picker_select_page');
+        pickerItems = {};
+        body.innerHTML = '';
+        totalEl.textContent = '共 ' + total + ' 个产品';
+        empty.classList.toggle('d-none', items.length !== 0);
+        for (var i = 0; i < items.length; i++) {
+            var p = normalizeProduct(items[i]);
+            pickerItems[p.id] = p;
+            var alreadyAdded = productAlreadySelected(p.id);
+            var checked = !!pickerSelections[p.id];
+            var tr = document.createElement('tr');
+            tr.dataset.productId = String(p.id);
+            tr.className = alreadyAdded ? 'table-light text-muted' : '';
+            tr.innerHTML =
+                '<td class="text-center"><input type="checkbox" class="form-check-input picker-check" aria-label="选择产品"' + (checked ? ' checked' : '') + (alreadyAdded ? ' disabled' : '') + '></td>' +
+                '<td>' + (p.img ? imgTag(p.img, 52) : '<span class="d-inline-flex align-items-center justify-content-center bg-light text-muted rounded" style="width:52px;height:52px;"><i class="bi bi-box"></i></span>') + '</td>' +
+                '<td><div class="fw-semibold">' + escHtml(p.name) + '</div>' + (p.chinese_name ? '<small class="text-muted">' + escHtml(p.chinese_name) + '</small>' : '') + '</td>' +
+                '<td><span class="font-monospace">' + escHtml(p.code || '—') + '</span></td>' +
+                '<td class="text-muted">' + escHtml(p.spec || '—') + '</td>' +
+                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(3) + '</small>' : '') + '</td>' +
+                '<td class="text-center">' + (alreadyAdded ? '<span class="badge bg-secondary">已加入</span>' : '') + '</td>';
+            body.appendChild(tr);
+        }
+        var available = body.querySelectorAll('.picker-check:not(:disabled)');
+        var checkedAvailable = body.querySelectorAll('.picker-check:not(:disabled):checked');
+        selectAll.disabled = available.length === 0;
+        selectAll.checked = available.length > 0 && available.length === checkedAvailable.length;
+        selectAll.indeterminate = checkedAvailable.length > 0 && checkedAvailable.length < available.length;
+        document.getElementById('picker_page_info').textContent = '第 ' + pickerPage + ' / ' + pickerPages + ' 页';
+        document.getElementById('picker_prev').disabled = pickerPage <= 1;
+        document.getElementById('picker_next').disabled = pickerPage >= pickerPages;
+        updatePickerSelectionState();
+    }
+
+    function loadPickerProducts(page) {
+        if (pickerLoading) return;
+        pickerLoading = true;
+        pickerPage = page || 1;
+        var body = document.getElementById('product_picker_body');
+        var error = document.getElementById('product_picker_error');
+        var query = document.getElementById('picker_search').value.trim();
+        error.classList.add('d-none');
+        body.innerHTML = '<tr><td colspan="7" class="text-center py-5"><span class="spinner-border text-primary" role="status"></span><div class="mt-2 text-muted">正在加载产品……</div></td></tr>';
+        fetch('/api/products/search?picker=1&page=' + pickerPage + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
+            headers: {'Accept': 'application/json'}
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('加载产品失败');
+            return response.json();
+        })
+        .then(function(data) {
+            pickerPage = data.page || 1;
+            pickerPages = data.pages || 1;
+            renderPickerRows(data.items || [], data.total || 0);
+        })
+        .catch(function(err) {
+            body.innerHTML = '';
+            error.textContent = err.message || '加载产品失败，请稍后重试。';
+            error.classList.remove('d-none');
+        })
+        .finally(function() { pickerLoading = false; });
+    }
+
+    function openProductPicker() {
+        if (structuralEditLocked()) return;
+        pickerSelections = {};
+        pickerSelectionOrder = [];
+        document.getElementById('picker_search').value = productSearch.value.trim();
+        updatePickerSelectionState();
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('productPickerModal')).show();
+        loadPickerProducts(1);
     }
 
     var preloadProducts = {{ preload_products|tojson }};
 
     document.addEventListener('DOMContentLoaded', function() {
         productSearch = document.getElementById('product_search');
-        productDropdown = document.getElementById('product_dropdown');
         selectedTableBody = document.querySelector('#selected_products_table tbody');
         noProductMsg = document.getElementById('no_product_msg');
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
         for (var preloadIndex = 0; preloadIndex < preloadProducts.length; preloadIndex++) { var p = normalizeProduct(preloadProducts[preloadIndex]); selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: p.qty, img: p.img||''}; selectedProductOrder.push(p.id); selectedTableBody.appendChild(makeRow(p)); }
         renumberRows(); showHideEmpty(); updateTotal();
-        productSearch.addEventListener('focus', function() { renderDropdown(this.value); });
-        productSearch.addEventListener('input', function() { renderDropdown(this.value); });
-        productSearch.addEventListener('blur', function() { setTimeout(function() { productDropdown.classList.remove('show'); }, 200); });
-        productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); renderDropdown(this.value); } });
-        productDropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.p) { e.preventDefault(); try { var p = JSON.parse(item.dataset.p); p.id = Number(p.id); var checkbox = item.querySelector('.product-result-check'); var willCheck = !checkbox.checked; checkbox.checked = willCheck; if (willCheck) { if (!pendingProducts[p.id]) pendingProductOrder.push(p.id); pendingProducts[p.id] = p; } else { delete pendingProducts[p.id]; pendingProductOrder = pendingProductOrder.filter(function(id) { return id !== p.id; }); } updateAddProductButton(); } catch(ex) {} } });
-        document.getElementById('add_product_btn').addEventListener('click', function() { var ids = pendingProductOrder.slice(); for (var i = 0; i < ids.length; i++) addProductObj(pendingProducts[ids[i]]); pendingProducts = {}; pendingProductOrder = []; updateAddProductButton(); productSearch.value = ''; productDropdown.classList.remove('show'); productSearch.focus(); });
-        updateAddProductButton();
+        productSearch.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); openProductPicker(); } });
+        document.getElementById('add_product_btn').addEventListener('click', openProductPicker);
+        document.getElementById('picker_search_btn').addEventListener('click', function() { loadPickerProducts(1); });
+        document.getElementById('picker_search').addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); loadPickerProducts(1); } });
+        document.getElementById('picker_prev').addEventListener('click', function() { if (pickerPage > 1) loadPickerProducts(pickerPage - 1); });
+        document.getElementById('picker_next').addEventListener('click', function() { if (pickerPage < pickerPages) loadPickerProducts(pickerPage + 1); });
+        document.getElementById('product_picker_body').addEventListener('change', function(e) {
+            if (!e.target.classList.contains('picker-check')) return;
+            var id = Number(e.target.closest('tr').dataset.productId);
+            if (e.target.checked) {
+                if (!pickerSelections[id]) pickerSelectionOrder.push(id);
+                pickerSelections[id] = pickerItems[id];
+            } else {
+                delete pickerSelections[id];
+                pickerSelectionOrder = pickerSelectionOrder.filter(function(selectedId) { return selectedId !== id; });
+            }
+            updatePickerSelectionState();
+        });
+        document.getElementById('picker_select_page').addEventListener('change', function() {
+            var checked = this.checked;
+            var boxes = document.querySelectorAll('#product_picker_body .picker-check:not(:disabled)');
+            for (var i = 0; i < boxes.length; i++) {
+                boxes[i].checked = checked;
+                var id = Number(boxes[i].closest('tr').dataset.productId);
+                if (checked) {
+                    if (!pickerSelections[id]) pickerSelectionOrder.push(id);
+                    pickerSelections[id] = pickerItems[id];
+                } else {
+                    delete pickerSelections[id];
+                    pickerSelectionOrder = pickerSelectionOrder.filter(function(selectedId) { return selectedId !== id; });
+                }
+            }
+            updatePickerSelectionState();
+        });
+        document.getElementById('picker_add_selected').addEventListener('click', function() {
+            if (structuralEditLocked()) return;
+            var ids = pickerSelectionOrder.slice();
+            for (var i = 0; i < ids.length; i++) addProductObj(pickerSelections[ids[i]]);
+            productSearch.value = '';
+            pickerSelections = {};
+            pickerSelectionOrder = [];
+            updatePickerSelectionState();
+            bootstrap.Modal.getInstance(document.getElementById('productPickerModal')).hide();
+            applyStructuralLock();
+        });
+        document.getElementById('productPickerModal').addEventListener('shown.bs.modal', function() { document.getElementById('picker_search').focus(); });
         window.onAccountChange = function() {
             var sel = document.getElementById('account_select');
             var opt = sel.options[sel.selectedIndex];
@@ -367,8 +479,7 @@
     </div>
     <div class="col-lg-7">
         <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
-            <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn" disabled><i class="bi bi-plus-lg"></i> 添加所选产品</button></div>
-            <div class="searchable-dropdown dropdown-menu w-100" id="product_dropdown" style="max-height:200px;overflow-y:auto;"></div>
+            <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称、中文名称、编码或规格搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button></div>
             <div class="table-responsive mt-2" id="selected_products_area"><small class="text-muted d-block mb-2">品名、规格、编码和图片仅修改当前 PI，产品库资料不变。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table"><thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead><tbody></tbody></table><div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div></div>
         </div></div>
@@ -403,6 +514,68 @@
         <div class="mt-3 text-end"><button type="submit" class="btn btn-warning btn-lg"><i class="bi bi-save me-1"></i> 更新 PI 并重新生成 PDF</button></div>
     </div>
 </div></form>
+
+<div class="modal fade" id="productPickerModal" tabindex="-1" aria-labelledby="productPickerTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h4 class="modal-title" id="productPickerTitle"><i class="bi bi-grid-3x3-gap me-2"></i>选择产品</h4>
+                    <div class="text-muted small mt-1">可搜索、翻页并跨页多选，最后一次加入 PI。</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="p-3 border-bottom bg-light sticky-top" style="z-index:2;">
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-8">
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="search" class="form-control" id="picker_search" placeholder="搜索产品名称、中文名称、编码或规格……" autocomplete="off">
+                                <button type="button" class="btn btn-primary" id="picker_search_btn">搜索</button>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-md-end">
+                            <span class="badge bg-secondary fs-6 me-2" id="picker_total_count">共 0 个产品</span>
+                            <span class="badge bg-primary fs-6" id="picker_selected_count">已选 0 项</span>
+                        </div>
+                    </div>
+                </div>
+                <div id="product_picker_error" class="alert alert-danger m-3 d-none" role="alert"></div>
+                <div class="table-responsive" style="min-height:420px;">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light sticky-top" style="top:0;z-index:1;">
+                            <tr>
+                                <th class="text-center" style="width:52px;"><input type="checkbox" class="form-check-input" id="picker_select_page" aria-label="全选本页"></th>
+                                <th style="width:76px;">图片</th>
+                                <th style="min-width:220px;">产品名称</th>
+                                <th style="min-width:150px;">编码</th>
+                                <th style="min-width:200px;">规格</th>
+                                <th class="text-end" style="width:120px;">单价（USD）</th>
+                                <th class="text-center" style="width:90px;">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="product_picker_body"></tbody>
+                    </table>
+                    <div id="product_picker_empty" class="text-center text-muted py-5 d-none">
+                        <i class="bi bi-search fs-1 d-block mb-2"></i>没有找到匹配的产品
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer d-flex flex-wrap justify-content-between gap-2">
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-outline-secondary" id="picker_prev"><i class="bi bi-chevron-left"></i> 上一页</button>
+                    <span class="text-muted" id="picker_page_info">第 1 / 1 页</span>
+                    <button type="button" class="btn btn-outline-secondary" id="picker_next">下一页 <i class="bi bi-chevron-right"></i></button>
+                </div>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-success" id="picker_add_selected" disabled><i class="bi bi-plus-circle me-1"></i>加入已选产品</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <div class="modal fade" id="quickAddProductModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-plus-square me-1"></i>快速新增产品</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="qaProdError" class="alert alert-danger d-none"></div><div class="mb-3"><label class="form-label">产品英文名称 <span class="text-danger">*</span></label><input type="text" class="form-control" id="qa_prod_name" placeholder="产品英文名称"></div><div class="mb-3"><label class="form-label">中文名称 <span class="text-danger">*</span><button type="button" class="btn btn-outline-secondary btn-sm ms-2" id="qa_prod_translate"><i class="bi bi-translate"></i> 翻译</button></label><input type="text" class="form-control" id="qa_prod_chinese_name" required placeholder="中文名称（可手动填写或点击翻译）"></div><div class="row g-2 mb-3"><div class="col-md-6"><label class="form-label">产品编码</label><input type="text" class="form-control" id="qa_prod_code" placeholder="SKU"></div><div class="col-md-6"><label class="form-label">规格</label><input type="text" class="form-control" id="qa_prod_spec" placeholder="尺寸、颜色、材质等"></div></div><div class="mb-3"><label class="form-label">单价 (USD)</label><div class="input-group"><span class="input-group-text">$</span><input type="number" step="0.001" min="0" class="form-control" id="qa_prod_price" value="0.000"></div></div><div class="mb-3"><label class="form-label">图片</label><input type="file" class="form-control" id="qa_prod_image" accept="image/*"><small class="text-muted">点击选择或 <strong>Ctrl+V</strong> 粘贴</small><img id="qa_img_preview" src="#" style="display:none;max-height:60px;max-width:150px;margin-top:4px;border-radius:4px;border:1px solid #ddd;"></div><div class="mb-3"><label class="form-label">备注</label><input type="text" class="form-control" id="qa_prod_notes" placeholder="选填"></div></div><div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-success" id="qaProdSubmit"><i class="bi bi-check-lg"></i> 添加产品</button></div></div></div></div>
 <script>(function(){var btn=document.getElementById('qaProdSubmit'),translateBtn=document.getElementById('qa_prod_translate'),modalEl=document.getElementById('quickAddProductModal'),errEl=document.getElementById('qaProdError');function handlePaste(e){var items=e.clipboardData&&e.clipboardData.items;if(!items)return;for(var i=0;i<items.length;i++){if(items[i].type.indexOf('image')!==-1){e.preventDefault();var blob=items[i].getAsFile();var dt=new DataTransfer();dt.items.add(blob);document.getElementById('qa_prod_image').files=dt.files;var preview=document.getElementById('qa_img_preview');var reader=new FileReader();reader.onload=function(ev){preview.src=ev.target.result;preview.style.display='';};reader.readAsDataURL(blob);return;}}}function clear(){document.getElementById('qa_prod_name').value='';document.getElementById('qa_prod_chinese_name').value='';document.getElementById('qa_prod_code').value='';document.getElementById('qa_prod_spec').value='';document.getElementById('qa_prod_price').value='0.000';document.getElementById('qa_prod_notes').value='';document.getElementById('qa_prod_image').value='';var p=document.getElementById('qa_img_preview');if(p)p.style.display='none';errEl.classList.add('d-none');}translateBtn.addEventListener('click',function(){errEl.classList.add('d-none');var text=document.getElementById('qa_prod_name').value.trim();if(!text){errEl.textContent='请先输入产品英文名称。';errEl.classList.remove('d-none');return;}translateBtn.disabled=true;btn.disabled=true;translateBtn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>正在翻译……';var fd=new FormData();fd.append('text',text);var controller=new AbortController();var timeout=window.setTimeout(function(){controller.abort();},12000);fetch('{{ url_for("api_translate") }}',{method:'POST',body:fd,signal:controller.signal}).then(function(r){return r.json().catch(function(){return {success:false,error:'翻译服务返回异常，请稍后重试。'};});}).then(function(d){if(d.success){document.getElementById('qa_prod_chinese_name').value=d.translated;}else{errEl.textContent=d.error||'翻译服务暂时不可用，请稍后重试。';errEl.classList.remove('d-none');}}).catch(function(err){errEl.textContent=err&&err.name==='AbortError'?'翻译请求超时，请稍后重试。':'网络错误，请稍后重试。';errEl.classList.remove('d-none');}).finally(function(){window.clearTimeout(timeout);translateBtn.disabled=false;btn.disabled=false;translateBtn.innerHTML='<i class="bi bi-translate"></i> 翻译';});});btn.addEventListener('click',function(){errEl.classList.add('d-none');var name=document.getElementById('qa_prod_name').value.trim();var chineseName=document.getElementById('qa_prod_chinese_name').value.trim();if(!name){errEl.textContent='产品名称不能为空。';errEl.classList.remove('d-none');return;}if(!chineseName){errEl.textContent='中文名称不能为空，请填写或点击翻译。';errEl.classList.remove('d-none');return;}btn.disabled=true;translateBtn.disabled=true;btn.innerHTML='<span class="spinner-border spinner-border-sm me-1"></span>正在添加……';var fd=new FormData();fd.append('name',name);fd.append('chinese_name',chineseName);fd.append('product_code',document.getElementById('qa_prod_code').value.trim());fd.append('specification',document.getElementById('qa_prod_spec').value.trim());fd.append('unit_price',document.getElementById('qa_prod_price').value);fd.append('notes',document.getElementById('qa_prod_notes').value.trim());var imgFile=document.getElementById('qa_prod_image').files[0];if(imgFile)fd.append('image',imgFile);fetch('{{ url_for("api_product_add") }}',{method:'POST',body:fd}).then(function(r){return r.json();}).then(function(d){if(d.success){addQuickProduct(d.product);clear();bootstrap.Modal.getInstance(modalEl).hide();}else{errEl.textContent=d.error||'操作失败。';errEl.classList.remove('d-none');}}).catch(function(){errEl.textContent='网络错误。';errEl.classList.remove('d-none');}).finally(function(){btn.disabled=false;translateBtn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加产品';});});modalEl.addEventListener('show.bs.modal',function(){clear();document.addEventListener('paste',handlePaste);});modalEl.addEventListener('hidden.bs.modal',function(){document.removeEventListener('paste',handlePaste);});})();</script>

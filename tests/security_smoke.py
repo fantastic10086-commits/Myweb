@@ -1669,6 +1669,16 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('var ids = pickerSelectionOrder.slice();', html)
         self.assertNotIn('Object.keys(pickerSelections)', html)
 
+        edit_pi = self.client.get(f'/pi/{self.alice_pi}/edit')
+        self.assertEqual(edit_pi.status_code, 200)
+        edit_html = edit_pi.get_data(as_text=True)
+        self.assertIn('id="productPickerModal"', edit_html)
+        self.assertIn('id="picker_add_selected"', edit_html)
+        self.assertIn('可搜索、翻页并跨页多选', edit_html)
+        self.assertIn('if (structuralEditLocked()) return;', edit_html)
+        self.assertIn('var ids = pickerSelectionOrder.slice();', edit_html)
+        self.assertNotIn('id="product_dropdown"', edit_html)
+
         response = self.client.get('/api/products/search?picker=1&page=1&per_page=24')
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
