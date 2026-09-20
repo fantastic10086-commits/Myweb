@@ -796,3 +796,14 @@ class PIDraft(db.Model):
     version = db.Column(db.Integer, nullable=False, default=1)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     converted_pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=True)
+
+
+class TranslationCache(db.Model):
+    __tablename__ = 'translation_cache'
+    id = db.Column(db.Integer, primary_key=True)
+    source_key = db.Column(db.String(320), nullable=False, unique=True, index=True)
+    source_text = db.Column(db.String(300), nullable=False)
+    translated_text = db.Column(db.String(500), nullable=False)
+    provider = db.Column(db.String(40), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

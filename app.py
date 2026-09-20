@@ -16,6 +16,11 @@ import tempfile
 import math
 import json
 import re
+import ssl
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from types import SimpleNamespace
@@ -40,7 +45,7 @@ from models import (
     db, Customer, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBox, PackingItem,
-    CustomsDocument, CustomsRevision,
+    CustomsDocument, CustomsRevision, TranslationCache,
 )
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
@@ -103,6 +108,88 @@ PRODUCT_AUDIT_FIELDS = (
     'name', 'chinese_name', 'product_code', 'specification',
     'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
 ) + PRODUCT_CUSTOMS_FIELDS
+
+_TRANSLATION_UPSTREAM_LOCK = threading.Lock()
+
+
+class TranslationUnavailable(Exception):
+    """Raised when every configured translation provider is unavailable."""
+
+
+def _translation_source_key(text):
+    normalized = unicodedata.normalize('NFKC', text or '')
+    return ' '.join(normalized.casefold().split())
+
+
+def _translation_request_json(url, *, data=None, headers=None, timeout=8):
+    request_headers = {'User-Agent': 'PI-Manager/1.0'}
+    request_headers.update(headers or {})
+    request_object = urllib.request.Request(url, data=data, headers=request_headers)
+    context = ssl.create_default_context()
+    last_error = None
+    for attempt in range(2):
+        try:
+            with urllib.request.urlopen(request_object, timeout=timeout, context=context) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code != 429 and exc.code < 500:
+                break
+            if attempt == 0:
+                retry_after = exc.headers.get('Retry-After', '') if exc.headers else ''
+                try:
+                    delay = min(max(float(retry_after), 0.25), 2.0)
+                except (TypeError, ValueError):
+                    delay = 0.5
+                time.sleep(delay)
+        except (urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            last_error = exc
+            if attempt == 0:
+                time.sleep(0.25)
+    raise TranslationUnavailable() from last_error
+
+
+def _translate_with_google_cloud(text, api_key):
+    payload = urllib.parse.urlencode({
+        'q': text, 'source': 'en', 'target': 'zh-CN', 'format': 'text',
+    }).encode('utf-8')
+    url = 'https://translation.googleapis.com/language/translate/v2?key=' + urllib.parse.quote(api_key)
+    data = _translation_request_json(
+        url, data=payload,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    translated = data.get('data', {}).get('translations', [{}])[0].get('translatedText', '')
+    if not translated:
+        raise TranslationUnavailable()
+    return translated, 'google-cloud'
+
+
+def _translate_with_mymemory(text):
+    query = {'q': text, 'langpair': 'en|zh-CN'}
+    contact = os.environ.get('MYMEMORY_EMAIL', '').strip()
+    if contact:
+        query['de'] = contact
+    url = 'https://api.mymemory.translated.net/get?' + urllib.parse.urlencode(query)
+    data = _translation_request_json(url)
+    translated = data.get('responseData', {}).get('translatedText', '')
+    status = data.get('responseStatus', 200)
+    if not translated or str(status) != '200':
+        raise TranslationUnavailable()
+    return translated, 'mymemory'
+
+
+def _translate_product_name(text):
+    providers = []
+    google_key = os.environ.get('GOOGLE_TRANSLATE_API_KEY', '').strip()
+    if google_key:
+        providers.append(lambda: _translate_with_google_cloud(text, google_key))
+    providers.append(lambda: _translate_with_mymemory(text))
+    for provider in providers:
+        try:
+            return provider()
+        except TranslationUnavailable:
+            continue
+    raise TranslationUnavailable()
 
 CUSTOMS_DOCUMENT_FIELDS = (
     'export_customs', 'transport_mode', 'vehicle_voyage', 'bill_no',
@@ -3699,24 +3786,49 @@ def api_product_enable(id):
 @app.route('/api/translate', methods=['POST'])
 @login_required
 def api_translate():
-    """Translate English text to Chinese using Google Translate API."""
-    import urllib.request
-    import json
+    """Translate a product name with a persistent cache and safe fallback."""
     text = request.form.get('text', '').strip()
     if not text:
         return jsonify({'success': False, 'error': '未提供文本。'}), 400
-    try:
-        url = 'https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-CN&dt=t&q=' + urllib.parse.quote(text)
-        import ssl
-        ctx = ssl.create_default_context()
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=5, context=ctx) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-        # Extract translated sentences from response
-        result = ''.join([s[0] for s in data[0] if s[0]]) if data and data[0] else text
-        return jsonify({'success': True, 'translated': result})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    if len(text) > 300:
+        return jsonify({'success': False, 'error': '产品名称不能超过 300 个字符。'}), 400
+
+    source_key = _translation_source_key(text)
+    cached = TranslationCache.query.filter_by(source_key=source_key).first()
+    if cached:
+        return jsonify({'success': True, 'translated': cached.translated_text, 'cached': True})
+
+    # Recheck after acquiring the lock so simultaneous identical clicks only
+    # consume one upstream request within this application worker.
+    with _TRANSLATION_UPSTREAM_LOCK:
+        cached = TranslationCache.query.filter_by(source_key=source_key).first()
+        if cached:
+            return jsonify({'success': True, 'translated': cached.translated_text, 'cached': True})
+        try:
+            translated, provider = _translate_product_name(text)
+        except TranslationUnavailable:
+            return jsonify({
+                'success': False,
+                'error': '翻译服务暂时繁忙，请稍后重试，或手动填写中文名称。',
+                'retryable': True,
+            }), 503
+
+        entry = TranslationCache(
+            source_key=source_key,
+            source_text=text,
+            translated_text=translated,
+            provider=provider,
+        )
+        db.session.add(entry)
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            entry = TranslationCache.query.filter_by(source_key=source_key).first()
+            if not entry:
+                raise
+            translated = entry.translated_text
+        return jsonify({'success': True, 'translated': translated, 'cached': False})
 
 
 @app.route('/uploads/<filename>')

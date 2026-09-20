@@ -27,19 +27,26 @@ function translateName() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在翻译……';
     var fd = new FormData();
     fd.append('text', text);
-    fetch('/api/translate', {method: 'POST', body: fd})
-        .then(function(r) { return r.json(); })
+    var controller = new AbortController();
+    var timeout = window.setTimeout(function() { controller.abort(); }, 12000);
+    fetch('/api/translate', {method: 'POST', body: fd, signal: controller.signal})
+        .then(function(r) {
+            return r.json().catch(function() {
+                return {success: false, error: '翻译服务返回异常，请稍后重试。'};
+            });
+        })
         .then(function(d) {
             if (d.success) {
                 chineseInput.value = d.translated;
             } else {
-                alert(d.error || '翻译失败。');
+                alert(d.error || '翻译服务暂时不可用，请稍后重试。');
             }
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-translate"></i> 翻译';
         })
-        .catch(function() {
-            alert('网络错误。');
+        .catch(function(err) {
+            alert(err && err.name === 'AbortError' ? '翻译请求超时，请稍后重试。' : '网络错误，请稍后重试。');
+        })
+        .finally(function() {
+            window.clearTimeout(timeout);
             btn.disabled = false;
             btn.innerHTML = '<i class="bi bi-translate"></i> 翻译';
         });

@@ -37,7 +37,7 @@ from werkzeug.datastructures import MultiDict
 from models import (
     Account, AuditLog, Customer, DocumentTemplate, Expense, FieldOption,
     PackingBox, PackingItem, PackingList, Payment, PI, PIItem, Procurement,
-    Product, Supplier, User, CustomsDocument, CustomsRevision, db,
+    Product, Supplier, User, CustomsDocument, CustomsRevision, TranslationCache, db,
 )
 from document_export import _fixed_values, convert_excel_to_pdf, find_soffice
 from customs_export import _model_summary
@@ -1064,6 +1064,64 @@ class SecuritySmokeTests(unittest.TestCase):
             pi.customs_recorded_at = None
             pi.customs_recorded_by = ''
             db.session.commit()
+
+    def test_product_translation_is_cached_and_normalized(self):
+        self.login('alice')
+        token = self.token('/products/add')
+        source_key = application._translation_source_key('Unique Connector 987')
+        with application.app.app_context():
+            TranslationCache.query.filter_by(source_key=source_key).delete()
+            db.session.commit()
+        try:
+            with patch.object(
+                application,
+                '_translate_product_name',
+                return_value=('唯一连接器', 'test-provider'),
+            ) as upstream:
+                first = self.client.post(
+                    '/api/translate', data={'text': 'Unique Connector 987'},
+                    headers={'X-CSRFToken': token},
+                )
+                second = self.client.post(
+                    '/api/translate', data={'text': '  UNIQUE   connector 987  '},
+                    headers={'X-CSRFToken': token},
+                )
+            self.assertEqual(first.status_code, 200)
+            self.assertFalse(first.get_json()['cached'])
+            self.assertEqual(second.status_code, 200)
+            self.assertTrue(second.get_json()['cached'])
+            self.assertEqual(second.get_json()['translated'], '唯一连接器')
+            upstream.assert_called_once_with('Unique Connector 987')
+            with application.app.app_context():
+                cache = TranslationCache.query.filter_by(source_key=source_key).one()
+                self.assertEqual(cache.provider, 'test-provider')
+        finally:
+            with application.app.app_context():
+                TranslationCache.query.filter_by(source_key=source_key).delete()
+                db.session.commit()
+
+    def test_product_translation_failure_is_friendly_and_retryable(self):
+        self.login('alice')
+        token = self.token('/products/add')
+        with patch.object(
+            application,
+            '_translate_product_name',
+            side_effect=application.TranslationUnavailable(),
+        ):
+            response = self.client.post(
+                '/api/translate', data={'text': 'Never Cached Translation 654'},
+                headers={'X-CSRFToken': token},
+            )
+        self.assertEqual(response.status_code, 503)
+        payload = response.get_json()
+        self.assertTrue(payload['retryable'])
+        self.assertIn('稍后重试', payload['error'])
+        self.assertNotIn('HTTP Error', payload['error'])
+        too_long = self.client.post(
+            '/api/translate', data={'text': 'a' * 301},
+            headers={'X-CSRFToken': token},
+        )
+        self.assertEqual(too_long.status_code, 400)
 
     def test_salesperson_can_manage_individual_products_but_not_admin_bulk_tools(self):
         self.login()
