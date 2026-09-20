@@ -368,6 +368,19 @@ def _fit_pdf_text(value, font_name, font_size, max_width):
     return text + suffix
 
 
+def _draw_compact_text(document, x, y, value):
+    """Reinforce the already-bold CJK face for small thermal-label output."""
+    text = str(value or '')
+    document.drawString(x, y, text)
+    document.drawString(x + 0.22, y, text)
+
+
+def _draw_compact_right_text(document, x, y, value):
+    text = str(value or '')
+    document.drawRightString(x, y, text)
+    document.drawRightString(x - 0.22, y, text)
+
+
 def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
     """Generate an exact 100 x 150 mm PDF with one carton on every page."""
     font_name = _ensure_compact_pdf_font()
@@ -391,9 +404,10 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         )
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         document.setFont(font_name, 15)
-        document.drawString(margin + 4 * mm, page_height - 13 * mm, "PACKING LIST / 装箱单")
+        _draw_compact_text(document, margin + 4 * mm, page_height - 13 * mm, "PACKING LIST / 装箱单")
         document.setFont(font_name, 9)
-        document.drawRightString(
+        _draw_compact_right_text(
+            document,
             page_width - margin - 4 * mm,
             page_height - 20 * mm,
             f"Carton {box_index}/{len(boxes)}",
@@ -402,26 +416,29 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         info_y = page_height - 30 * mm
         document.setFont(font_name, 9)
-        document.drawString(margin, info_y, "PI No. / PI编号")
+        _draw_compact_text(document, margin, info_y, "PI No. / PI编号")
         document.setFont(font_name, 10)
-        document.drawString(
+        _draw_compact_text(
+            document,
             margin + 27 * mm, info_y,
             _fit_pdf_text(pi.pi_number, font_name, 10, content_width - 27 * mm),
         )
         info_y -= 7 * mm
         document.setFont(font_name, 9)
-        document.drawString(margin, info_y, "Sales / 业务员")
+        _draw_compact_text(document, margin, info_y, "Sales / 业务员")
         document.setFont(font_name, 10)
-        document.drawString(
+        _draw_compact_text(
+            document,
             margin + 27 * mm, info_y,
             _fit_pdf_text(pi.salesperson, font_name, 10, content_width - 27 * mm),
         )
         info_y -= 7 * mm
         document.setFont(font_name, 9)
-        document.drawString(margin, info_y, "Carton / 箱号")
+        _draw_compact_text(document, margin, info_y, "Carton / 箱号")
         document.setFont(font_name, 12)
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
-        document.drawString(
+        _draw_compact_text(
+            document,
             margin + 27 * mm, info_y,
             _fit_pdf_text(str(box_index), font_name, 12, content_width - 27 * mm),
         )
@@ -431,7 +448,7 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         table_height = table_top - table_bottom
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         document.setFont(font_name, 9)
-        document.drawString(margin, table_top + 3 * mm, "CONTENTS / 箱内产品")
+        _draw_compact_text(document, margin, table_top + 3 * mm, "CONTENTS / 箱内产品")
 
         items = list(box.items)
         if not items:
@@ -464,7 +481,8 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
                 pdfmetrics.stringWidth(quantity_text, font_name, font_size) + 2 * mm
                 if quantity_text else 0
             )
-            document.drawString(
+            _draw_compact_text(
+                document,
                 x + 1.5 * mm,
                 y + max(1.2 * mm, (row_height - font_size) / 2),
                 _fit_pdf_text(
@@ -473,7 +491,8 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
                 ),
             )
             if quantity_text:
-                document.drawRightString(
+                _draw_compact_right_text(
+                    document,
                     x + cell_width - 1.5 * mm,
                     y + max(1.2 * mm, (row_height - font_size) / 2),
                     quantity_text,
@@ -493,10 +512,10 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
             document.rect(margin, y, content_width, metric_height, fill=1, stroke=1)
             document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
             document.setFont(font_name, 8.5)
-            document.drawString(margin + 2 * mm, y + 3 * mm, field_label)
+            _draw_compact_text(document, margin + 2 * mm, y + 3 * mm, field_label)
             document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
             document.setFont(font_name, 11)
-            document.drawRightString(page_width - margin - 2 * mm, y + 2.7 * mm, value)
+            _draw_compact_right_text(document, page_width - margin - 2 * mm, y + 2.7 * mm, value)
 
         document.showPage()
 
