@@ -3,6 +3,7 @@
 from io import BytesIO
 from math import ceil
 from copy import copy
+import os
 import unicodedata
 
 from openpyxl import Workbook, load_workbook
@@ -11,6 +12,7 @@ from openpyxl.worksheet.page import PageMargins
 from reportlab.lib.colors import HexColor
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from pdf_generator import _FONT as COMPACT_PDF_FONT
@@ -96,13 +98,13 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     center = Alignment(horizontal="center", vertical="center", wrap_text=True)
     left = Alignment(horizontal="left", vertical="center", wrap_text=True)
-    normal = Font(name="Microsoft YaHei", size=9, color=COMPACT_BLACK)
-    label = Font(name="Microsoft YaHei", size=8, bold=True, color=COMPACT_BLACK)
+    normal = Font(name="Microsoft YaHei", size=10, bold=True, color=COMPACT_BLACK)
+    label = Font(name="Microsoft YaHei", size=10, bold=True, color=COMPACT_BLACK)
 
     sheet.merge_cells("A1:F2")
     sheet["A1"] = "PACKING LIST / 装箱单"
     sheet["A1"].font = Font(
-        name="Microsoft YaHei", size=15, bold=True, color=COMPACT_BLACK
+        name="Microsoft YaHei", size=17, bold=True, color=COMPACT_BLACK
     )
     sheet["A1"].alignment = center
     sheet["A1"].fill = PatternFill("solid", fgColor=COMPACT_WHITE)
@@ -115,7 +117,7 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     info_rows = [
         (3, "PI No. / PI编号", pi.pi_number),
         (4, "Sales / 业务员", pi.salesperson),
-        (5, "Carton / 箱号", f"{box.box_no}  ({box_index}/{box_count})"),
+        (5, "Carton / 箱号", f"{box_index}  ({box_index}/{box_count})"),
     ]
     for row_no, field_label, value in info_rows:
         sheet.merge_cells(start_row=row_no, start_column=1, end_row=row_no, end_column=2)
@@ -131,7 +133,7 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     for column, value in ((1, "#"), (2, "Product / 产品"), (6, "Qty / 数量")):
         cell = sheet.cell(header_row, column, value)
         cell.font = Font(
-            name="Microsoft YaHei", size=8, bold=True, color=COMPACT_WHITE
+            name="Microsoft YaHei", size=10, bold=True, color=COMPACT_WHITE
         )
         cell.fill = PatternFill("solid", fgColor=COMPACT_BLACK)
         cell.alignment = center
@@ -147,7 +149,7 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     if not items:
         items = [None]
     item_height = max(9, min(24, 150 / max(1, len(items))))
-    item_font_size = max(6, min(9, item_height / 2.2))
+    item_font_size = max(7, min(10, item_height / 2.0))
     for item_index, item in enumerate(items, 1):
         sheet.merge_cells(start_row=item_row, start_column=2, end_row=item_row, end_column=5)
         values = (
@@ -160,7 +162,7 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
         for column, value in ((1, values[0]), (2, values[1]), (6, values[2])):
             cell = sheet.cell(item_row, column, value)
             cell.font = Font(
-                name="Microsoft YaHei", size=item_font_size, color=COMPACT_BLACK
+                name="Microsoft YaHei", size=item_font_size, bold=True, color=COMPACT_BLACK
             )
             cell.alignment = center if column in (1, 6) else left
         for column in range(1, 7):
@@ -183,7 +185,7 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
         sheet.merge_cells(start_row=row_no, start_column=3, end_row=row_no, end_column=6)
         sheet.cell(row_no, 1, field_label).font = label
         sheet.cell(row_no, 3, value).font = Font(
-            name="Microsoft YaHei", size=10, bold=True, color=COMPACT_BLACK
+            name="Microsoft YaHei", size=11, bold=True, color=COMPACT_BLACK
         )
         for column in range(1, 7):
             sheet.cell(row_no, column).border = border
@@ -208,7 +210,7 @@ def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None):
     for zero_based_index in selected_indexes:
         box = boxes[zero_based_index]
         box_index = zero_based_index + 1
-        title = _compact_sheet_title(box_index, box.box_no, used_titles)
+        title = _compact_sheet_title(box_index, box_index, used_titles)
         sheet = workbook.create_sheet(title)
         _compact_excel_sheet(sheet, pi, packing_list, box, box_index, len(boxes))
 
@@ -288,6 +290,18 @@ def apply_packing_template_style(workbook_bytes, template_path, compact=False):
                     if src.has_style:
                         dst._style = copy(src._style)
                     dst.alignment = copy(src.alignment)
+            # Compact labels intentionally remain bold and readable even when
+            # an uploaded style master uses smaller or regular text.
+            for row in target.iter_rows():
+                for cell in row:
+                    if cell.value is None:
+                        continue
+                    cell.font = Font(
+                        name='Microsoft YaHei',
+                        size=17 if cell.coordinate == 'A1' else 10,
+                        bold=True,
+                        color=COMPACT_WHITE if cell.row == 7 else COMPACT_BLACK,
+                    )
         else:
             live_cells = {'B4', 'J4', 'B5', 'J5', 'B6', 'J6', 'B7', 'J7'}
             for row in range(1, min(10, source.max_row) + 1):
@@ -320,6 +334,27 @@ def apply_packing_template_style(workbook_bytes, template_path, compact=False):
 
 def _ensure_compact_pdf_font():
     pdfmetrics.getFont(COMPACT_PDF_FONT)
+    bold_name = 'CompactCJK-Bold'
+    try:
+        pdfmetrics.getFont(bold_name)
+        return bold_name
+    except KeyError:
+        pass
+    candidates = [
+        '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc',
+        '/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc',
+        '/System/Library/Fonts/STHeiti Medium.ttc',
+        '/System/Library/Fonts/Hiragino Sans GB.ttc',
+        'C:/Windows/Fonts/msyhbd.ttc',
+    ]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            pdfmetrics.registerFont(TTFont(bold_name, path, subfontIndex=0))
+            return bold_name
+        except Exception:
+            continue
     return COMPACT_PDF_FONT
 
 
@@ -355,9 +390,9 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
             2 * mm, fill=1, stroke=1,
         )
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
-        document.setFont(font_name, 13)
+        document.setFont(font_name, 15)
         document.drawString(margin + 4 * mm, page_height - 13 * mm, "PACKING LIST / 装箱单")
-        document.setFont(font_name, 8)
+        document.setFont(font_name, 9)
         document.drawRightString(
             page_width - margin - 4 * mm,
             page_height - 20 * mm,
@@ -366,36 +401,36 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
 
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         info_y = page_height - 30 * mm
-        document.setFont(font_name, 8)
+        document.setFont(font_name, 9)
         document.drawString(margin, info_y, "PI No. / PI编号")
-        document.setFont(font_name, 9)
+        document.setFont(font_name, 10)
         document.drawString(
             margin + 27 * mm, info_y,
-            _fit_pdf_text(pi.pi_number, font_name, 9, content_width - 27 * mm),
+            _fit_pdf_text(pi.pi_number, font_name, 10, content_width - 27 * mm),
         )
         info_y -= 7 * mm
-        document.setFont(font_name, 8)
+        document.setFont(font_name, 9)
         document.drawString(margin, info_y, "Sales / 业务员")
-        document.setFont(font_name, 9)
+        document.setFont(font_name, 10)
         document.drawString(
             margin + 27 * mm, info_y,
-            _fit_pdf_text(pi.salesperson, font_name, 9, content_width - 27 * mm),
+            _fit_pdf_text(pi.salesperson, font_name, 10, content_width - 27 * mm),
         )
         info_y -= 7 * mm
-        document.setFont(font_name, 8)
+        document.setFont(font_name, 9)
         document.drawString(margin, info_y, "Carton / 箱号")
-        document.setFont(font_name, 11)
+        document.setFont(font_name, 12)
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         document.drawString(
             margin + 27 * mm, info_y,
-            _fit_pdf_text(box.box_no, font_name, 11, content_width - 27 * mm),
+            _fit_pdf_text(str(box_index), font_name, 12, content_width - 27 * mm),
         )
 
         table_top = page_height - 51 * mm
         table_bottom = 46 * mm
         table_height = table_top - table_bottom
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
-        document.setFont(font_name, 8)
+        document.setFont(font_name, 9)
         document.drawString(margin, table_top + 3 * mm, "CONTENTS / 箱内产品")
 
         items = list(box.items)
@@ -405,7 +440,7 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         row_count = ceil(len(items) / float(column_count))
         cell_width = content_width / column_count
         row_height = table_height / max(1, row_count)
-        font_size = max(4.5, min(8.5, row_height - 4))
+        font_size = max(5.5, min(9.5, row_height - 3.5))
         for item_index, item in enumerate(items):
             column = item_index // row_count
             row = item_index % row_count
@@ -457,10 +492,10 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
             document.setStrokeColor(HexColor(f"#{COMPACT_BLACK}"))
             document.rect(margin, y, content_width, metric_height, fill=1, stroke=1)
             document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
-            document.setFont(font_name, 7.5)
+            document.setFont(font_name, 8.5)
             document.drawString(margin + 2 * mm, y + 3 * mm, field_label)
             document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
-            document.setFont(font_name, 10)
+            document.setFont(font_name, 11)
             document.drawRightString(page_width - margin - 2 * mm, y + 2.7 * mm, value)
 
         document.showPage()
@@ -544,7 +579,7 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
         box_items = list(box.items)
         for item_index, item in enumerate(box_items):
             values = [
-                box.box_no if item_index == 0 else "",
+                str(box_index + 1) if item_index == 0 else "",
                 item.product_code,
                 item.product_name,
                 item.specification,

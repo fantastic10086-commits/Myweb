@@ -358,14 +358,10 @@
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
     const productId = (value) => value === '' || value === null || value === undefined ? '' : Number(value);
-    const newBoxNo = () => {
-        const used = new Set(boxes.map(box => String(box.box_no).toLowerCase()));
-        let value = 1;
-        while (used.has(String(value))) value += 1;
-        return String(value);
-    };
-    const emptyBox = () => ({box_no:newBoxNo(), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
+    const normalizeBoxNumbers = () => boxes.forEach((box, index) => { box.box_no = String(index + 1); });
+    const emptyBox = () => ({box_no:String(boxes.length + 1), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
     if (!boxes.length) boxes.push(emptyBox());
+    normalizeBoxNumbers();
 
     function boxVolume(box) {
         return numberValue(box.length_cm) * numberValue(box.width_cm) * numberValue(box.height_cm) / 1000000;
@@ -459,6 +455,7 @@
         const boxWasExpanded = expandedBoxes.has(boxIndex);
         const targetWasExpanded = expandedBoxes.has(targetIndex);
         [boxes[boxIndex], boxes[targetIndex]] = [boxes[targetIndex], boxes[boxIndex]];
+        normalizeBoxNumbers();
         expandedBoxes.delete(boxIndex);
         expandedBoxes.delete(targetIndex);
         if (boxWasExpanded) expandedBoxes.add(targetIndex);
@@ -475,6 +472,7 @@
         if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
         expandedBoxes.delete(boxIndex);
         boxes.push(emptyBox());
+        normalizeBoxNumbers();
         selectedTargetBox=boxes.length-1;
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
@@ -618,6 +616,7 @@
                 if (boxes.length === 1) return showAlert('至少需要保留一个箱子。', 'warning');
                 if (!confirm(`确认删除第 ${boxIndex + 1} 箱吗？箱内产品会回到待分配列表。`)) return;
                 boxes.splice(boxIndex, 1);
+                normalizeBoxNumbers();
                 expandedBoxes.clear(); expandedBoxes.add(Math.max(0, Math.min(boxIndex, boxes.length - 1)));
                 selectedTargetBox = Math.max(0, Math.min(boxIndex, boxes.length - 1));
                 renderBoxes();
@@ -679,14 +678,10 @@
     function validateBeforeSave(action) {
         if (!document.getElementById('packingDate').value) return '请填写装箱日期。';
         if (!boxes.length) return '请至少添加一个箱子。';
-        const boxNumbers = new Set();
+        normalizeBoxNumbers();
         for (let boxIndex = 0; boxIndex < boxes.length; boxIndex += 1) {
             const box = boxes[boxIndex];
             const boxLabel = `第 ${boxIndex + 1} 箱`;
-            const normalizedBoxNo = String(box.box_no || '').trim().toLowerCase();
-            if (!normalizedBoxNo) return `${boxLabel}还没有填写箱号。`;
-            if (boxNumbers.has(normalizedBoxNo)) return `箱号“${box.box_no}”重复，请修改后再保存。`;
-            boxNumbers.add(normalizedBoxNo);
             if (numberValue(box.gross_weight) < numberValue(box.net_weight)) return `${boxLabel}的毛重不能小于净重。`;
             if (action === 'complete' && !box.items.length) return `${boxLabel}还没有产品，请先加入产品或删除空箱。`;
             const usedProducts = new Set();

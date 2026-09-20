@@ -5134,9 +5134,9 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
 
     boxes = []
     if packing_list:
-        for box in packing_list.boxes:
+        for box_index, box in enumerate(packing_list.boxes, 1):
             boxes.append({
-                'box_no': box.box_no,
+                'box_no': str(box_index),
                 'net_weight': box.net_weight or 0,
                 'gross_weight': box.gross_weight or 0,
                 'length_cm': box.length_cm or 0,
@@ -5219,20 +5219,15 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False):
     pi_items = {item.id: item for item in pi.items}
     required = {item.id: int(item.quantity or 0) for item in pi.items}
     packed = {item_id: 0 for item_id in required}
-    seen_box_numbers = set()
     result = []
     row_count = 0
 
     for box_index, raw_box in enumerate(raw_boxes):
         if not isinstance(raw_box, dict):
             raise ValueError('箱子数据格式不正确。')
-        box_no = _packing_text(raw_box.get('box_no'), '箱号', 50)
-        if not box_no:
-            raise ValueError('箱号不能为空。')
-        box_key = box_no.casefold()
-        if box_key in seen_box_numbers:
-            raise ValueError(f'箱号“{box_no}”重复。')
-        seen_box_numbers.add(box_key)
+        # Carton numbers are derived from the saved display order.  This keeps
+        # the editor, stored data and one-page-per-carton exports in sync.
+        box_no = str(box_index + 1)
 
         net_weight = _packing_number(raw_box.get('net_weight'), '净重')
         gross_weight = _packing_number(raw_box.get('gross_weight'), '毛重')

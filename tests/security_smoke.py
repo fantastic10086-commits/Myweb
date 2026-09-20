@@ -3909,7 +3909,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 'packing_date': '2026-09-07',
                 'boxes': [
                     {
-                        'box_no': '1', 'net_weight': 1.25, 'gross_weight': 1.5,
+                        'box_no': '9', 'net_weight': 1.25, 'gross_weight': 1.5,
                         'length_cm': 10, 'width_cm': 10, 'height_cm': 10,
                         'shipping_mark': 'MARK-A', 'note': 'Mixed carton',
                         'items': [
@@ -3918,7 +3918,7 @@ class SecuritySmokeTests(unittest.TestCase):
                         ],
                     },
                     {
-                        'box_no': '2', 'net_weight': 2, 'gross_weight': 2.5,
+                        'box_no': '3', 'net_weight': 2, 'gross_weight': 2.5,
                         'length_cm': 10, 'width_cm': 20, 'height_cm': 30,
                         'shipping_mark': 'MARK-B', 'note': 'Split carton',
                         'items': [
@@ -3934,6 +3934,9 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(saved.status_code, 200)
             saved_json = saved.get_json()
             self.assertEqual(saved_json['data']['status'], 'completed')
+            self.assertEqual(
+                [box['box_no'] for box in saved_json['data']['boxes']], ['1', '2'],
+            )
             first_version = saved_json['data']['version']
 
             # A completed packing list opens read-only. Administrators must
@@ -4032,8 +4035,12 @@ class SecuritySmokeTests(unittest.TestCase):
                 ))
                 self.assertEqual(sheet['A1'].fill.fgColor.rgb, '00FFFFFF')
                 self.assertEqual(sheet['A1'].font.color.rgb, '00000000')
+                self.assertTrue(sheet['A1'].font.bold)
+                self.assertGreaterEqual(sheet['A1'].font.sz, 17)
                 self.assertEqual(sheet['A8'].fill.fgColor.rgb, '00FFFFFF')
                 self.assertEqual(sheet['A8'].font.color.rgb, '00000000')
+                self.assertTrue(sheet['A8'].font.bold)
+                self.assertGreaterEqual(sheet['A8'].font.sz, 10)
             compact_workbook.close()
             compact_excel.close()
 
