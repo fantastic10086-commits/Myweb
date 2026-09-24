@@ -18,9 +18,29 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label class="form-label small mb-1">搜索</label>
                 <input type="text" name="search" class="form-control form-control-sm" placeholder="名称, country, contact..." value="{{ search }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">客户类型</label>
+                <select class="form-select form-select-sm" name="customer_type">
+                    <option value="">— 全部 —</option>
+                    <option value="potential" {% if customer_type == 'potential' %}selected{% endif %}>潜在客户</option>
+                    <option value="converted" {% if customer_type == 'converted' %}selected{% endif %}>成交客户</option>
+                    <option value="key" {% if customer_type == 'key' %}selected{% endif %}>重点客户</option>
+                    <option value="invalid" {% if customer_type == 'invalid' %}selected{% endif %}>无效客户</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label small mb-1">跟进情况</label>
+                <select class="form-select form-select-sm" name="follow">
+                    <option value="">— 全部 —</option>
+                    <option value="today" {% if follow_filter == 'today' %}selected{% endif %}>今天跟进</option>
+                    <option value="overdue" {% if follow_filter == 'overdue' %}selected{% endif %}>已逾期</option>
+                    <option value="waiting_reply" {% if follow_filter == 'waiting_reply' %}selected{% endif %}>等待客户回复</option>
+                    <option value="paused" {% if follow_filter == 'paused' %}selected{% endif %}>暂不跟进</option>
+                </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-1">业务员</label>
@@ -46,7 +66,7 @@
             <div class="col-md-2">
                 <label class="form-label small mb-1 d-flex justify-content-between">
                     <span>至</span>
-                    {% if search or sp_filter or deal_min or deal_max or date_from or date_to %}
+                    {% if search or sp_filter or customer_type or follow_filter or deal_min or deal_max or date_from or date_to %}
                     <a href="{{ url_for('customer_list') }}" class="text-danger small text-decoration-none">清除</a>
                     {% endif %}
                 </label>
@@ -76,7 +96,7 @@
                         <th>联系人</th>
                         <th>业务员</th>
                         <th class="text-end">
-                            <a href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort='deal_desc' if sort != 'deal_desc' else 'deal_asc') }}" class="text-decoration-none text-dark">
+                            <a href="{{ url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort='deal_desc' if sort != 'deal_desc' else 'deal_asc') }}" class="text-decoration-none text-dark">
                                 累计成交额（USD）
                                 {% if sort == 'deal_desc' %}<i class="bi bi-caret-down-fill small"></i>
                                 {% elif sort == 'deal_asc' %}<i class="bi bi-caret-up-fill small"></i>
@@ -84,9 +104,7 @@
                                 {% endif %}
                             </a>
                         </th>
-                        <th>邮箱</th>
-                        <th>电话</th>
-                        <th>地址</th>
+                        <th>跟进</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
@@ -95,12 +113,21 @@
                     <tr>
                         <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
                         <td>{{ c.country }}</td>
-                        <td style="max-width:100px;" class="text-truncate">{{ c.contact_person }}</td>
+                        <td style="max-width:150px;"><span class="text-truncate d-block">{{ c.contact_person or '-' }}</span><small class="text-muted text-truncate d-block">{{ c.email or c.phone or '' }}</small></td>
                         <td>{{ c.salesperson }}</td>
                         <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.cumulative_deal_usd) }}</strong><small class="text-muted d-block">历史 ${{ '%.2f'|format(c.historical_deal_usd or 0) }} / 系统 ${{ '%.2f'|format(c.total_deal_usd or 0) }}</small></td>
-                        <td style="max-width:160px;" class="text-truncate">{{ c.email }}</td>
-                        <td style="max-width:120px;" class="text-truncate">{{ c.phone }}</td>
-                        <td style="max-width:200px;" class="text-truncate">{% if c.address %}{{ c.address }}{% else %}<span class="text-muted">无</span>{% endif %}</td>
+                        <td style="min-width:150px;">
+                            {% if c.customer_type == 'key' %}<span class="badge bg-warning text-dark">重点客户</span>
+                            {% elif c.customer_type == 'converted' %}<span class="badge bg-success">成交客户</span>
+                            {% elif c.customer_type == 'invalid' %}<span class="badge bg-secondary">无效客户</span>
+                            {% else %}<span class="badge bg-primary">潜在客户</span>{% endif %}
+                            <small class="d-block mt-1">{{ {'needs_followup':'需要跟进','waiting_reply':'等待回复','paused':'暂不跟进'}.get(c.follow_up_status, '需要跟进') }}</small>
+                            {% if c.next_follow_up_date %}
+                                {% if c.next_follow_up_date < today %}<small class="text-danger fw-bold">已逾期 {{ (today - c.next_follow_up_date).days }} 天</small>
+                                {% elif c.next_follow_up_date == today %}<small class="text-warning fw-bold">今天跟进</small>
+                                {% else %}<small class="text-muted">{{ c.next_follow_up_date.strftime('%Y-%m-%d') }}</small>{% endif %}
+                            {% endif %}
+                        </td>
                         <td class="text-end text-nowrap">
                             <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">PI</a>
                             <a href="{{ url_for('customer_edit', id=c.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
@@ -129,19 +156,19 @@
     <small class="text-muted">第 {{ page }} / {{ total_pages }}</small>
     <ul class="pagination pagination-sm mb-0">
         <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
-            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page-1) }}">&laquo; 上一页</a>
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page-1) }}">&laquo; 上一页</a>
         </li>
         {% for p in range(1, total_pages + 1) %}
         {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
         <li class="page-item {{ 'active' if p == page else '' }}">
-            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=p) }}">{{ p }}</a>
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=p) }}">{{ p }}</a>
         </li>
         {% elif p == page - 3 or p == page + 3 %}
         <li class="page-item disabled"><span class="page-link">…</span></li>
         {% endif %}
         {% endfor %}
         <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
-            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page+1) }}">下一页 &raquo;</a>
+            <a class="page-link" href="{{ url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page+1) }}">下一页 &raquo;</a>
         </li>
     </ul>
 </nav>

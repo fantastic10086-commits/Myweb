@@ -43,6 +43,25 @@
     </div>
 </div>
 
+<div class="row g-4 mb-5">
+    <div class="col-md-6">
+        <div class="card border-warning h-100">
+            <div class="card-header d-flex justify-content-between"><strong>今天需要跟进</strong><a href="{{ url_for('customer_list', follow='today') }}" class="small">查看全部</a></div>
+            <div class="list-group list-group-flush">
+                {% for c in follow_up_today %}<a href="{{ url_for('customer_detail', id=c.id, _anchor='follow-ups') }}" class="list-group-item list-group-item-action d-flex justify-content-between"><span>{{ c.name }}</span><small>{{ c.salesperson }}</small></a>{% else %}<div class="list-group-item text-muted">今天没有到期客户</div>{% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-danger h-100">
+            <div class="card-header d-flex justify-content-between"><strong>已经逾期</strong><a href="{{ url_for('customer_list', follow='overdue') }}" class="small">查看全部</a></div>
+            <div class="list-group list-group-flush">
+                {% for c in follow_up_overdue %}<a href="{{ url_for('customer_detail', id=c.id, _anchor='follow-ups') }}" class="list-group-item list-group-item-action d-flex justify-content-between"><span>{{ c.name }}</span><small class="text-danger">逾期 {{ (today - c.next_follow_up_date).days }} 天</small></a>{% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- 快捷操作 -->
 <div class="row mb-4">
     <div class="col">

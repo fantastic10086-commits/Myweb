@@ -5,6 +5,11 @@
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
         <h2><i class="bi bi-person-badge me-2"></i>{{ customer.name }}</h2>
+        <div class="d-flex flex-wrap gap-2">
+            <span class="badge {% if customer.customer_type == 'key' %}bg-warning text-dark{% elif customer.customer_type == 'converted' %}bg-success{% elif customer.customer_type == 'invalid' %}bg-secondary{% else %}bg-primary{% endif %}">{{ customer_type_label }}</span>
+            <span class="badge bg-light text-dark border">{{ {'needs_followup':'需要跟进','waiting_reply':'等待客户回复','paused':'暂不跟进'}.get(customer.follow_up_status, '需要跟进') }}</span>
+            {% if customer.next_follow_up_date %}<span class="badge {% if customer.next_follow_up_date < today %}bg-danger{% elif customer.next_follow_up_date == today %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">下次联系：{{ customer.next_follow_up_date.strftime('%Y-%m-%d') }}</span>{% endif %}
+        </div>
     </div>
     <div class="col-md-6 text-md-end">
         <a href="{{ url_for('pi_create', customer_id=customer.id) }}" class="btn btn-info">
@@ -51,6 +56,32 @@
 
     <!-- PI 历史 -->
     <div class="col-lg-8">
+        <div class="card mb-4" id="follow-ups">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-chat-left-text me-1"></i>跟进记录</h5>
+                <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#newFollowUp">新增跟进</button>
+            </div>
+            <div class="collapse {% if not follow_ups %}show{% endif %}" id="newFollowUp">
+                <div class="card-body border-bottom bg-light">
+                    <form method="post" action="{{ url_for('customer_follow_up_add', id=customer.id) }}" class="row g-2">
+                        <div class="col-12"><label class="form-label">本次沟通内容 <span class="text-danger">*</span></label><textarea class="form-control" name="content" rows="3" required placeholder="客户反馈、我方处理和下一步行动……"></textarea></div>
+                        <div class="col-md-4"><label class="form-label">联系日期</label><input type="date" class="form-control" name="contacted_at" value="{{ today.isoformat() }}"></div>
+                        <div class="col-md-4"><label class="form-label">跟进状态</label><select class="form-select" name="status" id="followStatus"><option value="needs_followup">需要跟进</option><option value="waiting_reply">等待客户回复</option><option value="paused">暂不跟进</option></select></div>
+                        <div class="col-md-4"><label class="form-label">下次联系日期</label><input type="date" class="form-control" name="next_follow_up_date" id="nextFollowDate" value="{{ suggested_date.isoformat() if suggested_date else '' }}"><small class="text-muted">已按客户类型自动建议，可修改。</small></div>
+                        <div class="col-12 text-end"><button class="btn btn-success" type="submit"><i class="bi bi-check-lg"></i> 保存跟进</button></div>
+                    </form>
+                </div>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for item in follow_ups %}
+                <div class="list-group-item py-3">
+                    <div class="d-flex justify-content-between gap-3"><strong>{{ item.contacted_at.strftime('%Y-%m-%d') }}</strong><small class="text-muted">{{ item.created_by }}</small></div>
+                    <div class="mt-1" style="white-space:pre-wrap;">{{ item.content }}</div>
+                    <div class="mt-2"><span class="badge bg-light text-dark border">{{ {'needs_followup':'需要跟进','waiting_reply':'等待客户回复','paused':'暂不跟进'}.get(item.status, item.status) }}</span>{% if item.next_follow_up_date %}<small class="text-muted ms-2">下次联系：{{ item.next_follow_up_date.strftime('%Y-%m-%d') }}</small>{% endif %}</div>
+                </div>
+                {% else %}<div class="text-center text-muted py-4">暂无跟进记录，请添加第一次沟通。</div>{% endfor %}
+            </div>
+        </div>
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0">PI 历史 ({{ pis|length }})</h5>
@@ -154,6 +185,16 @@
     </div></div>
 </div>
 <script>
+var followDefaults = {{ follow_up_defaults|tojson }};
+var followStatus = document.getElementById('followStatus');
+if (followStatus) followStatus.addEventListener('change', function() {
+    var field = document.getElementById('nextFollowDate');
+    var days = followDefaults[this.value];
+    if (!days) { field.value = ''; field.disabled = this.value === 'paused'; return; }
+    field.disabled = false;
+    var d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + Number(days));
+    field.value = d.toISOString().slice(0, 10);
+});
 // 产品 autocomplete
 var productInput = document.getElementById('productSearch');
 var productDropdown = document.getElementById('productDropdown');

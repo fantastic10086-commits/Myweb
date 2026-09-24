@@ -10,6 +10,19 @@
 
 <form method="post">
 <div class="card mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-calendar-check me-2"></i>客户跟进默认周期</h5></div>
+    <div class="card-body">
+        <p class="text-muted">新增跟进记录时自动建议下次联系日期，业务员可以在保存前修改。</p>
+        <div class="row g-3">
+            <div class="col-md-3"><label class="form-label">潜在客户</label><div class="input-group"><input class="form-control" type="number" min="1" max="365" name="followup_days_potential" value="{{ followup_days_potential }}"><span class="input-group-text">天后</span></div></div>
+            <div class="col-md-3"><label class="form-label">成交客户</label><div class="input-group"><input class="form-control" type="number" min="1" max="365" name="followup_days_converted" value="{{ followup_days_converted }}"><span class="input-group-text">天后</span></div></div>
+            <div class="col-md-3"><label class="form-label">重点客户</label><div class="input-group"><input class="form-control" type="number" min="1" max="365" name="followup_days_key" value="{{ followup_days_key }}"><span class="input-group-text">天后</span></div></div>
+            <div class="col-md-3"><label class="form-label">等待客户回复</label><div class="input-group"><input class="form-control" type="number" min="1" max="365" name="followup_days_waiting" value="{{ followup_days_waiting }}"><span class="input-group-text">天后</span></div></div>
+        </div>
+        <div class="mt-3"><button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> 保存</button></div>
+    </div>
+</div>
+<div class="card mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-robot me-2"></i>钉钉机器人 (喜报)</h5></div>
     <div class="card-body">
         <p class="text-muted">登记回款后，系统会通过机器人向钉钉群发送喜报。</p>

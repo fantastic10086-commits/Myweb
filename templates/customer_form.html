@@ -79,6 +79,28 @@ document.addEventListener('paste', function(e) {
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-md-4">
+                    <label for="priority_level" class="form-label">客户标记</label>
+                    <select class="form-select" id="priority_level" name="priority_level">
+                        <option value="normal" {% if not customer or customer.priority_level == 'normal' %}selected{% endif %}>普通（系统自动判断潜在/成交）</option>
+                        <option value="key" {% if customer and customer.priority_level == 'key' %}selected{% endif %}>重点客户</option>
+                        <option value="invalid" {% if customer and customer.priority_level == 'invalid' %}selected{% endif %}>无效客户</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="follow_up_status" class="form-label">跟进状态</label>
+                    <select class="form-select" id="follow_up_status" name="follow_up_status">
+                        <option value="needs_followup" {% if not customer or customer.follow_up_status == 'needs_followup' %}selected{% endif %}>需要跟进</option>
+                        <option value="waiting_reply" {% if customer and customer.follow_up_status == 'waiting_reply' %}selected{% endif %}>等待客户回复</option>
+                        <option value="paused" {% if customer and customer.follow_up_status == 'paused' %}selected{% endif %}>暂不跟进</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="next_follow_up_date" class="form-label">下次联系日期</label>
+                    <input type="date" class="form-control" id="next_follow_up_date" name="next_follow_up_date"
+                           value="{{ customer.next_follow_up_date.isoformat() if customer and customer.next_follow_up_date else '' }}">
+                    <small class="text-muted">新增跟进时会按客户类型自动建议日期。</small>
+                </div>
                 <div class="col-md-6">
                     <label for="image" class="form-label">客户标志 / 图片</label>
                     <input type="file" class="form-control" id="image" name="image" accept="image/*">

@@ -21,12 +21,18 @@ class Customer(db.Model):
     historical_deal_note = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
     notes = db.Column(db.Text, default='')
+    priority_level = db.Column(db.String(20), nullable=False, default='normal')
+    follow_up_status = db.Column(db.String(20), nullable=False, default='needs_followup')
+    next_follow_up_date = db.Column(db.Date, nullable=True, index=True)
+    last_follow_up_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     version = db.Column(db.Integer, nullable=False, default=1)
     __mapper_args__ = {'version_id_col': version}
 
     pis = db.relationship('PI', backref='customer', lazy=True, cascade='all, delete-orphan')
+    follow_ups = db.relationship('CustomerFollowUp', backref='customer', lazy=True,
+                                 cascade='all, delete-orphan', order_by='CustomerFollowUp.contacted_at.desc()')
 
     @property
     def cumulative_deal_usd(self):
@@ -49,9 +55,34 @@ class Customer(db.Model):
             'cumulative_deal_usd': self.cumulative_deal_usd,
             'image': self.image,
             'notes': self.notes,
+            'priority_level': self.priority_level,
+            'follow_up_status': self.follow_up_status,
+            'next_follow_up_date': self.next_follow_up_date.isoformat() if self.next_follow_up_date else None,
+            'last_follow_up_at': self.last_follow_up_at.isoformat() if self.last_follow_up_at else None,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
             'version': self.version,
         }
+
+    @property
+    def customer_type(self):
+        if self.priority_level == 'invalid':
+            return 'invalid'
+        if self.priority_level == 'key':
+            return 'key'
+        return 'converted' if self.cumulative_deal_usd > 0 else 'potential'
+
+
+class CustomerFollowUp(db.Model):
+    __tablename__ = 'customer_follow_ups'
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False, index=True)
+    content = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='needs_followup')
+    contacted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    next_follow_up_date = db.Column(db.Date, nullable=True)
+    created_by = db.Column(db.String(100), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Account(db.Model):

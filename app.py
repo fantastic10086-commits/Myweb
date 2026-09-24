@@ -42,7 +42,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
-    db, Customer, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
+    db, Customer, CustomerFollowUp, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
@@ -368,7 +368,7 @@ def _migrate_db():
     )
     pi_exchange_rate_was_missing = 'exchange_rate' not in pi_columns_before
     expected = {
-        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'priority_level': ('VARCHAR(20)', "'normal'"), 'follow_up_status': ('VARCHAR(20)', "'needs_followup'"), 'next_follow_up_date': ('DATE', 'NULL'), 'last_follow_up_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'products': {
             'image': 'VARCHAR(500)',
             'chinese_name': 'VARCHAR(200)',
@@ -416,6 +416,7 @@ def _migrate_db():
         'packing_items': {'note': 'VARCHAR(500)'},
         'customs_documents': {},
         'customs_revisions': {},
+        'customer_follow_ups': {},
         'users': {
             'account': ('VARCHAR(100)', "''"),
             'active': ('BOOLEAN', '1'),
@@ -2274,6 +2275,22 @@ def settings_page():
                 flash('默认业务汇率必须大于 0。', 'danger')
                 return redirect(url_for('settings_page'))
             settings['exchange_rate'] = str(parsed_rate)
+        for key, label, fallback in (
+            ('followup_days_potential', '潜在客户默认跟进天数', 7),
+            ('followup_days_converted', '成交客户默认跟进天数', 30),
+            ('followup_days_key', '重点客户默认跟进天数', 7),
+            ('followup_days_waiting', '等待回复默认跟进天数', 3),
+        ):
+            raw = request.form.get(key, str(fallback)).strip()
+            try:
+                days = int(raw)
+            except ValueError:
+                flash(f'{label}必须是整数。', 'danger')
+                return redirect(url_for('settings_page'))
+            if days < 1 or days > 365:
+                flash(f'{label}必须在 1 到 365 天之间。', 'danger')
+                return redirect(url_for('settings_page'))
+            settings[key] = str(days)
         _save_settings(settings)
         flash('设置已保存。', 'success')
         return redirect(url_for('settings_page'))
@@ -2292,6 +2309,10 @@ def settings_page():
                            dingtalk_appsecret='',
                            dingtalk_agent_id=settings.get('dingtalk_agent_id', ''),
                            exchange_rate=settings.get('exchange_rate', '7.0'),
+                           followup_days_potential=settings.get('followup_days_potential', '7'),
+                           followup_days_converted=settings.get('followup_days_converted', '30'),
+                           followup_days_key=settings.get('followup_days_key', '7'),
+                           followup_days_waiting=settings.get('followup_days_waiting', '3'),
                            webhook_ok=bool(settings.get('dingtalk_webhook')),
                            shu_kei_webhook_ok=bool(settings.get('dingtalk_shu_kei_webhook')),
                            report_enabled=_setting_enabled(settings, 'dingtalk_report_enabled'),
@@ -2310,6 +2331,13 @@ def settings_page():
 def index():
     cust_q = filter_by_user(Customer.query, Customer, 'salesperson')
     customer_count = cust_q.count()
+    today = date.today()
+    follow_up_today = cust_q.filter(
+        Customer.follow_up_status != 'paused', Customer.next_follow_up_date == today
+    ).order_by(Customer.next_follow_up_date, Customer.name).limit(20).all()
+    follow_up_overdue = cust_q.filter(
+        Customer.follow_up_status != 'paused', Customer.next_follow_up_date < today
+    ).order_by(Customer.next_follow_up_date, Customer.name).limit(20).all()
     product_count = Product.query.filter(Product.active.is_(True)).count()
     pi_q = filter_by_user(PI.query, PI, 'salesperson')
     pi_count = pi_q.count()
@@ -2318,12 +2346,45 @@ def index():
                            customer_count=customer_count,
                            product_count=product_count,
                            pi_count=pi_count,
-                           recent_pis=recent_pis)
+                           recent_pis=recent_pis,
+                           follow_up_today=follow_up_today,
+                           follow_up_overdue=follow_up_overdue,
+                           today=today)
 
 
 # ═══════════════════════════════════════════════════════════════════════
 #  ROUTES — Customers
 # ═══════════════════════════════════════════════════════════════════════
+
+CUSTOMER_FOLLOW_UP_STATUSES = {
+    'needs_followup': '需要跟进',
+    'waiting_reply': '等待客户回复',
+    'paused': '暂不跟进',
+}
+CUSTOMER_PRIORITY_LEVELS = {'normal': '普通客户', 'key': '重点客户', 'invalid': '无效客户'}
+
+
+def _follow_up_default_days(customer, status='needs_followup'):
+    if status == 'paused' or customer.priority_level == 'invalid':
+        return None
+    settings = _load_settings()
+    setting_key = 'followup_days_waiting' if status == 'waiting_reply' else (
+        'followup_days_key' if customer.priority_level == 'key' else
+        'followup_days_converted' if customer.cumulative_deal_usd > 0 else
+        'followup_days_potential'
+    )
+    fallback = {'followup_days_waiting': 3, 'followup_days_key': 7,
+                'followup_days_converted': 30, 'followup_days_potential': 7}[setting_key]
+    try:
+        value = int(settings.get(setting_key, fallback))
+    except (TypeError, ValueError):
+        value = fallback
+    return max(1, min(value, 365))
+
+
+def _customer_type_label(customer):
+    return {'potential': '潜在客户', 'converted': '成交客户',
+            'key': '重点客户', 'invalid': '无效客户'}[customer.customer_type]
 
 @app.route('/customers')
 @login_required
@@ -2335,6 +2396,8 @@ def customer_list():
     deal_max_str = request.args.get('deal_max', '').strip()
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
+    customer_type = request.args.get('customer_type', '').strip()
+    follow_filter = request.args.get('follow', '').strip()
 
     cumulative = func.coalesce(Customer.total_deal_usd, 0) + func.coalesce(Customer.historical_deal_usd, 0)
     query = filter_by_user(Customer.query, Customer, 'salesperson')
@@ -2349,6 +2412,23 @@ def customer_list():
         )
     if sp_filter:
         query = query.filter(Customer.salesperson == sp_filter)
+    if customer_type == 'key':
+        query = query.filter(Customer.priority_level == 'key')
+    elif customer_type == 'invalid':
+        query = query.filter(Customer.priority_level == 'invalid')
+    elif customer_type == 'converted':
+        query = query.filter(Customer.priority_level == 'normal', cumulative > 0)
+    elif customer_type == 'potential':
+        query = query.filter(Customer.priority_level == 'normal', cumulative <= 0)
+    today = date.today()
+    if follow_filter == 'today':
+        query = query.filter(Customer.follow_up_status != 'paused', Customer.next_follow_up_date == today)
+    elif follow_filter == 'overdue':
+        query = query.filter(Customer.follow_up_status != 'paused', Customer.next_follow_up_date < today)
+    elif follow_filter == 'waiting_reply':
+        query = query.filter(Customer.follow_up_status == 'waiting_reply')
+    elif follow_filter == 'paused':
+        query = query.filter(Customer.follow_up_status == 'paused')
     if deal_min_str:
         try:
             query = query.filter(cumulative >= float(deal_min_str))
@@ -2392,6 +2472,7 @@ def customer_list():
     return render_template('customers.html', customers=customers, search=search, sort=sort,
                            sp_filter=sp_filter, deal_min=deal_min_str, deal_max=deal_max_str,
                            date_from=date_from, date_to=date_to, page=page,
+                           customer_type=customer_type, follow_filter=follow_filter, today=today,
                            total_pages=total_pages, total=total,
                            filter_total_deal=filter_total_deal)
 
@@ -2544,6 +2625,10 @@ def customer_add():
                          else current_salesperson_name()),
             image=_save_upload(image_file) if image_file else '',
             notes=request.form.get('notes', '').strip(),
+            priority_level=(request.form.get('priority_level', 'normal').strip()
+                            if request.form.get('priority_level', 'normal').strip() in CUSTOMER_PRIORITY_LEVELS else 'normal'),
+            follow_up_status=(request.form.get('follow_up_status', 'needs_followup').strip()
+                              if request.form.get('follow_up_status', 'needs_followup').strip() in CUSTOMER_FOLLOW_UP_STATUSES else 'needs_followup'),
         )
         if not customer.name:
             flash('客户名称不能为空。', 'danger')
@@ -2570,7 +2655,7 @@ def customer_edit(id):
             db.session.rollback()
             flash('该客户已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('customer_edit', id=id))
-        before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'version'])
+        before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
         image_file = request.files.get('image')
         if image_file and image_file.filename:
             new_img = _save_upload(image_file)
@@ -2590,6 +2675,18 @@ def customer_edit(id):
         if is_admin():
             customer.salesperson = request.form.get('salesperson', '').strip()
         customer.notes = request.form.get('notes', '').strip()
+        priority_level = request.form.get('priority_level', 'normal').strip()
+        follow_up_status = request.form.get('follow_up_status', 'needs_followup').strip()
+        customer.priority_level = priority_level if priority_level in CUSTOMER_PRIORITY_LEVELS else 'normal'
+        customer.follow_up_status = follow_up_status if follow_up_status in CUSTOMER_FOLLOW_UP_STATUSES else 'needs_followup'
+        next_date = request.form.get('next_follow_up_date', '').strip()
+        try:
+            customer.next_follow_up_date = datetime.strptime(next_date, '%Y-%m-%d').date() if next_date else None
+        except ValueError:
+            flash('下次联系日期格式无效。', 'danger')
+            return render_template('customer_form.html', customer=customer, editing=True)
+        if customer.priority_level == 'invalid' or customer.follow_up_status == 'paused':
+            customer.next_follow_up_date = None
         if not customer.name:
             flash('客户名称不能为空。', 'danger')
             return render_template('customer_form.html', customer=customer, editing=True)
@@ -2598,7 +2695,7 @@ def customer_edit(id):
             return render_template('customer_form.html', customer=customer, editing=True)
         customer.version = (customer.version or 1) + 1
         _audit('update', 'customer', customer.id, f'修改客户：{customer.name}', before=before,
-               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'version']))
+               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
         db.session.commit()
         flash('客户更新成功。', 'success')
         return redirect(url_for('customer_list'))
@@ -2714,11 +2811,76 @@ def customer_detail(id):
         ).distinct()
 
     pis = query.order_by(PI.created_at.desc()).all()
+    follow_ups = CustomerFollowUp.query.filter_by(customer_id=id).order_by(
+        CustomerFollowUp.contacted_at.desc(), CustomerFollowUp.id.desc()
+    ).all()
+    suggested_days = _follow_up_default_days(customer, customer.follow_up_status)
+    suggested_date = date.today() + timedelta(days=suggested_days) if suggested_days else None
+    follow_up_defaults = {
+        status: _follow_up_default_days(customer, status)
+        for status in CUSTOMER_FOLLOW_UP_STATUSES
+    }
     resp = make_response(render_template('customer_detail.html', customer=customer, pis=pis,
+                                          follow_ups=follow_ups, suggested_date=suggested_date,
+                                          customer_type_label=_customer_type_label(customer),
+                                          today=date.today(),
+                                          follow_up_defaults=follow_up_defaults,
                                           pi_number=pi_number, date_from=date_from, date_to=date_to,
                                           product=product, amount_min=amount_min, amount_max=amount_max))
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return resp
+
+
+@app.route('/customers/<int:id>/follow-ups', methods=['POST'])
+@login_required
+def customer_follow_up_add(id):
+    customer = Customer.query.get_or_404(id)
+    require_customer_access(customer)
+    content = request.form.get('content', '').strip()
+    status = request.form.get('status', 'needs_followup').strip()
+    if not content:
+        flash('请填写本次沟通内容。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
+    if status not in CUSTOMER_FOLLOW_UP_STATUSES:
+        flash('请选择有效的跟进状态。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
+    contacted_text = request.form.get('contacted_at', '').strip()
+    try:
+        contacted_at = datetime.strptime(contacted_text, '%Y-%m-%d') if contacted_text else datetime.utcnow()
+    except ValueError:
+        flash('联系日期格式无效。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
+    next_text = request.form.get('next_follow_up_date', '').strip()
+    if status == 'paused' or customer.priority_level == 'invalid':
+        next_date = None
+    elif next_text:
+        try:
+            next_date = datetime.strptime(next_text, '%Y-%m-%d').date()
+        except ValueError:
+            flash('下次联系日期格式无效。', 'danger')
+            return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
+    else:
+        days = _follow_up_default_days(customer, status)
+        next_date = contacted_at.date() + timedelta(days=days) if days else None
+    follow_up = CustomerFollowUp(
+        customer_id=customer.id, content=content, status=status,
+        contacted_at=contacted_at, next_follow_up_date=next_date,
+        created_by=current_salesperson_name() or session.get('username', ''),
+    )
+    customer.follow_up_status = status
+    customer.next_follow_up_date = next_date
+    customer.last_follow_up_at = contacted_at
+    db.session.add(follow_up)
+    db.session.flush()
+    _audit('create', 'customer_follow_up', follow_up.id,
+           f'客户跟进：{customer.name}', after={
+               'customer_id': customer.id, 'status': status,
+               'contacted_at': contacted_at.isoformat(),
+               'next_follow_up_date': next_date.isoformat() if next_date else None,
+           })
+    db.session.commit()
+    flash('跟进记录已保存。', 'success')
+    return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
 
 
 @app.route('/sales-stats')

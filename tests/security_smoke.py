@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
-from datetime import date
+from datetime import date, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -37,7 +37,7 @@ from werkzeug.datastructures import MultiDict
 from models import (
     Account, AuditLog, Customer, DocumentTemplate, Expense, FieldOption,
     PackingBox, PackingItem, PackingList, Payment, PI, PIItem, Procurement,
-    Product, Supplier, User, CustomsDocument, CustomsRevision, TranslationCache, db,
+    Product, Supplier, User, CustomerFollowUp, CustomsDocument, CustomsRevision, TranslationCache, db,
 )
 from document_export import _fixed_values, convert_excel_to_pdf, find_soffice
 from customs_export import _model_summary
@@ -981,6 +981,55 @@ class SecuritySmokeTests(unittest.TestCase):
         self.login()
         self.assertEqual(self.client.get(f'/customers/{self.alice_customer}').status_code, 200)
         self.assertEqual(self.client.get(f'/customers/{self.bob_customer}').status_code, 403)
+
+    def test_customer_follow_up_defaults_updates_dashboard_and_is_scoped(self):
+        self.login('alice')
+        detail_url = f'/customers/{self.alice_customer}'
+        detail = self.client.get(detail_url)
+        self.assertEqual(detail.status_code, 200)
+        detail_html = detail.get_data(as_text=True)
+        self.assertIn('id="follow-ups"', detail_html)
+        self.assertIn('新增跟进', detail_html)
+        token = self.token(detail_url)
+        response = self.client.post(
+            f'/customers/{self.alice_customer}/follow-ups',
+            data={
+                'csrf_token': token,
+                'content': '已发送新报价，等待客户确认。',
+                'status': 'waiting_reply',
+                'contacted_at': date.today().isoformat(),
+                'next_follow_up_date': '',
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            customer = db.session.get(Customer, self.alice_customer)
+            follow_up = CustomerFollowUp.query.filter_by(customer_id=customer.id).order_by(CustomerFollowUp.id.desc()).first()
+            self.assertIsNotNone(follow_up)
+            self.assertEqual(follow_up.content, '已发送新报价，等待客户确认。')
+            expected_days = application._follow_up_default_days(customer, 'waiting_reply')
+            self.assertEqual(customer.next_follow_up_date, date.today() + timedelta(days=expected_days))
+            follow_up_id = follow_up.id
+        listing = self.client.get('/customers?follow=waiting_reply').get_data(as_text=True)
+        self.assertIn('Alice Customer', listing)
+        dashboard = self.client.get('/').get_data(as_text=True)
+        self.assertIn('今天需要跟进', dashboard)
+        self.client.get('/logout')
+        self.login('bob')
+        forbidden = self.client.post(
+            f'/customers/{self.alice_customer}/follow-ups',
+            data={'csrf_token': self.token('/customers'), 'content': '越权', 'status': 'needs_followup'},
+        )
+        self.assertEqual(forbidden.status_code, 403)
+        with application.app.app_context():
+            follow_up = db.session.get(CustomerFollowUp, follow_up_id)
+            if follow_up:
+                db.session.delete(follow_up)
+            customer = db.session.get(Customer, self.alice_customer)
+            customer.follow_up_status = 'needs_followup'
+            customer.next_follow_up_date = None
+            customer.last_follow_up_at = None
+            db.session.commit()
 
     def test_salesperson_cannot_open_admin_pages(self):
         self.login()
