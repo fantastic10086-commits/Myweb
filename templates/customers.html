@@ -129,14 +129,24 @@
                             {% endif %}
                         </td>
                         <td class="text-end text-nowrap">
-                            <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info">PI</a>
-                            <a href="{{ url_for('customer_edit', id=c.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
-                            {% if is_admin %}<button type="button" class="btn btn-sm btn-outline-primary" onclick="reassignCustomer({{ c.id }}, '{{ c.name|e }}', '{{ c.salesperson|e }}')">转交</button>{% endif %}
-                            <form action="{{ url_for('customer_delete', id=c.id) }}" method="post" class="d-inline"
-                                  onsubmit='return typedConfirm(this, {{ c.name|tojson }}, "请输入客户名称，将客户及其 PI 移入回收站：");'>
-                                <input type="hidden" name="confirm_value">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">删除</button>
-                            </form>
+                            <a href="{{ url_for('customer_detail', id=c.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> 详情</a>
+                            <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-file-earmark-plus"></i> 新建 PI</a>
+                            <div class="dropdown d-inline-block">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">更多</button>
+                                <ul class="dropdown-menu dropdown-menu-end">
+                                    {% if is_admin %}
+                                    <li><button type="button" class="dropdown-item" onclick="reassignCustomer({{ c.id }}, {{ c.name|tojson }}, {{ c.salesperson|tojson }})"><i class="bi bi-person-gear me-2"></i>转交客户</button></li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    {% endif %}
+                                    <li>
+                                        <form action="{{ url_for('customer_delete', id=c.id) }}" method="post"
+                                              onsubmit='return typedConfirm(this, {{ c.name|tojson }}, "请输入客户名称，将客户及其 PI 移入回收站：");'>
+                                            <input type="hidden" name="confirm_value">
+                                            <button type="submit" class="dropdown-item text-danger"><i class="bi bi-trash me-2"></i>删除客户</button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}

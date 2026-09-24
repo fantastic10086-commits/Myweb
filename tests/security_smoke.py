@@ -979,6 +979,13 @@ class SecuritySmokeTests(unittest.TestCase):
 
     def test_salesperson_cannot_read_another_customer(self):
         self.login()
+        listing_html = self.client.get('/customers').get_data(as_text=True)
+        self.assertIn('</i> 详情</a>', listing_html)
+        self.assertIn('</i> 新建 PI</a>', listing_html)
+        self.assertIn('>更多</button>', listing_html)
+        self.assertIn('删除客户', listing_html)
+        self.assertNotIn(f'/customers/{self.alice_customer}/edit', listing_html)
+        self.assertNotIn('转交客户', listing_html)
         self.assertEqual(self.client.get(f'/customers/{self.alice_customer}').status_code, 200)
         self.assertEqual(self.client.get(f'/customers/{self.bob_customer}').status_code, 403)
 
