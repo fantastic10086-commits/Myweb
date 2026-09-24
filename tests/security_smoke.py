@@ -1060,6 +1060,7 @@ class SecuritySmokeTests(unittest.TestCase):
 
         detail_html = self.client.get(detail_url + '#customer-files').get_data(as_text=True)
         self.assertIn('上传到客户文件夹', detail_html)
+        self.assertIn('class="row g-2 align-items-start"', detail_html)
         self.assertIn('客户说明.txt', detail_html)
         self.assertIn('order-note.pdf', detail_html)
         self.assertIn('PI-TEST-001', detail_html)
