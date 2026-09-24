@@ -2590,6 +2590,95 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertEqual(reverted.status_code, 200)
         self.assertEqual(reverted.get_json()['procurement_status'], '采购完成')
 
+    def test_procurement_uses_pi_overrides_and_freezes_them_when_confirmed(self):
+        with application.app.app_context():
+            product = Product.query.filter_by(product_code='ORIG').one()
+            supplier = Supplier(name='PI Snapshot Supplier')
+            pi = PI(
+                pi_number='PI-PROC-SNAPSHOT', customer_id=self.alice_customer,
+                salesperson='Alice', currency='RMB', exchange_rate=7,
+                total_amount=24, received_amount=24, procurement_status='部分采购',
+            )
+            db.session.add_all([supplier, pi])
+            db.session.flush()
+            item = PIItem(
+                pi_id=pi.id, product_id=product.id, quantity=2,
+                unit_price=12, amount=24, name_override='PI 专用品名',
+                code_override='PI-CUSTOM-CODE', spec_override='PI 专用规格',
+            )
+            db.session.add(item)
+            db.session.flush()
+            procurement = Procurement(
+                pi_id=pi.id, pi_item_id=item.id, supplier_id=supplier.id,
+                unit_price=8, quantity=2, total=16, procurement_date='2026-09-24',
+            )
+            db.session.add(procurement)
+            db.session.commit()
+            pi_id, item_id, supplier_id = pi.id, item.id, supplier.id
+
+        self.login('admin-test')
+        page_url = f'/procurement/{pi_id}'
+        draft_html = self.client.get(page_url).get_data(as_text=True)
+        self.assertIn('PI 专用品名', draft_html)
+        self.assertIn('PI-CUSTOM-CODE', draft_html)
+        self.assertIn('PI 专用规格', draft_html)
+        self.assertNotIn('Original spec</td>', draft_html)
+
+        export_payload = {
+            'procurement_date': '2026-09-24',
+            'supplier_id': supplier_id,
+            'items': [{
+                'pi_item_id': item_id, 'supplier_id': supplier_id,
+                'unit_price': 8, 'quantity': 2, 'note': '',
+            }],
+        }
+        draft_export = self.client.post(
+            f'/procurement/{pi_id}/supplier-orders/export', json=export_payload,
+            headers={'X-CSRFToken': self.token(page_url)},
+        )
+        self.assertEqual(draft_export.status_code, 200)
+        draft_book = load_workbook(BytesIO(draft_export.data))
+        draft_text = '\n'.join(str(cell.value) for row in draft_book.active.iter_rows() for cell in row if cell.value is not None)
+        self.assertIn('PI 专用品名', draft_text)
+        self.assertIn('PI-CUSTOM-CODE', draft_text)
+        self.assertIn('PI 专用规格', draft_text)
+
+        confirmed = self.client.post(
+            f'/api/procurement/{pi_id}/confirm',
+            headers={'X-CSRFToken': self.token(page_url)},
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        with application.app.app_context():
+            item = db.session.get(PIItem, item_id)
+            item.name_override = '确认后修改的 PI 品名'
+            item.code_override = 'CHANGED-AFTER-CONFIRM'
+            item.spec_override = '确认后修改的规格'
+            db.session.commit()
+
+        confirmed_html = self.client.get(page_url).get_data(as_text=True)
+        self.assertIn('PI 专用品名', confirmed_html)
+        self.assertNotIn('确认后修改的 PI 品名', confirmed_html)
+        api_row = self.client.get(f'/api/procurement/{pi_id}').get_json()[0]
+        self.assertEqual(api_row['pi_item_name'], 'PI 专用品名')
+        self.assertEqual(api_row['pi_item_code'], 'PI-CUSTOM-CODE')
+        self.assertEqual(api_row['pi_item_specification'], 'PI 专用规格')
+
+        confirmed_export = self.client.post(
+            f'/procurement/{pi_id}/supplier-orders/export', json=export_payload,
+            headers={'X-CSRFToken': self.token(page_url)},
+        )
+        confirmed_book = load_workbook(BytesIO(confirmed_export.data))
+        confirmed_text = '\n'.join(str(cell.value) for row in confirmed_book.active.iter_rows() for cell in row if cell.value is not None)
+        self.assertIn('PI 专用品名', confirmed_text)
+        self.assertNotIn('确认后修改的 PI 品名', confirmed_text)
+
+        with application.app.app_context():
+            Procurement.query.filter_by(pi_id=pi_id).delete()
+            PIItem.query.filter_by(pi_id=pi_id).delete()
+            db.session.delete(db.session.get(PI, pi_id))
+            db.session.delete(db.session.get(Supplier, supplier_id))
+            db.session.commit()
+
         with application.app.app_context():
             Procurement.query.filter_by(pi_id=self.alice_pi).delete()
             Payment.query.filter_by(pi_id=self.alice_pi).delete()

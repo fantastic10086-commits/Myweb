@@ -410,7 +410,13 @@ def _migrate_db():
         'field_options': {'english_value': 'VARCHAR(200)'},
         'pi_items': {'image_override': ('VARCHAR(500)', 'NULL'), 'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
         'suppliers': {},  # table auto-created by create_all
-        'procurements': {},  # table auto-created by create_all
+        'procurements': {
+            'product_name_snapshot': ('VARCHAR(200)', 'NULL'),
+            'product_code_snapshot': ('VARCHAR(200)', 'NULL'),
+            'specification_snapshot': ('VARCHAR(200)', 'NULL'),
+            'image_snapshot': ('VARCHAR(500)', 'NULL'),
+            'chinese_name_snapshot': ('VARCHAR(200)', 'NULL'),
+        },
         'packing_lists': {},  # tables auto-created by create_all
         'packing_boxes': {},
         'packing_items': {'note': 'VARCHAR(500)'},
@@ -2001,7 +2007,9 @@ def _remove_product_image_if_unused(filename):
     safe_name = secure_filename(filename or '')
     if not safe_name or safe_name != filename:
         return
-    if Product.query.filter_by(image=safe_name).first() or PIItem.query.filter_by(image_override=safe_name).first():
+    if (Product.query.filter_by(image=safe_name).first()
+            or PIItem.query.filter_by(image_override=safe_name).first()
+            or Procurement.query.filter_by(image_snapshot=safe_name).first()):
         return
     try:
         _remove_upload(safe_name)
@@ -7938,13 +7946,16 @@ def procurement_page(pi_id):
         abort(404)
     suppliers = [s.to_dict() for s in Supplier.query.order_by(Supplier.name).all()]
     existing = {}
+    procurement_records = {}
     for p in Procurement.query.filter_by(pi_id=pi_id).all():
         existing[str(p.pi_item_id)] = p.to_dict()
+        procurement_records[p.pi_item_id] = p
     resp = make_response(render_template(
         'procurement.html',
         pi=pi,
         suppliers=suppliers,
         existing=existing,
+        procurement_records=procurement_records,
         readonly=readonly,
         pi_exchange_rate=_pi_exchange_rate(pi),
     ))
@@ -7964,6 +7975,9 @@ def _supplier_export_groups(pi, data):
         raise ValueError('采购日期格式不正确。') from exc
 
     pi_items = {item.id: item for item in pi.items}
+    procurement_records = {
+        row.pi_item_id: row for row in Procurement.query.filter_by(pi_id=pi.id).all()
+    }
     normalized = []
     supplier_ids = set()
     seen_item_ids = set()
@@ -7981,12 +7995,21 @@ def _supplier_export_groups(pi, data):
             raise ValueError('采购数量必须大于 0，采购单价不能为负数。')
         seen_item_ids.add(item_id)
         supplier_ids.add(supplier_id)
+        pi_item = pi_items[item_id]
+        procurement = procurement_records.get(item_id)
         normalized.append({
-            'pi_item': pi_items[item_id],
+            'pi_item': pi_item,
             'supplier_id': supplier_id,
             'unit_price': unit_price,
             'quantity': quantity,
             'note': str(item.get('note', '') or '')[:1000],
+            'product_name': procurement.purchase_name if procurement else pi_item.display_name,
+            'product_code': procurement.purchase_code if procurement else pi_item.display_code,
+            'specification': procurement.purchase_specification if procurement else pi_item.display_specification,
+            'image': procurement.purchase_image if procurement else pi_item.display_image,
+            'chinese_name': procurement.purchase_chinese_name if procurement else (
+                pi_item.product.chinese_name if pi_item.product else ''
+            ),
         })
 
     suppliers = {
@@ -8220,6 +8243,15 @@ def api_procurement_confirm(pi_id):
                 'error': f'采购单尚未完整，以下产品未采购足量：{names}',
                 'missing_items': gaps,
             }), 400
+        for procurement in pi.procurements:
+            item = procurement.pi_item
+            procurement.product_name_snapshot = item.display_name if item else ''
+            procurement.product_code_snapshot = item.display_code if item else ''
+            procurement.specification_snapshot = item.display_specification if item else ''
+            procurement.image_snapshot = item.display_image if item else ''
+            procurement.chinese_name_snapshot = (
+                item.product.chinese_name if item and item.product else ''
+            )
         pi.procurement_confirmed = True
         pi.procurement_status = '采购完成'
         _audit('update', 'procurement', pi.id, '确认采购完成')
@@ -8383,10 +8415,12 @@ def api_procurement_get(pi_id):
     result = []
     for p in procs:
         d = p.to_dict()
-        if p.pi_item and p.pi_item.product:
-            d['pi_item_name'] = p.pi_item.product.name
-            d['pi_item_cn'] = p.pi_item.product.chinese_name or ''
-            d['pi_item_image'] = p.pi_item.display_image or ''
+        if p.pi_item:
+            d['pi_item_name'] = p.purchase_name
+            d['pi_item_cn'] = p.purchase_chinese_name
+            d['pi_item_code'] = p.purchase_code
+            d['pi_item_specification'] = p.purchase_specification
+            d['pi_item_image'] = p.purchase_image
         if p.pi_item:
             d['pi_unit_price'] = p.pi_item.unit_price
             d['pi_quantity'] = p.pi_item.quantity

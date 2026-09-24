@@ -16,9 +16,9 @@ LIGHT_GRAY = "F3F5F7"
 GREEN = "198754"
 
 
-def _safe_product_image(product, upload_dir, image_buffers):
+def _safe_product_image(filename, upload_dir, image_buffers):
     """Return an Excel image without allowing a stored filename to escape uploads."""
-    filename = str(getattr(product, "image", "") or "")
+    filename = str(filename or "")
     if not filename or os.path.basename(filename) != filename:
         return None
     source_path = os.path.join(upload_dir, filename)
@@ -140,7 +140,6 @@ def generate_supplier_purchase_order(
     for index, entry in enumerate(entries, 1):
         row_number = header_row + index
         pi_item = entry["pi_item"]
-        product = pi_item.product
         unit_price = float(entry["unit_price"])
         quantity = int(entry["quantity"])
         line_total = round(unit_price * quantity, 2)
@@ -148,9 +147,9 @@ def generate_supplier_purchase_order(
         values = [
             index,
             "",
-            getattr(product, "name", "") or "未知产品",
-            getattr(product, "product_code", "") or "",
-            getattr(product, "specification", "") or "",
+            entry.get("product_name", "") or "未知产品",
+            entry.get("product_code", "") or "",
+            entry.get("specification", "") or "",
             quantity,
             unit_price,
             line_total,
@@ -166,10 +165,10 @@ def generate_supplier_purchase_order(
                 cell.number_format = '¥#,##0.00'
             if index % 2 == 0:
                 cell.fill = PatternFill("solid", fgColor=LIGHT_GRAY)
-        chinese_name = getattr(product, "chinese_name", "") or ""
+        chinese_name = entry.get("chinese_name", "") or ""
         if chinese_name:
             sheet.cell(row=row_number, column=3).value += f"\n{chinese_name}"
-        image = _safe_product_image(product, upload_dir, image_buffers)
+        image = _safe_product_image(entry.get("image", ""), upload_dir, image_buffers)
         if image:
             sheet.add_image(image, f"B{row_number}")
         sheet.row_dimensions[row_number].height = 44

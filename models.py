@@ -834,11 +834,42 @@ class Procurement(db.Model):
     total = db.Column(db.Float, nullable=False, default=0.0)
     procurement_date = db.Column(db.String(20), default='')
     note = db.Column(db.Text, default='')
+    product_name_snapshot = db.Column(db.String(200), nullable=True)
+    product_code_snapshot = db.Column(db.String(200), nullable=True)
+    specification_snapshot = db.Column(db.String(200), nullable=True)
+    image_snapshot = db.Column(db.String(500), nullable=True)
+    chinese_name_snapshot = db.Column(db.String(200), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     pi = db.relationship('PI', backref=db.backref('procurements', lazy=True, cascade='all, delete-orphan'))
     pi_item = db.relationship('PIItem', backref=db.backref('procurements', lazy=True, cascade='all, delete-orphan'))
     supplier = db.relationship('Supplier', backref=db.backref('procurements', lazy=True))
+
+    def _confirmed_snapshot(self, value, fallback):
+        if self.pi and self.pi.procurement_confirmed and value is not None:
+            return value
+        return fallback
+
+    @property
+    def purchase_name(self):
+        return self._confirmed_snapshot(self.product_name_snapshot, self.pi_item.display_name if self.pi_item else '')
+
+    @property
+    def purchase_code(self):
+        return self._confirmed_snapshot(self.product_code_snapshot, self.pi_item.display_code if self.pi_item else '')
+
+    @property
+    def purchase_specification(self):
+        return self._confirmed_snapshot(self.specification_snapshot, self.pi_item.display_specification if self.pi_item else '')
+
+    @property
+    def purchase_image(self):
+        return self._confirmed_snapshot(self.image_snapshot, self.pi_item.display_image if self.pi_item else '')
+
+    @property
+    def purchase_chinese_name(self):
+        fallback = self.pi_item.product.chinese_name if self.pi_item and self.pi_item.product else ''
+        return self._confirmed_snapshot(self.chinese_name_snapshot, fallback or '')
 
     def to_dict(self):
         return {
@@ -852,6 +883,11 @@ class Procurement(db.Model):
             'total': self.total,
             'procurement_date': self.procurement_date,
             'note': self.note,
+            'product_name': self.purchase_name,
+            'product_code': self.purchase_code,
+            'specification': self.purchase_specification,
+            'image': self.purchase_image,
+            'chinese_name': self.purchase_chinese_name,
         }
 
 

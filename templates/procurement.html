@@ -862,23 +862,28 @@ document.addEventListener('DOMContentLoaded', function() {
                 </thead>
                 <tbody>
                     {% for item in pi.items %}
-                    <tr data-item-id="{{ item.id }}" data-pi-unit-price="{{ item.unit_price }}" data-pi-quantity="{{ item.quantity }}" data-product-name="{{ (item.product.name if item.product else '未知产品')|e }}" data-product-code="{{ (item.product.product_code if item.product else '')|e }}" data-product-spec="{{ (item.product.specification if item.product else '')|e }}">
+                    {% set procurement = procurement_records.get(item.id) %}
+                    {% set display_name = procurement.purchase_name if procurement else item.display_name %}
+                    {% set display_code = procurement.purchase_code if procurement else item.display_code %}
+                    {% set display_spec = procurement.purchase_specification if procurement else item.display_specification %}
+                    {% set display_image = procurement.purchase_image if procurement else item.display_image %}
+                    {% set display_cn = procurement.purchase_chinese_name if procurement else (item.product.chinese_name if item.product else '') %}
+                    <tr data-item-id="{{ item.id }}" data-pi-unit-price="{{ item.unit_price }}" data-pi-quantity="{{ item.quantity }}" data-product-name="{{ display_name|e }}" data-product-code="{{ display_code|e }}" data-product-spec="{{ display_spec|e }}">
                         <td class="text-center">
                             {% if not pi.procurement_confirmed %}<input type="checkbox" class="form-check-input proc-row-select" aria-label="选择第 {{ loop.index }} 项产品">{% endif %}
                         </td>
                         <td class="text-center proc-sequence">{{ loop.index }}</td>
                         <td class="proc-image-cell">
-                            {% if item.product and item.product.image %}
-                            <img src="{{ url_for('uploaded_product_thumbnail', filename=item.product.image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">
+                            {% if display_image %}
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=display_image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">
                             {% endif %}
                         </td>
-                        <td class="proc-product" title="{{ (item.product.name if item.product else '未知产品')|e }}{% if item.product and item.product.chinese_name %} / {{ item.product.chinese_name|e }}{% endif %}">
-                            {% set product_name = item.product.name if item.product else '未知产品' %}
-                            <strong class="proc-product-name">{{ product_name[:30] }}{% if product_name|length > 30 %}…{% endif %}</strong>
-                            {% if item.product and item.product.chinese_name %}<span class="small text-muted proc-product-meta">{{ item.product.chinese_name }}</span>{% endif %}
-                            {% if item.product and item.product.product_code %}<span class="small text-muted proc-product-meta">[{{ item.product.product_code }}]</span>{% endif %}
+                        <td class="proc-product" title="{{ display_name|e }}{% if display_cn %} / {{ display_cn|e }}{% endif %}">
+                            <strong class="proc-product-name">{{ display_name[:30] }}{% if display_name|length > 30 %}…{% endif %}</strong>
+                            {% if display_cn %}<span class="small text-muted proc-product-meta">{{ display_cn }}</span>{% endif %}
+                            {% if display_code %}<span class="small text-muted proc-product-meta">[{{ display_code }}]</span>{% endif %}
                         </td>
-                        <td class="small">{{ item.product.specification if item.product else '—' }}</td>
+                        <td class="small">{{ display_spec or '—' }}</td>
                         <td class="text-end">{{ item.quantity }}</td>
                         <td class="text-end fw-semibold">{% if pi.currency == 'USD' %}<div>${{ '%.3f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.3f'|format(item.unit_price) }}</div>{% endif %}</td>
                         <td>
