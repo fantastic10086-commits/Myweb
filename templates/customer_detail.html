@@ -2,6 +2,29 @@
 {% block title %}{{ customer.name }}{% endblock %}
 
 {% block content %}
+{% macro customer_file_row(file) %}
+<div class="d-flex align-items-center gap-3 border-bottom py-2">
+    <div class="fs-3 text-primary">
+        {% if file.mime_type.startswith('image/') %}<i class="bi bi-file-earmark-image"></i>
+        {% elif file.mime_type == 'application/pdf' %}<i class="bi bi-file-earmark-pdf"></i>
+        {% elif file.extension in ['xls', 'xlsx', 'csv'] %}<i class="bi bi-file-earmark-excel"></i>
+        {% elif file.extension in ['doc', 'docx'] %}<i class="bi bi-file-earmark-word"></i>
+        {% elif file.extension in ['ppt', 'pptx'] %}<i class="bi bi-file-earmark-slides"></i>
+        {% elif file.extension == 'zip' %}<i class="bi bi-file-earmark-zip"></i>
+        {% else %}<i class="bi bi-file-earmark-text"></i>{% endif %}
+    </div>
+    <div class="flex-grow-1 overflow-hidden">
+        <a href="{{ url_for('customer_file_view', id=file.id) }}" {% if file.is_previewable %}target="_blank"{% endif %} class="fw-semibold text-decoration-none text-break">{{ file.original_name }}</a>
+        <small class="d-block text-muted">{{ file.size_label }} · {{ file.created_by or '-' }} · {{ file.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+        {% if file.note %}<small class="d-block text-secondary text-break">{{ file.note }}</small>{% endif %}
+    </div>
+    <div class="text-nowrap">
+        {% if file.is_previewable %}<a href="{{ url_for('customer_file_view', id=file.id) }}" target="_blank" class="btn btn-sm btn-outline-primary" title="查看"><i class="bi bi-eye"></i></a>{% endif %}
+        <a href="{{ url_for('customer_file_view', id=file.id, download=1) }}" class="btn btn-sm btn-outline-secondary" title="下载"><i class="bi bi-download"></i></a>
+        <form method="post" action="{{ url_for('customer_file_delete', id=file.id) }}" class="d-inline" onsubmit='return confirm({{ ("确认移除文件：" ~ file.original_name ~ "？")|tojson }});'><button class="btn btn-sm btn-outline-danger" type="submit" title="删除"><i class="bi bi-trash"></i></button></form>
+    </div>
+</div>
+{% endmacro %}
 <div class="row mb-3 align-items-center">
     <div class="col-md-6">
         <h2><i class="bi bi-person-badge me-2"></i>{{ customer.name }}</h2>
@@ -67,7 +90,7 @@
             <li class="nav-item" role="presentation"><button class="nav-link active" id="follow-tab" data-bs-toggle="tab" data-bs-target="#follow-ups" type="button" role="tab"><i class="bi bi-chat-left-text me-1"></i>跟进记录 <span class="badge bg-secondary">{{ follow_ups|length }}</span></button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="orders-tab" data-bs-toggle="tab" data-bs-target="#orders" type="button" role="tab"><i class="bi bi-receipt me-1"></i>订单记录 <span class="badge bg-secondary">{{ all_pi_count }}</span></button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" id="products-tab" data-bs-toggle="tab" data-bs-target="#purchased-products" type="button" role="tab"><i class="bi bi-box-seam me-1"></i>成交产品 <span class="badge bg-secondary">{{ purchased_products|length }}</span></button></li>
-            <li class="nav-item" role="presentation"><button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#customer-files" type="button" role="tab"><i class="bi bi-folder2-open me-1"></i>文件资料</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#customer-files" type="button" role="tab"><i class="bi bi-folder2-open me-1"></i>文件资料 <span class="badge bg-secondary">{{ customer_file_count }}</span></button></li>
         </ul>
         <div class="tab-content">
         <div class="tab-pane fade show active" id="follow-ups" role="tabpanel" aria-labelledby="follow-tab">
@@ -214,7 +237,36 @@
             </div>
         </div>
         <div class="tab-pane fade" id="customer-files" role="tabpanel" aria-labelledby="files-tab">
-            <div class="card mb-4"><div class="card-body text-center py-5"><i class="bi bi-folder2-open display-4 text-muted"></i><h5 class="mt-3">客户文件资料</h5><p class="text-muted mb-0">客户文件夹和订单子文件夹将在下一阶段开放上传与管理。</p></div></div>
+            <div class="card mb-3">
+                <div class="card-header"><h5 class="mb-0"><i class="bi bi-cloud-arrow-up me-1"></i>上传文件</h5></div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('customer_file_upload', id=customer.id) }}" enctype="multipart/form-data" class="row g-2 align-items-end">
+                        <div class="col-md-5"><label class="form-label">文件 <span class="text-danger">*</span></label><input class="form-control" type="file" name="files" multiple required accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"><small class="text-muted">每次最多 8 个，每个最大 20 MB。</small></div>
+                        <div class="col-md-4"><label class="form-label">存入文件夹</label><select class="form-select" name="pi_id"><option value="">客户资料（通用）</option>{% for pi in customer_folder_pis %}<option value="{{ pi.id }}">订单 / {{ pi.pi_number }} / {{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</option>{% endfor %}</select></div>
+                        <div class="col-md-3"><label class="form-label">文件说明</label><input class="form-control" type="text" name="note" maxlength="300" placeholder="选填"></div>
+                        <div class="col-12 text-end"><button class="btn btn-primary" type="submit"><i class="bi bi-upload me-1"></i>上传到客户文件夹</button></div>
+                    </form>
+                </div>
+            </div>
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0"><i class="bi bi-folder me-1"></i>客户资料</h5><span class="badge bg-secondary">{{ general_files|length }}</span></div>
+                <div class="card-body py-0">{% for file in general_files %}{{ customer_file_row(file) }}{% else %}<div class="text-center text-muted py-4">暂无通用文件。</div>{% endfor %}</div>
+            </div>
+            <div class="accordion mb-4" id="piFileFolders">
+                {% for pi in customer_folder_pis %}
+                {% set folder_files = pi_files.get(pi.id, []) %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="fileFolderHeading{{ pi.id }}"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#fileFolder{{ pi.id }}"><i class="bi bi-folder2 me-2"></i><strong>{{ pi.pi_number }}</strong><span class="text-muted ms-2">{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</span><span class="badge bg-secondary ms-auto me-2">{{ folder_files|length }}</span></button></h2>
+                    <div id="fileFolder{{ pi.id }}" class="accordion-collapse collapse" data-bs-parent="#piFileFolders" aria-labelledby="fileFolderHeading{{ pi.id }}"><div class="accordion-body py-0">{% for file in folder_files %}{{ customer_file_row(file) }}{% else %}<div class="text-center text-muted py-4">该订单文件夹暂无文件。</div>{% endfor %}</div></div>
+                </div>
+                {% else %}<div class="card"><div class="card-body text-center text-muted py-4">该客户还没有订单子文件夹。</div></div>{% endfor %}
+            </div>
+            {% if archived_pi_files %}
+            <div class="card mb-4 border-warning">
+                <div class="card-header bg-warning-subtle"><h5 class="mb-0"><i class="bi bi-archive me-1"></i>历史订单保留文件</h5><small class="text-muted">关联订单已进入回收站，文件继续保留。</small></div>
+                <div class="card-body py-0">{% for file in archived_pi_files %}{{ customer_file_row(file) }}{% endfor %}</div>
+            </div>
+            {% endif %}
         </div>
         </div>
     </div>

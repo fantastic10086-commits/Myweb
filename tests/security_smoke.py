@@ -35,7 +35,7 @@ from werkzeug.security import generate_password_hash
 import app as application
 from werkzeug.datastructures import MultiDict
 from models import (
-    Account, AuditLog, Customer, DocumentTemplate, Expense, FieldOption,
+    Account, AuditLog, Customer, CustomerFile, DocumentTemplate, Expense, FieldOption,
     PackingBox, PackingItem, PackingList, Payment, PI, PIItem, Procurement,
     Product, Supplier, User, CustomerFollowUp, CustomsDocument, CustomsRevision, TranslationCache, db,
 )
@@ -1023,6 +1023,85 @@ class SecuritySmokeTests(unittest.TestCase):
             PIItem.query.filter_by(pi_id=extra_pi_id).delete()
             db.session.delete(db.session.get(PI, extra_pi_id))
             db.session.commit()
+
+    def test_customer_file_library_is_grouped_private_audited_and_soft_deleted(self):
+        self.login('alice')
+        detail_url = f'/customers/{self.alice_customer}'
+        response = self.client.post(
+            f'/customers/{self.alice_customer}/files',
+            data={
+                'csrf_token': self.token(detail_url),
+                'note': '客户通用资料',
+                'files': (BytesIO('客户说明'.encode('utf-8')), '客户说明.txt'),
+            },
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(response.status_code, 302)
+        response = self.client.post(
+            f'/customers/{self.alice_customer}/files',
+            data={
+                'csrf_token': self.token(detail_url),
+                'pi_id': str(self.alice_pi),
+                'files': (BytesIO(b'%PDF-1.4\n%%EOF'), 'order-note.pdf'),
+            },
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(response.status_code, 302)
+        with application.app.app_context():
+            records = CustomerFile.query.filter_by(customer_id=self.alice_customer).order_by(CustomerFile.id).all()
+            self.assertEqual(len(records), 2)
+            self.assertIsNone(records[0].pi_id)
+            self.assertEqual(records[0].original_name, '客户说明.txt')
+            self.assertEqual(records[1].pi_id, self.alice_pi)
+            self.assertEqual(records[1].mime_type, 'application/pdf')
+            general_id, order_file_id = records[0].id, records[1].id
+            stored_paths = [os.path.join(application.app.config['UPLOAD_DIR'], item.stored_name) for item in records]
+            self.assertTrue(all(os.path.isfile(path) for path in stored_paths))
+
+        detail_html = self.client.get(detail_url + '#customer-files').get_data(as_text=True)
+        self.assertIn('上传到客户文件夹', detail_html)
+        self.assertIn('客户说明.txt', detail_html)
+        self.assertIn('order-note.pdf', detail_html)
+        self.assertIn('PI-TEST-001', detail_html)
+        self.assertEqual(self.client.get(f'/customer-files/{general_id}?download=1').data, '客户说明'.encode('utf-8'))
+
+        self.client.get('/logout')
+        self.login('bob')
+        self.assertEqual(self.client.get(f'/customer-files/{general_id}').status_code, 403)
+        self.client.get('/logout')
+        self.login('alice')
+        invalid = self.client.post(
+            f'/customers/{self.alice_customer}/files',
+            data={'csrf_token': self.token(detail_url), 'files': (BytesIO(b'bad'), 'danger.exe')},
+            content_type='multipart/form-data',
+            follow_redirects=True,
+        )
+        self.assertIn('仅支持图片、PDF', invalid.get_data(as_text=True))
+        wrong_folder = self.client.post(
+            f'/customers/{self.alice_customer}/files',
+            data={
+                'csrf_token': self.token(detail_url), 'pi_id': '999999',
+                'files': (BytesIO(b'folder check'), 'folder.txt'),
+            },
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(wrong_folder.status_code, 400)
+        delete_response = self.client.post(
+            f'/customer-files/{order_file_id}/delete',
+            data={'csrf_token': self.token(detail_url)},
+        )
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertEqual(self.client.get(f'/customer-files/{order_file_id}').status_code, 404)
+        with application.app.app_context():
+            deleted = db.session.get(CustomerFile, order_file_id)
+            self.assertIsNotNone(deleted.deleted_at)
+            self.assertTrue(os.path.isfile(os.path.join(application.app.config['UPLOAD_DIR'], deleted.stored_name)))
+            self.assertIsNotNone(AuditLog.query.filter_by(entity_type='customer_file', entity_id=order_file_id, action='soft_delete').first())
+            CustomerFile.query.filter_by(customer_id=self.alice_customer).delete()
+            db.session.commit()
+        for path in stored_paths:
+            if os.path.isfile(path):
+                os.remove(path)
 
     def test_customer_follow_up_defaults_updates_dashboard_and_is_scoped(self):
         self.login('alice')

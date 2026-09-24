@@ -42,7 +42,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
-    db, Customer, CustomerFollowUp, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
+    db, Customer, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
@@ -417,6 +417,7 @@ def _migrate_db():
         'customs_documents': {},
         'customs_revisions': {},
         'customer_follow_ups': {},
+        'customer_files': {},
         'users': {
             'account': ('VARCHAR(100)', "''"),
             'active': ('BOOLEAN', '1'),
@@ -1891,6 +1892,86 @@ def _save_upload(file):
         return ''
     return unique_name
 
+
+CUSTOMER_FILE_MIME_TYPES = {
+    '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.xls': 'application/vnd.ms-excel',
+    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    '.txt': 'text/plain', '.csv': 'text/csv', '.zip': 'application/zip',
+}
+CUSTOMER_FILE_MAX_BYTES = 20 * 1024 * 1024
+
+
+def _customer_file_original_name(filename):
+    name = os.path.basename(str(filename or '').replace('\\', '/')).strip()
+    name = re.sub(r'[\x00-\x1f\x7f]', '', name)
+    return name[:255]
+
+
+def _validate_customer_file(file):
+    """Validate a private customer document before it enters managed storage."""
+    original_name = _customer_file_original_name(file.filename)
+    extension = os.path.splitext(original_name)[1].lower()
+    if not original_name or extension not in CUSTOMER_FILE_MIME_TYPES:
+        raise ValueError('仅支持图片、PDF、Word、Excel、PPT、TXT、CSV 和 ZIP 文件。')
+    try:
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+    except (AttributeError, OSError):
+        raise ValueError(f'{original_name} 无法读取。')
+    if size <= 0:
+        raise ValueError(f'{original_name} 是空文件。')
+    if size > CUSTOMER_FILE_MAX_BYTES:
+        raise ValueError(f'{original_name} 超过单个文件 20 MB 限制。')
+
+    try:
+        if extension in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
+            from PIL import Image
+            with Image.open(file.stream) as image:
+                if image.width * image.height > 40_000_000:
+                    raise ValueError('图片尺寸过大')
+                image.verify()
+        elif extension == '.pdf':
+            if file.stream.read(5) != b'%PDF-':
+                raise ValueError('PDF 文件头无效')
+        elif extension in {'.docx', '.xlsx', '.pptx', '.zip'}:
+            if not zipfile.is_zipfile(file.stream):
+                raise ValueError('压缩文档结构无效')
+            file.stream.seek(0)
+            with zipfile.ZipFile(file.stream) as archive:
+                infos = archive.infolist()
+                if len(infos) > 2000 or sum(info.file_size for info in infos) > 200 * 1024 * 1024:
+                    raise ValueError('压缩文档展开内容过大')
+                if extension != '.zip' and '[Content_Types].xml' not in archive.namelist():
+                    raise ValueError('Office 文档结构无效')
+        elif extension in {'.doc', '.xls', '.ppt'}:
+            if file.stream.read(8) != b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+                raise ValueError('旧版 Office 文档结构无效')
+        elif extension in {'.txt', '.csv'}:
+            sample = file.stream.read(min(size, 8192))
+            if b'\x00' in sample:
+                raise ValueError('文本文件包含无效二进制内容')
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError(f'{original_name} 文件内容无效或已损坏。')
+    finally:
+        file.stream.seek(0)
+    return original_name, extension, size, CUSTOMER_FILE_MIME_TYPES[extension]
+
+
+def _save_customer_file(file, extension):
+    stored_name = f'{uuid.uuid4().hex}{extension}'
+    target = os.path.join(current_app.config['UPLOAD_DIR'], stored_name)
+    file.save(target)
+    return stored_name
+
 def _remove_upload(filename):
     """Remove one app-managed upload without allowing path traversal."""
     safe_name = secure_filename(filename or '')
@@ -2883,10 +2964,28 @@ def customer_detail(id):
         status: _follow_up_default_days(customer, status)
         for status in CUSTOMER_FOLLOW_UP_STATUSES
     }
+    active_files = CustomerFile.query.filter_by(customer_id=id).filter(
+        CustomerFile.deleted_at.is_(None)
+    ).order_by(CustomerFile.created_at.desc(), CustomerFile.id.desc()).all()
+    general_files = []
+    archived_pi_files = []
+    pi_files = {}
+    active_pi_ids = {pi.id for pi in all_pis}
+    for customer_file in active_files:
+        if customer_file.pi_id in active_pi_ids:
+            pi_files.setdefault(customer_file.pi_id, []).append(customer_file)
+        elif customer_file.pi_id is None:
+            general_files.append(customer_file)
+        else:
+            archived_pi_files.append(customer_file)
     resp = make_response(render_template('customer_detail.html', customer=customer, pis=pis,
                                           all_pi_count=len(all_pis),
                                           latest_deal_date=(all_pis[0].issue_date if all_pis else None),
                                           purchased_products=purchased_products,
+                                          customer_folder_pis=all_pis,
+                                          general_files=general_files, pi_files=pi_files,
+                                          archived_pi_files=archived_pi_files,
+                                          customer_file_count=len(active_files),
                                           follow_ups=follow_ups, suggested_date=suggested_date,
                                           customer_type_label=_customer_type_label(customer),
                                           today=date.today(),
@@ -2947,6 +3046,104 @@ def customer_follow_up_add(id):
     db.session.commit()
     flash('跟进记录已保存。', 'success')
     return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
+
+
+@app.route('/customers/<int:id>/files', methods=['POST'])
+@login_required
+def customer_file_upload(id):
+    customer = Customer.query.get_or_404(id)
+    require_customer_access(customer)
+    uploads = [item for item in request.files.getlist('files') if item and item.filename]
+    if not uploads:
+        flash('请选择要上传的文件。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
+    if len(uploads) > 8:
+        flash('每次最多上传 8 个文件。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
+
+    pi_id = request.form.get('pi_id', type=int)
+    pi = None
+    if pi_id:
+        pi = PI.query.filter_by(id=pi_id, customer_id=customer.id).filter(PI.deleted_at.is_(None)).first()
+        if not pi:
+            abort(400, description='请选择该客户名下的有效 PI 文件夹。')
+    note = request.form.get('note', '').strip()
+    if len(note) > 300:
+        flash('文件说明不能超过 300 个字符。', 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
+
+    validated = []
+    try:
+        for upload in uploads:
+            validated.append((upload, *_validate_customer_file(upload)))
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
+
+    saved_names = []
+    try:
+        for upload, original_name, extension, size, mime_type in validated:
+            stored_name = _save_customer_file(upload, extension)
+            saved_names.append(stored_name)
+            record = CustomerFile(
+                customer_id=customer.id, pi_id=pi.id if pi else None,
+                stored_name=stored_name, original_name=original_name,
+                mime_type=mime_type, size_bytes=size, note=note,
+                created_by=current_salesperson_name() or session.get('username', ''),
+            )
+            db.session.add(record)
+            db.session.flush()
+            _audit('create', 'customer_file', record.id,
+                   f'上传客户文件：{customer.name} / {original_name}', after={
+                       'customer_id': customer.id, 'pi_id': record.pi_id,
+                       'original_name': original_name, 'size_bytes': size,
+                   })
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        for stored_name in saved_names:
+            _remove_upload(stored_name)
+        raise
+    folder_name = pi.pi_number if pi else '客户资料'
+    flash(f'已上传 {len(validated)} 个文件到“{folder_name}”。', 'success')
+    return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
+
+
+@app.route('/customer-files/<int:id>')
+@login_required
+def customer_file_view(id):
+    record = CustomerFile.query.filter_by(id=id).filter(CustomerFile.deleted_at.is_(None)).first_or_404()
+    customer = Customer.query.get_or_404(record.customer_id)
+    require_customer_access(customer)
+    safe_name = secure_filename(record.stored_name or '')
+    if not safe_name or safe_name != record.stored_name:
+        abort(404)
+    path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
+    if not os.path.isfile(path):
+        abort(404)
+    download = request.args.get('download') == '1' or not record.is_previewable
+    return send_file(
+        path, mimetype=record.mime_type or 'application/octet-stream',
+        as_attachment=download, download_name=record.original_name,
+        conditional=True,
+    )
+
+
+@app.route('/customer-files/<int:id>/delete', methods=['POST'])
+@login_required
+def customer_file_delete(id):
+    record = CustomerFile.query.filter_by(id=id).filter(CustomerFile.deleted_at.is_(None)).first_or_404()
+    customer = Customer.query.get_or_404(record.customer_id)
+    require_customer_access(customer)
+    record.deleted_at = datetime.utcnow()
+    _audit('soft_delete', 'customer_file', record.id,
+           f'删除客户文件：{customer.name} / {record.original_name}', before={
+               'customer_id': customer.id, 'pi_id': record.pi_id,
+               'original_name': record.original_name, 'stored_name': record.stored_name,
+           })
+    db.session.commit()
+    flash('文件已移除。', 'success')
+    return redirect(url_for('customer_detail', id=customer.id, _anchor='customer-files'))
 
 
 @app.route('/sales-stats')

@@ -85,6 +85,42 @@ class CustomerFollowUp(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
+class CustomerFile(db.Model):
+    """A private file stored in a customer's main folder or one PI subfolder."""
+    __tablename__ = 'customer_files'
+
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False, index=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=True, index=True)
+    stored_name = db.Column(db.String(100), nullable=False, unique=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    mime_type = db.Column(db.String(100), nullable=False, default='application/octet-stream')
+    size_bytes = db.Column(db.Integer, nullable=False, default=0)
+    note = db.Column(db.String(300), nullable=False, default='')
+    created_by = db.Column(db.String(100), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    customer = db.relationship('Customer', backref=db.backref('files', lazy=True, cascade='all, delete-orphan'))
+    pi = db.relationship('PI', backref=db.backref('customer_files', lazy=True))
+
+    @property
+    def extension(self):
+        return self.original_name.rsplit('.', 1)[-1].lower() if '.' in self.original_name else ''
+
+    @property
+    def is_previewable(self):
+        return self.mime_type.startswith('image/') or self.mime_type == 'application/pdf'
+
+    @property
+    def size_label(self):
+        if self.size_bytes < 1024:
+            return f'{self.size_bytes} B'
+        if self.size_bytes < 1024 * 1024:
+            return f'{self.size_bytes / 1024:.1f} KB'
+        return f'{self.size_bytes / (1024 * 1024):.1f} MB'
+
+
 class Account(db.Model):
     __tablename__ = 'accounts'
 
