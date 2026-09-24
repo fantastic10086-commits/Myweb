@@ -1047,14 +1047,26 @@ class SecuritySmokeTests(unittest.TestCase):
             content_type='multipart/form-data',
         )
         self.assertEqual(response.status_code, 302)
+        response = self.client.post(
+            f'/customers/{self.alice_customer}/files',
+            data={
+                'csrf_token': self.token(detail_url),
+                'files': self.image_upload('现场照片.png'),
+            },
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(response.status_code, 302)
         with application.app.app_context():
             records = CustomerFile.query.filter_by(customer_id=self.alice_customer).order_by(CustomerFile.id).all()
-            self.assertEqual(len(records), 2)
-            self.assertIsNone(records[0].pi_id)
-            self.assertEqual(records[0].original_name, '客户说明.txt')
-            self.assertEqual(records[1].pi_id, self.alice_pi)
-            self.assertEqual(records[1].mime_type, 'application/pdf')
-            general_id, order_file_id = records[0].id, records[1].id
+            self.assertEqual(len(records), 3)
+            by_name = {record.original_name: record for record in records}
+            self.assertIsNone(by_name['客户说明.txt'].pi_id)
+            self.assertEqual(by_name['order-note.pdf'].pi_id, self.alice_pi)
+            self.assertEqual(by_name['order-note.pdf'].mime_type, 'application/pdf')
+            self.assertEqual(by_name['现场照片.png'].mime_type, 'image/png')
+            general_id = by_name['客户说明.txt'].id
+            order_file_id = by_name['order-note.pdf'].id
+            image_file_id = by_name['现场照片.png'].id
             stored_paths = [os.path.join(application.app.config['UPLOAD_DIR'], item.stored_name) for item in records]
             self.assertTrue(all(os.path.isfile(path) for path in stored_paths))
 
@@ -1063,12 +1075,19 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('class="row g-2 align-items-start"', detail_html)
         self.assertIn('客户说明.txt', detail_html)
         self.assertIn('order-note.pdf', detail_html)
+        self.assertIn('现场照片.png', detail_html)
+        self.assertIn(f'/customer-files/{image_file_id}/thumbnail', detail_html)
         self.assertIn('PI-TEST-001', detail_html)
         self.assertEqual(self.client.get(f'/customer-files/{general_id}?download=1').data, '客户说明'.encode('utf-8'))
+        thumbnail = self.client.get(f'/customer-files/{image_file_id}/thumbnail')
+        self.assertEqual(thumbnail.status_code, 200)
+        self.assertEqual(thumbnail.mimetype, 'image/webp')
+        self.assertIn('private', thumbnail.headers.get('Cache-Control', ''))
 
         self.client.get('/logout')
         self.login('bob')
         self.assertEqual(self.client.get(f'/customer-files/{general_id}').status_code, 403)
+        self.assertEqual(self.client.get(f'/customer-files/{image_file_id}/thumbnail').status_code, 403)
         self.client.get('/logout')
         self.login('alice')
         invalid = self.client.post(

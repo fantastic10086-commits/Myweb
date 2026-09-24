@@ -4,15 +4,20 @@
 {% block content %}
 {% macro customer_file_row(file) %}
 <div class="d-flex align-items-center gap-3 border-bottom py-2">
-    <div class="fs-3 text-primary">
-        {% if file.mime_type.startswith('image/') %}<i class="bi bi-file-earmark-image"></i>
-        {% elif file.mime_type == 'application/pdf' %}<i class="bi bi-file-earmark-pdf"></i>
+    {% if file.mime_type.startswith('image/') %}
+    <a href="{{ url_for('customer_file_view', id=file.id) }}" target="_blank" class="flex-shrink-0" title="预览原图">
+        <img src="{{ url_for('customer_file_thumbnail', id=file.id) }}" alt="{{ file.original_name }}" loading="lazy" style="width:56px;height:56px;object-fit:cover;border:1px solid #dee2e6;border-radius:6px;background:#f8f9fa;">
+    </a>
+    {% else %}
+    <div class="fs-3 text-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center" style="width:56px;height:56px;">
+        {% if file.mime_type == 'application/pdf' %}<i class="bi bi-file-earmark-pdf"></i>
         {% elif file.extension in ['xls', 'xlsx', 'csv'] %}<i class="bi bi-file-earmark-excel"></i>
         {% elif file.extension in ['doc', 'docx'] %}<i class="bi bi-file-earmark-word"></i>
         {% elif file.extension in ['ppt', 'pptx'] %}<i class="bi bi-file-earmark-slides"></i>
         {% elif file.extension == 'zip' %}<i class="bi bi-file-earmark-zip"></i>
         {% else %}<i class="bi bi-file-earmark-text"></i>{% endif %}
     </div>
+    {% endif %}
     <div class="flex-grow-1 overflow-hidden">
         <a href="{{ url_for('customer_file_view', id=file.id) }}" {% if file.is_previewable %}target="_blank"{% endif %} class="fw-semibold text-decoration-none text-break">{{ file.original_name }}</a>
         <small class="d-block text-muted">{{ file.size_label }} · {{ file.created_by or '-' }} · {{ file.created_at.strftime('%Y-%m-%d %H:%M') }}</small>

@@ -1417,7 +1417,9 @@ def create_app():
             response.headers['Cache-Control'] = 'public, max-age=3600, must-revalidate'
             response.headers.pop('Pragma', None)
             response.headers.pop('Expires', None)
-        elif request.endpoint == 'uploaded_product_thumbnail' and not getattr(g, 'private_pi_image', False):
+        elif (request.endpoint == 'customer_file_thumbnail'
+              or (request.endpoint == 'uploaded_product_thumbnail'
+                  and not getattr(g, 'private_pi_image', False))):
             response.headers['Cache-Control'] = 'private, max-age=604800, immutable'
             response.headers.pop('Pragma', None)
             response.headers.pop('Expires', None)
@@ -3126,6 +3128,28 @@ def customer_file_view(id):
         path, mimetype=record.mime_type or 'application/octet-stream',
         as_attachment=download, download_name=record.original_name,
         conditional=True,
+    )
+
+
+@app.route('/customer-files/<int:id>/thumbnail')
+@login_required
+def customer_file_thumbnail(id):
+    """Serve a private thumbnail for an image in a customer's file library."""
+    record = CustomerFile.query.filter_by(id=id).filter(CustomerFile.deleted_at.is_(None)).first_or_404()
+    customer = Customer.query.get_or_404(record.customer_id)
+    require_customer_access(customer)
+    if not (record.mime_type or '').startswith('image/'):
+        abort(404)
+    safe_name = secure_filename(record.stored_name or '')
+    if not safe_name or safe_name != record.stored_name:
+        abort(404)
+    source_path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
+    if not os.path.isfile(source_path):
+        abort(404)
+    return send_file(
+        _ensure_product_thumbnail(safe_name, source_path),
+        conditional=True,
+        max_age=604800,
     )
 
 
