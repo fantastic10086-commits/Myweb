@@ -21,6 +21,13 @@
     </div>
 </div>
 
+<div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="text-muted small">累计成交额（USD）</div><div class="fs-4 fw-bold text-success">${{ '%.2f'|format(customer.cumulative_deal_usd) }}</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="text-muted small">PI 数量</div><div class="fs-4 fw-bold">{{ all_pi_count }}</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="text-muted small">最近成交日期</div><div class="fs-5 fw-bold">{{ latest_deal_date.strftime('%Y-%m-%d') if latest_deal_date else '暂无' }}</div></div></div></div>
+    <div class="col-6 col-lg-3"><div class="card h-100 border-0 shadow-sm"><div class="card-body"><div class="text-muted small">下次联系</div><div class="fs-5 fw-bold {% if customer.next_follow_up_date and customer.next_follow_up_date < today %}text-danger{% endif %}">{{ customer.next_follow_up_date.strftime('%Y-%m-%d') if customer.next_follow_up_date else '未安排' }}</div></div></div></div>
+</div>
+
 <div class="row g-4">
     <!-- 客户信息 Card -->
     <div class="col-lg-4">
@@ -54,9 +61,17 @@
         </div>
     </div>
 
-    <!-- PI 历史 -->
+    <!-- 客户业务记录 -->
     <div class="col-lg-8">
-        <div class="card mb-4" id="follow-ups">
+        <ul class="nav nav-tabs mb-3" id="customerRecordTabs" role="tablist">
+            <li class="nav-item" role="presentation"><button class="nav-link active" id="follow-tab" data-bs-toggle="tab" data-bs-target="#follow-ups" type="button" role="tab"><i class="bi bi-chat-left-text me-1"></i>跟进记录 <span class="badge bg-secondary">{{ follow_ups|length }}</span></button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="orders-tab" data-bs-toggle="tab" data-bs-target="#orders" type="button" role="tab"><i class="bi bi-receipt me-1"></i>订单记录 <span class="badge bg-secondary">{{ all_pi_count }}</span></button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="products-tab" data-bs-toggle="tab" data-bs-target="#purchased-products" type="button" role="tab"><i class="bi bi-box-seam me-1"></i>成交产品 <span class="badge bg-secondary">{{ purchased_products|length }}</span></button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" id="files-tab" data-bs-toggle="tab" data-bs-target="#customer-files" type="button" role="tab"><i class="bi bi-folder2-open me-1"></i>文件资料</button></li>
+        </ul>
+        <div class="tab-content">
+        <div class="tab-pane fade show active" id="follow-ups" role="tabpanel" aria-labelledby="follow-tab">
+        <div class="card mb-4">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-chat-left-text me-1"></i>跟进记录</h5>
                 <button class="btn btn-sm btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#newFollowUp">新增跟进</button>
@@ -82,9 +97,11 @@
                 {% else %}<div class="text-center text-muted py-4">暂无跟进记录，请添加第一次沟通。</div>{% endfor %}
             </div>
         </div>
-        <div class="card">
+        </div>
+        <div class="tab-pane fade" id="orders" role="tabpanel" aria-labelledby="orders-tab">
+        <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0">PI 历史 ({{ pis|length }})</h5>
+                <h5 class="mb-0">订单记录{% if pis|length != all_pi_count %}（筛选到 {{ pis|length }} / 共 {{ all_pi_count }}）{% else %}（{{ all_pi_count }}）{% endif %}</h5>
             </div>
             <!-- Filter Bar -->
             <div class="card-body py-2 border-bottom">
@@ -143,7 +160,7 @@
                                 <td>
                                     <small>
                                     {% for item in pi.items %}
-                                        {% set pname = item.product.name if item.product else '-' %}
+                                        {% set pname = item.display_name or '-' %}
                                         {{ pname[:500] }}{% if pname|length > 500 %}…{% endif %} ×{{ item.quantity }}{% if not loop.last %}, {% endif %}
                                     {% endfor %}
                                     </small>
@@ -175,6 +192,31 @@
                 {% endif %}
             </div>
         </div>
+        </div>
+        <div class="tab-pane fade" id="purchased-products" role="tabpanel" aria-labelledby="products-tab">
+            <div class="card mb-4">
+                <div class="card-header"><h5 class="mb-0">成交产品汇总（{{ purchased_products|length }}）</h5><small class="text-muted">按全部有效 PI 汇总，最近成交的产品排在前面。</small></div>
+                {% if purchased_products %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light"><tr><th>产品</th><th>编码 / 规格</th><th class="text-end">累计数量</th><th class="text-end">订单数</th><th class="text-end">最近单价</th><th>最近成交</th></tr></thead>
+                        <tbody>{% for item in purchased_products %}<tr>
+                            <td><div class="d-flex align-items-center gap-2">{% if item.image %}<img src="{{ url_for('uploaded_product_thumbnail', filename=item.image) }}" alt="" loading="lazy" style="width:48px;height:48px;object-fit:contain;border:1px solid #dee2e6;border-radius:4px;">{% else %}<span class="d-inline-flex align-items-center justify-content-center bg-light border rounded text-muted" style="width:48px;height:48px;"><i class="bi bi-image"></i></span>{% endif %}<strong>{{ item.name }}</strong></div></td>
+                            <td><div>{{ item.code or '-' }}</div><small class="text-muted">{{ item.specification or '-' }}</small></td>
+                            <td class="text-end fw-bold">{{ item.quantity }}</td>
+                            <td class="text-end">{{ item.order_count }}</td>
+                            <td class="text-end">{{ '¥' if item.latest_currency == 'RMB' else '$' }}{{ '%.3f'|format(item.latest_unit_price) }}</td>
+                            <td><a href="{{ url_for('pi_detail', id=item.latest_pi_id) }}" class="text-decoration-none">{{ item.latest_date.strftime('%Y-%m-%d') if item.latest_date else '-' }}<small class="d-block">{{ item.latest_pi_number }}</small></a></td>
+                        </tr>{% endfor %}</tbody>
+                    </table>
+                </div>
+                {% else %}<div class="text-center text-muted py-5"><i class="bi bi-box-seam display-4"></i><p class="mt-2 mb-0">暂无成交产品。</p></div>{% endif %}
+            </div>
+        </div>
+        <div class="tab-pane fade" id="customer-files" role="tabpanel" aria-labelledby="files-tab">
+            <div class="card mb-4"><div class="card-body text-center py-5"><i class="bi bi-folder2-open display-4 text-muted"></i><h5 class="mt-3">客户文件资料</h5><p class="text-muted mb-0">客户文件夹和订单子文件夹将在下一阶段开放上传与管理。</p></div></div>
+        </div>
+        </div>
     </div>
 </div>
 
@@ -186,6 +228,17 @@
 </div>
 <script>
 var followDefaults = {{ follow_up_defaults|tojson }};
+var requestedTab = window.location.hash;
+if (!requestedTab && new URLSearchParams(window.location.search).toString()) requestedTab = '#orders';
+if (requestedTab) {
+    var tabButton = document.querySelector('[data-bs-target="' + requestedTab + '"]');
+    if (tabButton) bootstrap.Tab.getOrCreateInstance(tabButton).show();
+}
+document.querySelectorAll('#customerRecordTabs [data-bs-toggle="tab"]').forEach(function(button) {
+    button.addEventListener('shown.bs.tab', function(event) {
+        history.replaceState(null, '', event.target.getAttribute('data-bs-target'));
+    });
+});
 var followStatus = document.getElementById('followStatus');
 if (followStatus) followStatus.addEventListener('change', function() {
     var field = document.getElementById('nextFollowDate');
@@ -200,7 +253,7 @@ var productInput = document.getElementById('productSearch');
 var productDropdown = document.getElementById('productDropdown');
 var productTimer = null;
 
-productInput.addEventListener('input', function() {
+if (productInput) productInput.addEventListener('input', function() {
     clearTimeout(productTimer);
     var val = this.value.trim();
     if (val.length < 1) {
@@ -232,7 +285,7 @@ productInput.addEventListener('input', function() {
     }, 200);
 });
 
-productInput.addEventListener('blur', function() {
+if (productInput) productInput.addEventListener('blur', function() {
     setTimeout(function() { productDropdown.style.display = 'none'; }, 200);
 });
 

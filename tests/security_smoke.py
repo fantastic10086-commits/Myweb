@@ -982,6 +982,41 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertEqual(self.client.get(f'/customers/{self.alice_customer}').status_code, 200)
         self.assertEqual(self.client.get(f'/customers/{self.bob_customer}').status_code, 403)
 
+    def test_customer_detail_summarizes_purchased_products_without_cross_customer_data(self):
+        self.login('alice')
+        with application.app.app_context():
+            product = Product.query.filter_by(name='Original Product').one()
+            extra_pi = PI(
+                pi_number='PI-CUSTOMER-SUMMARY', customer_id=self.alice_customer,
+                salesperson='Alice', currency='RMB', exchange_rate=7.0,
+                total_amount=37.5, issue_date=date(2030, 1, 2),
+            )
+            db.session.add(extra_pi)
+            db.session.flush()
+            db.session.add(PIItem(
+                pi_id=extra_pi.id, product_id=product.id, quantity=3,
+                unit_price=12.5, amount=37.5, name_override='Latest Product Name',
+                code_override='LATEST-CODE', spec_override='Latest spec',
+            ))
+            db.session.commit()
+            extra_pi_id = extra_pi.id
+
+        html = self.client.get(f'/customers/{self.alice_customer}').get_data(as_text=True)
+        self.assertIn('成交产品汇总（1）', html)
+        self.assertIn('Latest Product Name', html)
+        self.assertIn('LATEST-CODE', html)
+        self.assertIn('Latest spec', html)
+        self.assertIn('2030-01-02', html)
+        self.assertIn('PI-CUSTOMER-SUMMARY', html)
+        self.assertIn('¥12.500', html)
+        self.assertRegex(html, r'<td class="text-end fw-bold">\s*4\s*</td>')
+        self.assertNotIn('Bob Customer', html)
+
+        with application.app.app_context():
+            PIItem.query.filter_by(pi_id=extra_pi_id).delete()
+            db.session.delete(db.session.get(PI, extra_pi_id))
+            db.session.commit()
+
     def test_customer_follow_up_defaults_updates_dashboard_and_is_scoped(self):
         self.login('alice')
         detail_url = f'/customers/{self.alice_customer}'

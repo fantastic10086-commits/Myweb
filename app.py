@@ -2777,6 +2777,69 @@ def customer_detail(id):
     amount_min = request.args.get('amount_min', '').strip()
     amount_max = request.args.get('amount_max', '').strip()
 
+    all_pis = PI.query.options(
+        joinedload(PI.items).joinedload(PIItem.product)
+    ).filter_by(customer_id=id).filter(PI.deleted_at.is_(None)).order_by(
+        PI.issue_date.desc(), PI.created_at.desc(), PI.id.desc()
+    ).all()
+
+    # Build a read-only purchase history from the customer's saved PI rows.
+    # Product ids keep renamed products grouped together while the most recent
+    # PI row supplies the customer-facing name, specification, code and image.
+    product_history = {}
+    for pi in all_pis:
+        purchase_date = pi.issue_date or (pi.created_at.date() if pi.created_at else None)
+        purchase_sort_key = (
+            purchase_date or date.min,
+            pi.created_at or datetime.min,
+            pi.id or 0,
+        )
+        for item in pi.items:
+            key = item.product_id
+            summary = product_history.get(key)
+            if summary is None:
+                summary = {
+                    'product_id': item.product_id,
+                    'name': item.display_name or '-',
+                    'specification': item.display_specification or '',
+                    'code': item.display_code or '',
+                    'image': item.display_image or '',
+                    'quantity': 0,
+                    'order_ids': set(),
+                    'latest_date': purchase_date,
+                    'latest_unit_price': item.unit_price or 0,
+                    'latest_currency': pi.currency or 'USD',
+                    'latest_pi_id': pi.id,
+                    'latest_pi_number': pi.pi_number,
+                    '_latest_key': purchase_sort_key,
+                }
+                product_history[key] = summary
+            summary['quantity'] += item.quantity or 0
+            summary['order_ids'].add(pi.id)
+            if purchase_sort_key > summary['_latest_key']:
+                summary.update({
+                    'name': item.display_name or '-',
+                    'specification': item.display_specification or '',
+                    'code': item.display_code or '',
+                    'image': item.display_image or '',
+                    'latest_date': purchase_date,
+                    'latest_unit_price': item.unit_price or 0,
+                    'latest_currency': pi.currency or 'USD',
+                    'latest_pi_id': pi.id,
+                    'latest_pi_number': pi.pi_number,
+                    '_latest_key': purchase_sort_key,
+                })
+
+    purchased_products = []
+    for summary in product_history.values():
+        summary['order_count'] = len(summary.pop('order_ids'))
+        summary.pop('_latest_key', None)
+        purchased_products.append(summary)
+    purchased_products.sort(
+        key=lambda row: (row['latest_date'] or date.min, row['name'].lower()),
+        reverse=True,
+    )
+
     query = PI.query.options(
         joinedload(PI.items).joinedload(PIItem.product)
     ).filter_by(customer_id=id).filter(PI.deleted_at.is_(None))
@@ -2821,6 +2884,9 @@ def customer_detail(id):
         for status in CUSTOMER_FOLLOW_UP_STATUSES
     }
     resp = make_response(render_template('customer_detail.html', customer=customer, pis=pis,
+                                          all_pi_count=len(all_pis),
+                                          latest_deal_date=(all_pis[0].issue_date if all_pis else None),
+                                          purchased_products=purchased_products,
                                           follow_ups=follow_ups, suggested_date=suggested_date,
                                           customer_type_label=_customer_type_label(customer),
                                           today=date.today(),
