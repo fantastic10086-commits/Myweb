@@ -94,7 +94,7 @@
         <a href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=packing_batch.id, edit=1) }}"
            class="btn btn-primary"
            {% if pi.shipping_completed %}onclick="return confirm('该订单已经登记发货，确认仍要编辑装箱单吗？')"{% endif %}>
-            <i class="bi bi-pencil-square"></i> 编辑装箱单
+            <i class="bi bi-pencil-square"></i> 重新编辑第 {{ packing_batch.batch_no }} 批
         </a>
         {% endif %}
         <div class="btn-group" role="group" aria-label="完整 A4 装箱单导出">
@@ -132,7 +132,7 @@
         </button>
         {% for batch in packing_list.batches %}
         <a class="btn btn-sm {% if packing_batch and batch.id == packing_batch.id %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-           href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=batch.id, edit=1 if can_edit else None, show_batch=1) }}">
+           href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=batch.id, edit=1 if request.args.get('edit') == '1' else None, show_batch=1) }}">
             第 {{ batch.batch_no }} 批
             {% if batch.status == 'shipped' %}· 已发货{% elif batch.is_completed %}· 已完成{% else %}· 草稿{% endif %}
         </a>
@@ -265,7 +265,7 @@
         <span class="text-muted small">每个批次可装部分数量；各批次累计数量不能超过 PI 数量。</span>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-primary packing-save" data-action="draft"><i class="bi bi-save"></i> 保存草稿</button>
-            <button type="button" class="btn btn-success packing-save" data-action="complete"><i class="bi bi-check-lg"></i> 保存并完成本批</button>
+            <button type="button" class="btn btn-success packing-save" data-action="complete"><i class="bi bi-check-lg"></i> 完成第 {{ packing_data.batch_no }} 批</button>
         </div>
     </div>
 </div>

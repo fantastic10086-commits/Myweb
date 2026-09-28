@@ -5912,7 +5912,8 @@ def packing_list_detail(pi_id):
     edit_mode = bool(
         is_admin() and has_payment and (
             packing_list is None
-            or not packing_list.is_completed
+            or batch is None
+            or not batch.is_completed
             or request.args.get('edit') == '1'
         )
     )
@@ -6119,7 +6120,10 @@ def packing_list_save(pi_id):
         return jsonify({'success': False, 'error': '保存装箱单失败，请稍后重试。'}), 500
     return jsonify({
         'success': True,
-        'message': '装箱单已完成。' if action == 'complete' else '装箱单草稿已保存。',
+        'message': (
+            f'第 {batch.batch_no} 批已完成。'
+            if action == 'complete' else f'第 {batch.batch_no} 批草稿已保存。'
+        ),
         'data': _packing_list_payload(pi, packing_list, batch),
     })
 

@@ -4256,14 +4256,14 @@ class SecuritySmokeTests(unittest.TestCase):
                 f'/packing-list/{self.alice_pi}',
             ).get_data(as_text=True)
             self.assertIn('当前为只读查看', completed_detail)
-            self.assertIn('编辑装箱单', completed_detail)
+            self.assertIn('重新编辑第 1 批', completed_detail)
             self.assertNotIn('id="packingBoxes"', completed_detail)
             completed_editor = self.client.get(
                 f'/packing-list/{self.alice_pi}?edit=1',
             ).get_data(as_text=True)
             self.assertIn('id="packingBoxes"', completed_editor)
             self.assertIn('保存草稿', completed_editor)
-            self.assertIn('保存并完成', completed_editor)
+            self.assertIn('完成第 1 批', completed_editor)
             self.assertIn('精简 100×150', completed_detail)
             self.assertIn('compact-100x150.xlsx', completed_detail)
             self.assertIn('compact-100x150.pdf', completed_detail)
@@ -4419,7 +4419,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 f'/packing-list/{self.alice_pi}',
             )
             self.assertEqual(second_admin_detail.status_code, 200)
-            self.assertIn('编辑装箱单', second_admin_detail.get_data(as_text=True))
+            self.assertIn('重新编辑第 1 批', second_admin_detail.get_data(as_text=True))
             second_admin_payload = dict(valid)
             second_admin_payload['version'] = first_version
             second_admin_payload['action'] = 'draft'
@@ -4606,6 +4606,13 @@ class SecuritySmokeTests(unittest.TestCase):
                 headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
             )
             self.assertEqual(saved1.status_code, 200)
+            self.assertEqual(saved1.get_json()['message'], '第 1 批已完成。')
+            completed_batch1 = self.client.get(
+                f'/packing-list/{self.alice_pi}?batch={batch1_id}'
+            ).get_data(as_text=True)
+            self.assertIn('当前为只读查看', completed_batch1)
+            self.assertIn('重新编辑第 1 批', completed_batch1)
+            self.assertNotIn('id="packingBoxes"', completed_batch1)
 
             created2 = self.client.post(
                 f'/packing-list/{self.alice_pi}/batches',
