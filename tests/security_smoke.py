@@ -4623,6 +4623,8 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('相同 2 箱', completed_batch1)
             self.assertIn('id="fullExportModal"', completed_batch1)
             self.assertIn('选择要导出的发货批次', completed_batch1)
+            self.assertIn('id="fullExportAll"', completed_batch1)
+            self.assertIn('type="checkbox"', completed_batch1)
             self.assertIn('id="compactExportBatch"', completed_batch1)
             self.assertIn(
                 f'class="vstack gap-2 compact-export-batch-boxes" data-batch-id="{batch1_id}"',
@@ -4723,6 +4725,18 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('箱号 1–2 · 相同 2 箱', export_page[batch1_group:batch2_group])
             self.assertNotIn('第 3 箱 · 箱号 3', export_page[batch1_group:batch2_group])
             self.assertIn('第 3 箱 · 箱号 3', export_page[batch2_group:])
+            multi_batch_export = self.client.get(
+                f'/packing-list/{self.alice_pi}/export.xlsx?batch={batch1_id}&batch={batch2_id}'
+            )
+            self.assertEqual(multi_batch_export.status_code, 200)
+            multi_batch_book = load_workbook(BytesIO(multi_batch_export.data))
+            self.assertEqual(multi_batch_book.sheetnames, ['第1批', '第2批'])
+            self.assertEqual(multi_batch_book['第1批']['B7'].value, '第一批地址')
+            self.assertEqual(multi_batch_book['第2批']['B7'].value, '第二批地址')
+            self.assertEqual(multi_batch_book['第1批']['A11'].value, '1-2 (2 cartons)')
+            self.assertEqual(multi_batch_book['第2批']['A11'].value, '3')
+            multi_batch_book.close()
+            multi_batch_export.close()
             self.assertEqual(
                 self.client.get(
                     f'/packing-list/{self.alice_pi}/export.xlsx?batch=999999'

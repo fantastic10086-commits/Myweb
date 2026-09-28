@@ -329,15 +329,20 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body vstack gap-2">
+                <label class="border-bottom pb-2 mb-1 d-flex align-items-center gap-2">
+                    <input class="form-check-input m-0" type="checkbox" id="fullExportAll">
+                    <span class="fw-bold">选择全部批次</span>
+                </label>
                 {% for batch in packing_list.batches %}
                 <label class="border rounded px-3 py-2 m-0 d-flex align-items-center gap-2">
-                    <input class="form-check-input full-export-batch m-0" type="radio" name="fullExportBatch"
+                    <input class="form-check-input full-export-batch m-0" type="checkbox"
                            value="{{ batch.id }}" {% if packing_batch and batch.id == packing_batch.id %}checked{% endif %}>
                     <span class="flex-grow-1">第 {{ batch.batch_no }} 批</span>
                     <span class="badge {% if batch.is_completed %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ '已完成' if batch.is_completed else '草稿' }}</span>
                     <span class="text-muted small">{{ batch.boxes|length }} 组箱子</span>
                 </label>
                 {% endfor %}
+                <div id="fullExportSelectionSummary" class="small text-muted mt-1"></div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
@@ -395,24 +400,41 @@
 (() => {
     const fullModal = document.getElementById('fullExportModal');
     const fullTriggers = [...document.querySelectorAll('.full-export-trigger')];
+    const fullBatchChecks = [...fullModal.querySelectorAll('.full-export-batch')];
+    const fullAllCheck = document.getElementById('fullExportAll');
+    const fullSummary = document.getElementById('fullExportSelectionSummary');
     const fullConfirm = document.getElementById('fullExportConfirm');
     let fullExportUrl = '';
     let fullExportFormat = 'pdf';
+    function updateFullExportSelection() {
+        const selectedCount = fullBatchChecks.filter(check => check.checked).length;
+        fullAllCheck.checked = selectedCount === fullBatchChecks.length && fullBatchChecks.length > 0;
+        fullAllCheck.indeterminate = selectedCount > 0 && selectedCount < fullBatchChecks.length;
+        fullConfirm.disabled = selectedCount === 0;
+        fullSummary.textContent = `已选择 ${selectedCount} / ${fullBatchChecks.length} 个发货批次；每个批次独立分页。`;
+    }
     fullTriggers.forEach(button => button.addEventListener('click', () => {
         fullExportUrl = button.dataset.exportUrl;
         fullExportFormat = button.dataset.exportFormat;
         document.getElementById('fullExportModalLabel').textContent =
             `选择要导出的发货批次（${fullExportFormat === 'xlsx' ? 'Excel' : 'PDF'}）`;
         fullConfirm.innerHTML = `<i class="bi bi-download"></i> 导出 ${fullExportFormat === 'xlsx' ? 'Excel' : 'PDF'}`;
+        updateFullExportSelection();
     }));
+    fullAllCheck.addEventListener('change', () => {
+        fullBatchChecks.forEach(check => { check.checked = fullAllCheck.checked; });
+        updateFullExportSelection();
+    });
+    fullBatchChecks.forEach(check => check.addEventListener('change', updateFullExportSelection));
     fullConfirm.addEventListener('click', () => {
-        const selected = fullModal.querySelector('.full-export-batch:checked');
-        if (!fullExportUrl || !selected) return;
+        const selected = fullBatchChecks.filter(check => check.checked);
+        if (!fullExportUrl || !selected.length) return;
         const url = new URL(fullExportUrl, window.location.href);
-        url.searchParams.set('batch', selected.value);
+        selected.forEach(check => url.searchParams.append('batch', check.value));
         bootstrap.Modal.getOrCreateInstance(fullModal).hide();
         window.location.assign(url.toString());
     });
+    updateFullExportSelection();
 
     const modal = document.getElementById('compactExportModal');
     const triggers = [...document.querySelectorAll('.compact-export-trigger')];

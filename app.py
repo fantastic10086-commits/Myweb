@@ -5653,6 +5653,27 @@ def _packing_requested_export_batch(packing_list):
     return batch
 
 
+def _packing_requested_export_batches(packing_list):
+    """Resolve one or more explicitly selected batches in shipment order."""
+    if not packing_list or not packing_list.batches:
+        return []
+    raw_batch_ids = request.args.getlist('batch')
+    if not raw_batch_ids:
+        return [packing_list.batches[-1]]
+    selected_ids = []
+    for raw_batch_id in raw_batch_ids:
+        if not re.fullmatch(r'[1-9]\d*', str(raw_batch_id)):
+            abort(400, description='导出的发货批次无效。')
+        batch_id = int(raw_batch_id)
+        if batch_id not in selected_ids:
+            selected_ids.append(batch_id)
+    known_ids = {row.id for row in packing_list.batches}
+    if any(batch_id not in known_ids for batch_id in selected_ids):
+        abort(400, description='导出的发货批次不属于当前装箱单。')
+    selected_set = set(selected_ids)
+    return [row for row in packing_list.batches if row.id in selected_set]
+
+
 def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
     batch = batch or _packing_selected_batch(packing_list)
     other_packed = {}
@@ -6190,23 +6211,35 @@ def _packing_export(pi_id, output_format):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    batch = _packing_requested_export_batch(packing_list)
-    if not packing_list or not batch:
+    batches = _packing_requested_export_batches(packing_list)
+    if not packing_list or not batches:
         abort(404)
-    export_pi = copy.copy(pi)
-    export_pi.shipping_address = batch.shipping_address or pi.shipping_address
     company_name, company_address = _packing_company(pi)
-    workbook_bytes = generate_packing_list_workbook(
-        export_pi, batch, company_name, company_address
-    )
+    workbook = None
+    for batch in batches:
+        export_pi = copy.copy(pi)
+        export_pi.shipping_address = batch.shipping_address or pi.shipping_address
+        workbook = generate_packing_list_workbook(
+            export_pi, batch, company_name, company_address,
+            workbook=workbook,
+            sheet_title=(
+                '装箱单' if len(batches) == 1 else f'第{batch.batch_no}批'
+            ),
+            return_workbook=True,
+        )
+    workbook_output = BytesIO()
+    workbook.save(workbook_output)
+    workbook.close()
+    workbook_bytes = workbook_output.getvalue()
     template = DocumentTemplate.query.filter_by(code='packing-a4', active=True).first()
     if template:
         workbook_bytes = apply_packing_template_style(
             workbook_bytes, _template_file_path(template), compact=False
         )
-    suffix = '-DRAFT' if not batch.is_completed else ''
+    suffix = '-DRAFT' if any(not batch.is_completed for batch in batches) else ''
+    batch_label = '-'.join(str(batch.batch_no) for batch in batches)
     base_name = secure_filename(
-        f'Packing-List-{pi.pi_number}-Batch-{batch.batch_no}{suffix}'
+        f'Packing-List-{pi.pi_number}-Batches-{batch_label}{suffix}'
     ) or 'packing-list'
     if output_format == 'xlsx':
         response = send_file(

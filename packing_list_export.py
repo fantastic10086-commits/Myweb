@@ -543,10 +543,16 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
     return output.getvalue()
 
 
-def generate_packing_list_workbook(pi, packing_list, company_name, company_address):
-    workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "装箱单"
+def generate_packing_list_workbook(
+        pi, packing_list, company_name, company_address, workbook=None,
+        sheet_title="装箱单", return_workbook=False):
+    """Add one shipment batch to a workbook, or return a standalone workbook."""
+    if workbook is None:
+        workbook = Workbook()
+        sheet = workbook.active
+    else:
+        sheet = workbook.create_sheet()
+    sheet.title = sheet_title
     sheet.sheet_view.showGridLines = False
     sheet.freeze_panes = "A11"
     sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
@@ -635,11 +641,14 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
     physical_box_count = 0
     for box_index, box in enumerate(packing_list.boxes):
         carton_count = _carton_count(box)
-        carton_start = physical_box_count + 1
+        try:
+            carton_start = max(1, int(box.box_no))
+        except (TypeError, ValueError):
+            carton_start = physical_box_count + 1
         physical_box_count += carton_count
         carton_label = (
             str(carton_start) if carton_count == 1
-            else f"{carton_start}-{physical_box_count} ({carton_count} cartons)"
+            else f"{carton_start}-{carton_start + carton_count - 1} ({carton_count} cartons)"
         )
         box_items = list(box.items)
         for item_index, item in enumerate(box_items):
@@ -703,6 +712,8 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
     sheet.oddFooter.center.text = "Page &P / &N"
     sheet.oddFooter.center.size = 8
 
+    if return_workbook:
+        return workbook
     output = BytesIO()
     workbook.save(output)
     output.seek(0)
