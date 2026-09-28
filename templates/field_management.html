@@ -108,7 +108,7 @@
 </div>
 
 {% for field_key, title, description, placeholder, options in [
-    ('price_terms', '价格条款', '管理 PI 中的价格条款。新建和编辑 PI 时可从列表选择，也可临时手动输入。', '例如：FOB Shanghai', price_terms_options),
+    ('price_terms', '贸易条款', '管理 PI 中的贸易条款。新建和编辑 PI 时可从列表选择，也可临时手动输入。', '例如：FOB Shanghai', price_terms_options),
     ('delivery_time', '交货期', '管理 PI 中的交货时间。历史 PI 保留当时内容，修改选项不会回写旧单。', '例如：15-20 days after receipt of payment', delivery_time_options)
 ] %}
 <div class="card mb-4" id="{{ field_key }}">

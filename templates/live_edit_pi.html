@@ -208,7 +208,7 @@
                 <input class="form-control form-control-sm" name="payment_terms" value="{{ pi.payment_terms or '' }}">
             </div>
             <div class="col-md-4">
-                <label class="form-label fw-bold small">价格条款</label>
+                <label class="form-label fw-bold small">贸易条款</label>
                 <input class="form-control form-control-sm" name="price_terms" list="export_price_terms_options" value="{{ pi.price_terms or '' }}" placeholder="请选择或临时输入……">
                 <datalist id="export_price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
             </div>

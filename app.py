@@ -340,7 +340,7 @@ def _customs_data_from_document(document):
 MANAGED_FIELD_LABELS = {
     'shipping_note': '客户费用/折扣类型',
     'expense_category': '订单真实成本类别',
-    'price_terms': '价格条款',
+    'price_terms': '贸易条款',
     'delivery_time': '交货期',
 }
 MANAGED_FIELDS_WITH_ENGLISH = {'shipping_note'}
@@ -5308,6 +5308,9 @@ def pi_create():
             )
         except ValueError as exc:
             flash(str(exc), 'danger')
+            return redirect(url_for('pi_create'))
+        if not price_terms:
+            flash('请填写贸易条款。', 'danger')
             return redirect(url_for('pi_create'))
         bank_info = request.form.get('bank_info', '').strip()
         notes = request.form.get('notes', '').strip()

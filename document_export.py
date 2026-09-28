@@ -36,7 +36,7 @@ PLACEHOLDER_GROUPS = {
         ('currency', '币种代码（USD/RMB）'),
         ('currency_symbol', '币种符号（$/¥）'),
         ('payment_terms', '付款条款'),
-        ('price_terms', '价格条款'),
+        ('price_terms', '贸易条款'),
         ('delivery_time', '交货期'),
         ('bank_info', '银行信息'),
         ('bank_beneficiary_name', '收款人名称'),

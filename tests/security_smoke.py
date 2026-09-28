@@ -140,6 +140,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 'csrf_token': token, 'draft_id': draft_id, 'draft_version': updated['version'],
                 'customer_id': self.alice_customer, 'notes': 'converted', 'salesperson': 'Alice',
                 'account_id': self.approved_account, 'currency': 'USD', 'exchange_rate': '7',
+                'price_terms': 'FOB Shanghai',
                 'selected_' + str(product_id): 'on', 'qty_' + str(product_id): '2',
                 'unit_price_' + str(product_id): '9.5', 'item_image_source_' + str(product_id): source,
             })
@@ -450,7 +451,8 @@ class SecuritySmokeTests(unittest.TestCase):
             product_id = Product.query.first().id
         data = {'csrf_token': self.token('/pi/create'), 'customer_id': self.alice_customer,
                 'salesperson': 'Alice', 'notes': 'three decimal PI', 'account_id': self.approved_account,
-                'currency': 'USD', 'exchange_rate': '7', 'product_order': '1,-1000000000',
+                'currency': 'USD', 'exchange_rate': '7', 'price_terms': 'FOB Shanghai',
+                'product_order': '1,-1000000000',
                 'selected_1': 'on', 'row_product_1': product_id, 'qty_1': '1', 'unit_price_1': '0.005',
                 'selected_-1000000000': 'on', 'row_product_-1000000000': product_id,
                 'qty_-1000000000': '3', 'unit_price_-1000000000': '1.235'}
@@ -556,6 +558,7 @@ class SecuritySmokeTests(unittest.TestCase):
             'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
             'notes': 'per-pi-image-test', 'issue_date': '2026-09-17',
             'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
+            'price_terms': 'FOB Shanghai',
             'shipping_cost': '0', 'account_id': str(self.approved_account),
             'product_order': str(product_id), f'selected_{product_id}': 'on',
             f'qty_{product_id}': '1', f'unit_price_{product_id}': '10',
@@ -643,7 +646,7 @@ class SecuritySmokeTests(unittest.TestCase):
             before = PI.query.count()
         data = {'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
                 'notes': 'invalid-image-test', 'currency': 'USD', 'company': 'klista',
-                'exchange_rate': '7', 'shipping_cost': '0',
+                'exchange_rate': '7', 'shipping_cost': '0', 'price_terms': 'FOB Shanghai',
                 f'selected_{product_id}': 'on', f'qty_{product_id}': '1',
                 f'unit_price_{product_id}': '10', 'csrf_token': self.token('/pi/create'),
                 f'item_image_file_{product_id}': (BytesIO(b'not an image'), 'invalid.png')}
@@ -668,7 +671,7 @@ class SecuritySmokeTests(unittest.TestCase):
                 'customer_id': str(self.alice_customer),
                 'salesperson': 'Alice',
                 'payment_terms': '100% TT before shipment',
-                'price_terms': '',
+                'price_terms': 'FOB Shanghai',
                 'delivery_time': '',
                 'bank_info': 'SAFE BANK',
                 'notes': 'redirect-to-preview-test',
@@ -713,6 +716,14 @@ class SecuritySmokeTests(unittest.TestCase):
             form_html,
             r'<textarea[^>]*id="notes"[^>]*name="notes"[^>]*required',
         )
+        self.assertRegex(
+            form_html,
+            r'<label for="price_terms"[^>]*>贸易条款\s*<span[^>]*>\*</span></label>',
+        )
+        self.assertRegex(
+            form_html,
+            r'<input[^>]*id="price_terms"[^>]*name="price_terms"[^>]*required',
+        )
 
         with application.app.app_context():
             product_id = Product.query.filter_by(product_code='ORIG').one().id
@@ -742,6 +753,30 @@ class SecuritySmokeTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('请填写 PI 备注。', response.get_data(as_text=True))
+        missing_trade_terms = self.client.post('/pi/create', data={
+            'customer_id': str(self.alice_customer),
+            'salesperson': 'Alice',
+            'payment_terms': '100% TT before shipment',
+            'price_terms': '   ',
+            'delivery_time': '',
+            'bank_info': 'SAFE BANK',
+            'notes': '贸易条款服务端校验',
+            'account_id': self.approved_account,
+            'issue_date': '2026-09-14',
+            'currency': 'USD',
+            'exchange_rate': '7',
+            'company': 'klista',
+            'shipping_address': '',
+            'shipping_cost': '0',
+            'shipping_note': '',
+            f'selected_{product_id}': 'on',
+            f'qty_{product_id}': '1',
+            f'unit_price_{product_id}': '10',
+            'product_order': str(product_id),
+            'csrf_token': self.token('/pi/create'),
+        }, follow_redirects=True)
+        self.assertEqual(missing_trade_terms.status_code, 200)
+        self.assertIn('请填写贸易条款。', missing_trade_terms.get_data(as_text=True))
         with application.app.app_context():
             self.assertEqual(PI.query.count(), before_count)
 
@@ -1510,7 +1545,7 @@ class SecuritySmokeTests(unittest.TestCase):
             'customer_id': str(self.alice_customer), 'salesperson': 'Alice',
             'currency': 'USD', 'exchange_rate': '7', 'company': 'klista',
             'issue_date': '2026-09-17', 'notes': 'Description override test',
-            'account_id': self.approved_account,
+            'account_id': self.approved_account, 'price_terms': 'FOB Shanghai',
             f'selected_{product_id}': 'on', f'qty_{product_id}': '2',
             f'unit_price_{product_id}': '5', 'product_order': str(product_id),
             f'item_name_{product_id}': 'Customer nozzle', f'item_spec_{product_id}': '',
@@ -3447,6 +3482,7 @@ class SecuritySmokeTests(unittest.TestCase):
             data = {'csrf_token': token, 'customer_id': self.alice_customer,
                     'salesperson': 'Alice', 'notes': 'account required',
                     'currency': 'USD', 'exchange_rate': '7',
+                    'price_terms': 'FOB Shanghai',
                     'selected_' + str(product_id): 'on', 'qty_' + str(product_id): '1',
                     'unit_price_' + str(product_id): '1.235'}
             for account_id in ['', 'invalid', '999999999']:
