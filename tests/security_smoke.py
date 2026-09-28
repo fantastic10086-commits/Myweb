@@ -4621,6 +4621,13 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('重新编辑第 1 批', completed_batch1)
             self.assertNotIn('id="packingBoxes"', completed_batch1)
             self.assertIn('相同 2 箱', completed_batch1)
+            self.assertIn('id="fullExportModal"', completed_batch1)
+            self.assertIn('选择要导出的发货批次', completed_batch1)
+            self.assertIn('id="compactExportBatch"', completed_batch1)
+            self.assertIn(
+                f'class="vstack gap-2 compact-export-batch-boxes" data-batch-id="{batch1_id}"',
+                completed_batch1,
+            )
 
             grouped_export = self.client.get(
                 f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?batch={batch1_id}'
@@ -4701,6 +4708,33 @@ class SecuritySmokeTests(unittest.TestCase):
                 )},
             )
             self.assertEqual(resaved1.status_code, 200)
+            export_page = self.client.get(
+                f'/packing-list/{self.alice_pi}?batch={batch2_id}'
+            ).get_data(as_text=True)
+            self.assertIn(f'value="{batch1_id}"', export_page)
+            self.assertIn(f'value="{batch2_id}"', export_page)
+            batch1_group = export_page.index(
+                f'class="vstack gap-2 compact-export-batch-boxes" data-batch-id="{batch1_id}"'
+            )
+            batch2_group = export_page.index(
+                f'class="vstack gap-2 compact-export-batch-boxes" data-batch-id="{batch2_id}"'
+            )
+            self.assertLess(batch1_group, batch2_group)
+            self.assertIn('箱号 1–2 · 相同 2 箱', export_page[batch1_group:batch2_group])
+            self.assertNotIn('第 3 箱 · 箱号 3', export_page[batch1_group:batch2_group])
+            self.assertIn('第 3 箱 · 箱号 3', export_page[batch2_group:])
+            self.assertEqual(
+                self.client.get(
+                    f'/packing-list/{self.alice_pi}/export.xlsx?batch=999999'
+                ).status_code,
+                400,
+            )
+            self.assertEqual(
+                self.client.get(
+                    f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?batch=bad'
+                ).status_code,
+                400,
+            )
             with application.app.app_context():
                 packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
                 self.assertEqual(packing_list.status, 'completed')

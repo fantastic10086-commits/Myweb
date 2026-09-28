@@ -5637,6 +5637,22 @@ def _packing_selected_batch(packing_list, batch_id=None):
     return packing_list.batches[-1]
 
 
+def _packing_requested_export_batch(packing_list):
+    """Resolve an explicitly requested export batch without silent fallback."""
+    if not packing_list or not packing_list.batches:
+        return None
+    raw_batch_id = request.args.get('batch')
+    if raw_batch_id in (None, ''):
+        return packing_list.batches[-1]
+    if not re.fullmatch(r'[1-9]\d*', str(raw_batch_id)):
+        abort(400, description='导出的发货批次无效。')
+    batch_id = int(raw_batch_id)
+    batch = next((row for row in packing_list.batches if row.id == batch_id), None)
+    if batch is None:
+        abort(400, description='导出的发货批次不属于当前装箱单。')
+    return batch
+
+
 def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
     batch = batch or _packing_selected_batch(packing_list)
     other_packed = {}
@@ -6174,7 +6190,7 @@ def _packing_export(pi_id, output_format):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    batch = _packing_selected_batch(packing_list, request.args.get('batch'))
+    batch = _packing_requested_export_batch(packing_list)
     if not packing_list or not batch:
         abort(404)
     export_pi = copy.copy(pi)
@@ -6235,7 +6251,7 @@ def _packing_compact_export(pi_id, output_format):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    batch = _packing_selected_batch(packing_list, request.args.get('batch'))
+    batch = _packing_requested_export_batch(packing_list)
     if not packing_list or not batch:
         abort(404)
     requested_boxes = request.args.getlist('box')

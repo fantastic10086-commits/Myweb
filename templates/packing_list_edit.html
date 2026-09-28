@@ -99,21 +99,25 @@
         {% endif %}
         <div class="btn-group" role="group" aria-label="完整 A4 装箱单导出">
             <span class="btn btn-outline-secondary disabled">完整 A4</span>
-            <a href="{{ url_for('packing_list_export_excel', pi_id=pi.id, batch=packing_batch.id) }}" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-            <a href="{{ url_for('packing_list_export_pdf', pi_id=pi.id, batch=packing_batch.id) }}" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+            <button type="button" class="btn btn-outline-success full-export-trigger"
+                    data-bs-toggle="modal" data-bs-target="#fullExportModal"
+                    data-export-format="xlsx" data-export-url="{{ url_for('packing_list_export_excel', pi_id=pi.id) }}"><i class="bi bi-file-earmark-excel"></i> Excel</button>
+            <button type="button" class="btn btn-outline-danger full-export-trigger"
+                    data-bs-toggle="modal" data-bs-target="#fullExportModal"
+                    data-export-format="pdf" data-export-url="{{ url_for('packing_list_export_pdf', pi_id=pi.id) }}"><i class="bi bi-file-earmark-pdf"></i> PDF</button>
         </div>
         <div class="btn-group" role="group" aria-label="精简 100×150 装箱单导出">
             <span class="btn btn-outline-secondary disabled">精简 100×150</span>
             <button type="button" class="btn btn-outline-success compact-export-trigger"
                     data-bs-toggle="modal" data-bs-target="#compactExportModal"
                     data-export-format="xlsx"
-                    data-export-url="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id, batch=packing_batch.id) }}">
+                    data-export-url="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id) }}">
                 <i class="bi bi-file-earmark-excel"></i> Excel
             </button>
             <button type="button" class="btn btn-outline-danger compact-export-trigger"
                     data-bs-toggle="modal" data-bs-target="#compactExportModal"
                     data-export-format="pdf"
-                    data-export-url="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id, batch=packing_batch.id) }}">
+                    data-export-url="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id) }}">
                 <i class="bi bi-file-earmark-pdf"></i> PDF
             </button>
         </div>
@@ -317,6 +321,31 @@
 {% endif %}
 
 {% if packing_list %}
+<div class="modal fade" id="fullExportModal" tabindex="-1" aria-labelledby="fullExportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fullExportModalLabel">选择要导出的发货批次</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body vstack gap-2">
+                {% for batch in packing_list.batches %}
+                <label class="border rounded px-3 py-2 m-0 d-flex align-items-center gap-2">
+                    <input class="form-check-input full-export-batch m-0" type="radio" name="fullExportBatch"
+                           value="{{ batch.id }}" {% if packing_batch and batch.id == packing_batch.id %}checked{% endif %}>
+                    <span class="flex-grow-1">第 {{ batch.batch_no }} 批</span>
+                    <span class="badge {% if batch.is_completed %}bg-success{% else %}bg-warning text-dark{% endif %}">{{ '已完成' if batch.is_completed else '草稿' }}</span>
+                    <span class="text-muted small">{{ batch.boxes|length }} 组箱子</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" id="fullExportConfirm" class="btn btn-primary">导出所选批次</button>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="modal fade" id="compactExportModal" tabindex="-1" aria-labelledby="compactExportModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
@@ -325,16 +354,27 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
+                <label class="form-label fw-bold" for="compactExportBatch">发货批次</label>
+                <select id="compactExportBatch" class="form-select mb-3">
+                    {% for batch in packing_list.batches %}
+                    <option value="{{ batch.id }}" {% if packing_batch and batch.id == packing_batch.id %}selected{% endif %}>第 {{ batch.batch_no }} 批 · {{ '已完成' if batch.is_completed else '草稿' }}</option>
+                    {% endfor %}
+                </select>
                 <div class="form-check border-bottom pb-2 mb-2">
                     <input class="form-check-input" type="checkbox" id="compactExportAll" checked>
                     <label class="form-check-label fw-bold" for="compactExportAll">全部箱子</label>
                 </div>
-                <div class="vstack gap-2 overflow-auto" style="max-height: 50vh;">
-                    {% for box in packing_list.boxes %}
+                <div class="overflow-auto" style="max-height: 50vh;">
+                    {% for batch in packing_list.batches %}
+                    <div class="vstack gap-2 compact-export-batch-boxes" data-batch-id="{{ batch.id }}"{% if not packing_batch or batch.id != packing_batch.id %} hidden{% endif %}>
+                    {% for box in batch.boxes %}
                     <label class="border rounded px-3 py-2 m-0 d-flex align-items-center gap-2">
-                        <input class="form-check-input compact-export-box m-0 flex-shrink-0" type="checkbox" value="{{ loop.index }}" checked>
+                        <input class="form-check-input compact-export-box m-0 flex-shrink-0" type="checkbox"
+                               data-batch-id="{{ batch.id }}" data-carton-count="{{ box.carton_count or 1 }}" value="{{ loop.index }}" checked>
                         <span>{% if (box.carton_count or 1) > 1 %}箱号 {{ box.box_no }}–{{ (box.box_no|int) + (box.carton_count or 1) - 1 }} · 相同 {{ box.carton_count }} 箱{% else %}第 {{ box.box_no }} 箱 · 箱号 {{ box.box_no }}{% endif %}</span>
                     </label>
+                    {% endfor %}
+                    </div>
                     {% endfor %}
                 </div>
                 <div id="compactExportSelectionSummary" class="small text-muted mt-3"></div>
@@ -353,22 +393,60 @@
 {% if packing_list %}
 <script>
 (() => {
+    const fullModal = document.getElementById('fullExportModal');
+    const fullTriggers = [...document.querySelectorAll('.full-export-trigger')];
+    const fullConfirm = document.getElementById('fullExportConfirm');
+    let fullExportUrl = '';
+    let fullExportFormat = 'pdf';
+    fullTriggers.forEach(button => button.addEventListener('click', () => {
+        fullExportUrl = button.dataset.exportUrl;
+        fullExportFormat = button.dataset.exportFormat;
+        document.getElementById('fullExportModalLabel').textContent =
+            `选择要导出的发货批次（${fullExportFormat === 'xlsx' ? 'Excel' : 'PDF'}）`;
+        fullConfirm.innerHTML = `<i class="bi bi-download"></i> 导出 ${fullExportFormat === 'xlsx' ? 'Excel' : 'PDF'}`;
+    }));
+    fullConfirm.addEventListener('click', () => {
+        const selected = fullModal.querySelector('.full-export-batch:checked');
+        if (!fullExportUrl || !selected) return;
+        const url = new URL(fullExportUrl, window.location.href);
+        url.searchParams.set('batch', selected.value);
+        bootstrap.Modal.getOrCreateInstance(fullModal).hide();
+        window.location.assign(url.toString());
+    });
+
     const modal = document.getElementById('compactExportModal');
-    if (!modal) return;
     const triggers = [...document.querySelectorAll('.compact-export-trigger')];
-    const boxChecks = [...modal.querySelectorAll('.compact-export-box')];
     const allCheck = document.getElementById('compactExportAll');
+    const batchSelect = document.getElementById('compactExportBatch');
     const confirmButton = document.getElementById('compactExportConfirm');
     const summary = document.getElementById('compactExportSelectionSummary');
     let exportUrl = '';
     let exportFormat = 'pdf';
 
+    const activeBoxChecks = () => [...modal.querySelectorAll(
+        `.compact-export-box[data-batch-id="${batchSelect.value}"]`
+    )];
+
+    function showCompactBatch() {
+        modal.querySelectorAll('.compact-export-batch-boxes').forEach(group => {
+            group.hidden = group.dataset.batchId !== batchSelect.value;
+        });
+        updateCompactExportSelection();
+    }
+
     function updateCompactExportSelection() {
+        const boxChecks = activeBoxChecks();
         const selectedCount = boxChecks.filter(check => check.checked).length;
+        const selectedCartons = boxChecks.filter(check => check.checked).reduce(
+            (total, check) => total + Number(check.dataset.cartonCount || 1), 0
+        );
+        const totalCartons = boxChecks.reduce(
+            (total, check) => total + Number(check.dataset.cartonCount || 1), 0
+        );
         allCheck.checked = selectedCount === boxChecks.length && boxChecks.length > 0;
         allCheck.indeterminate = selectedCount > 0 && selectedCount < boxChecks.length;
         confirmButton.disabled = selectedCount === 0;
-        summary.textContent = `已选择 ${selectedCount} / ${boxChecks.length} 箱，每箱导出一页。`;
+        summary.textContent = `已选择 ${selectedCount} / ${boxChecks.length} 组，共 ${selectedCartons} / ${totalCartons} 个实体箱；每个实体箱导出一页。`;
         const formatLabel = exportFormat === 'xlsx' ? 'Excel' : 'PDF';
         confirmButton.innerHTML = `<i class="bi bi-download"></i> 导出 ${formatLabel}`;
     }
@@ -381,14 +459,16 @@
         updateCompactExportSelection();
     }));
     allCheck.addEventListener('change', () => {
-        boxChecks.forEach(check => { check.checked = allCheck.checked; });
+        activeBoxChecks().forEach(check => { check.checked = allCheck.checked; });
         updateCompactExportSelection();
     });
-    boxChecks.forEach(check => check.addEventListener('change', updateCompactExportSelection));
+    modal.querySelectorAll('.compact-export-box').forEach(check => check.addEventListener('change', updateCompactExportSelection));
+    batchSelect.addEventListener('change', showCompactBatch);
     confirmButton.addEventListener('click', () => {
-        const selected = boxChecks.filter(check => check.checked);
+        const selected = activeBoxChecks().filter(check => check.checked);
         if (!exportUrl || !selected.length) return;
         const url = new URL(exportUrl, window.location.href);
+        url.searchParams.set('batch', batchSelect.value);
         selected.forEach(check => url.searchParams.append('box', check.value));
         bootstrap.Modal.getOrCreateInstance(modal).hide();
         const downloadLink = document.createElement('a');
@@ -397,7 +477,7 @@
         downloadLink.click();
         downloadLink.remove();
     });
-    updateCompactExportSelection();
+    showCompactBatch();
 })();
 </script>
 {% endif %}
