@@ -10,6 +10,11 @@
     .packing-workspace { align-items: flex-start; }
     .packing-box-card { border-left: 4px solid #0d6efd; overflow: hidden; }
     .packing-box-card.is-target { box-shadow: 0 0 0 2px rgba(13,110,253,.22); }
+    .packing-box-card.is-collapsed { margin-bottom:.45rem !important; }
+    .packing-box-card.is-collapsed .card-header { padding:.42rem .65rem; min-height:0; }
+    .packing-box-card.is-collapsed .packing-box-title { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; }
+    .packing-box-card.is-collapsed .packing-box-title .fw-bold { flex:0 0 auto; }
+    .packing-box-card.is-collapsed .packing-box-meta { font-size:.78rem; line-height:1.2; }
     .packing-box-card .form-label { font-size: .8rem; color: #6c757d; margin-bottom: .2rem; }
     .packing-measure-fields > * { min-width: 0; }
     .packing-measure-fields .form-label { white-space: nowrap; }
@@ -35,7 +40,7 @@
     .packing-min-width-0 { min-width: 0; }
     .packing-box-item { border: 1px solid #dee2e6; border-radius: .5rem; padding: .65rem; background: #fff; }
     .packing-box-item + .packing-box-item { margin-top: .55rem; }
-    .packing-transfer-panel { position:sticky; top:8rem; display:flex; flex-direction:column; align-items:stretch; gap:.65rem; }
+    .packing-transfer-panel { position:sticky; top:50vh; transform:translateY(-50%); display:flex; flex-direction:column; align-items:stretch; gap:.65rem; }
     .packing-transfer-arrow { font-size:1.1rem; }
     .packing-inline-quantity { width:135px; flex:0 0 135px; }
     .packing-inline-quantity .form-control, .packing-inline-quantity .input-group-text { min-height:32px; padding-top:.2rem; padding-bottom:.2rem; }
@@ -47,7 +52,7 @@
     @media (max-width: 1199.98px) {
         .packing-unallocated-panel { position: static; }
         .packing-pending-list { max-height: none; }
-        .packing-transfer-panel { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; }
+        .packing-transfer-panel { position:static; transform:none; flex-direction:row; flex-wrap:wrap; align-items:center; }
         .packing-transfer-panel .btn { flex:1 1 180px; }
         .packing-transfer-arrow { transform:rotate(90deg); display:inline-block; }
     }
@@ -339,11 +344,11 @@
     const products = data.pi_items;
     let boxes = data.boxes || [];
     let version = data.version || 0;
-    let selectedTargetBox = 0;
+    let selectedTargetBox = null;
     let productFilter = 'all';
     const selectedProductIds = new Set();
     const selectedProductQuantities = new Map();
-    const expandedBoxes = new Set([0]);
+    const expandedBoxes = new Set();
     const container = document.getElementById('packingBoxes');
     const alertBox = document.getElementById('packingAlert');
     const targetBoxSelect = document.getElementById('packingTargetBox');
@@ -362,6 +367,8 @@
     const emptyBox = () => ({box_no:String(boxes.length + 1), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
     if (!boxes.length) boxes.push(emptyBox());
     normalizeBoxNumbers();
+    selectedTargetBox = boxes.length - 1;
+    expandedBoxes.add(selectedTargetBox);
 
     function boxVolume(box) {
         return numberValue(box.length_cm) * numberValue(box.width_cm) * numberValue(box.height_cm) / 1000000;
@@ -452,14 +459,13 @@
     function moveBox(boxIndex, direction) {
         const targetIndex = boxIndex + direction;
         if (targetIndex < 0 || targetIndex >= boxes.length) return;
-        const boxWasExpanded = expandedBoxes.has(boxIndex);
-        const targetWasExpanded = expandedBoxes.has(targetIndex);
+        const expandedIndex = expandedBoxes.size ? [...expandedBoxes][0] : null;
         [boxes[boxIndex], boxes[targetIndex]] = [boxes[targetIndex], boxes[boxIndex]];
         normalizeBoxNumbers();
-        expandedBoxes.delete(boxIndex);
-        expandedBoxes.delete(targetIndex);
-        if (boxWasExpanded) expandedBoxes.add(targetIndex);
-        if (targetWasExpanded) expandedBoxes.add(boxIndex);
+        expandedBoxes.clear();
+        if (expandedIndex === boxIndex) expandedBoxes.add(targetIndex);
+        else if (expandedIndex === targetIndex) expandedBoxes.add(boxIndex);
+        else if (expandedIndex !== null) expandedBoxes.add(expandedIndex);
         if (selectedTargetBox === boxIndex) selectedTargetBox = targetIndex;
         else if (selectedTargetBox === targetIndex) selectedTargetBox = boxIndex;
         renderBoxes();
@@ -470,10 +476,10 @@
         const box = boxes[boxIndex];
         if (!box || !box.items.length) return showAlert('当前箱子还没有产品，不能完成。', 'warning');
         if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
-        expandedBoxes.delete(boxIndex);
         boxes.push(emptyBox());
         normalizeBoxNumbers();
         selectedTargetBox=boxes.length-1;
+        expandedBoxes.clear();
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
         showAlert(`第 ${boxIndex + 1} 箱已完成，已自动创建第 ${selectedTargetBox + 1} 箱。`, 'success', false);
@@ -481,7 +487,9 @@
     }
 
     function renderTargetBoxes() {
-        if (selectedTargetBox >= boxes.length) selectedTargetBox = Math.max(0, boxes.length - 1);
+        if (!Number.isInteger(selectedTargetBox) || selectedTargetBox < 0 || selectedTargetBox >= boxes.length || !expandedBoxes.has(selectedTargetBox)) {
+            selectedTargetBox = null;
+        }
         targetBoxSelect.replaceChildren();
         boxes.forEach((box, index) => {
             const option = document.createElement('option');
@@ -491,9 +499,21 @@
             targetBoxSelect.append(option);
         });
         const batchButton = document.getElementById('batchAddProducts');
-        if (boxes[selectedTargetBox]) {
+        const allButton = document.getElementById('addAllRemainingProducts');
+        if (selectedTargetBox !== null && boxes[selectedTargetBox]) {
             targetLabel.textContent = `目标：第 ${selectedTargetBox + 1} 箱`;
-            if (batchButton) batchButton.innerHTML = `放入第 ${selectedTargetBox + 1} 箱<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>`;
+            if (batchButton) {
+                batchButton.disabled = false;
+                batchButton.innerHTML = `放入第 ${selectedTargetBox + 1} 箱<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>`;
+            }
+            if (allButton) allButton.disabled = false;
+        } else {
+            targetLabel.textContent = '请先展开箱子';
+            if (batchButton) {
+                batchButton.disabled = true;
+                batchButton.innerHTML = '请先展开箱子<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>';
+            }
+            if (allButton) allButton.disabled = true;
         }
     }
 
@@ -590,18 +610,32 @@
         container.replaceChildren();
         boxes.forEach((box, boxIndex) => {
             if (!Array.isArray(box.items)) box.items = [];
-            const card = document.createElement('div'); card.className = `card packing-box-card mb-3 ${boxIndex === selectedTargetBox ? 'is-target' : ''}`; card.dataset.boxIndex=String(boxIndex);
+            const isExpanded = expandedBoxes.has(boxIndex);
+            const isFinished = boxIndex < boxes.length - 1 && box.items.length > 0;
+            const card = document.createElement('div'); card.className = `card packing-box-card ${isExpanded ? 'mb-3' : 'is-collapsed'} ${boxIndex === selectedTargetBox ? 'is-target' : ''}`; card.dataset.boxIndex=String(boxIndex);
             const header = document.createElement('div'); header.className = 'card-header d-flex flex-wrap justify-content-between align-items-start gap-2';
             const toggle = document.createElement('button'); toggle.type = 'button'; toggle.className = 'btn btn-link text-decoration-none text-start text-dark p-0 flex-grow-1 packing-box-toggle';
             const toggleContent = document.createElement('div'); toggleContent.className = 'd-flex align-items-start gap-2';
-            const icon = document.createElement('i'); icon.className = `bi ${expandedBoxes.has(boxIndex) ? 'bi-chevron-down' : 'bi-chevron-right'} text-primary`;
+            const icon = document.createElement('i'); icon.className = `bi ${isExpanded ? 'bi-chevron-down' : 'bi-chevron-right'} text-primary`;
             const titleWrap = document.createElement('div'); titleWrap.className = 'packing-box-title';
             const title = document.createElement('div'); title.className = 'fw-bold text-truncate'; title.dataset.boxTitle = String(boxIndex);
             const meta = document.createElement('div'); meta.className = 'packing-box-meta'; meta.dataset.boxMeta = String(boxIndex);
             titleWrap.append(title, meta); toggleContent.append(icon, titleWrap); toggle.append(toggleContent);
+            if (!isExpanded && isFinished) {
+                const finishedBadge = document.createElement('span');
+                finishedBadge.className = 'badge bg-success-subtle text-success border border-success-subtle flex-shrink-0';
+                finishedBadge.textContent = '已装好';
+                toggleContent.append(finishedBadge);
+            }
             toggle.addEventListener('click', () => {
-                selectedTargetBox = boxIndex;
-                if (expandedBoxes.has(boxIndex)) expandedBoxes.delete(boxIndex); else expandedBoxes.add(boxIndex);
+                if (expandedBoxes.has(boxIndex)) {
+                    expandedBoxes.clear();
+                    selectedTargetBox = null;
+                } else {
+                    expandedBoxes.clear();
+                    expandedBoxes.add(boxIndex);
+                    selectedTargetBox = boxIndex;
+                }
                 renderBoxes();
             });
             const actions = document.createElement('div'); actions.className='packing-box-actions d-flex gap-1 flex-wrap justify-content-end';
@@ -621,9 +655,13 @@
                 selectedTargetBox = Math.max(0, Math.min(boxIndex, boxes.length - 1));
                 renderBoxes();
             });
-            actions.append(moveUp, moveDown, finishBoxTop, remove);
+            if (isExpanded) {
+                actions.append(moveUp, moveDown);
+                if (boxIndex === boxes.length - 1) actions.append(finishBoxTop);
+                actions.append(remove);
+            }
             header.append(toggle, actions);
-            const body = document.createElement('div'); body.className='card-body packing-box-body p-2'; body.hidden = !expandedBoxes.has(boxIndex);
+            const body = document.createElement('div'); body.className='card-body packing-box-body p-2'; body.hidden = !isExpanded;
             const measureFields = document.createElement('div'); measureFields.className='row g-2 mb-2 packing-measure-fields';
             measureFields.append(
                 field('净重 N.W.（kg）','number',box.net_weight,'net_weight',boxIndex,{className:'col'}),
@@ -661,7 +699,8 @@
             const clearBox=document.createElement('button'); clearBox.type='button'; clearBox.className='btn btn-sm btn-outline-secondary'; clearBox.disabled=!box.items.length; clearBox.innerHTML='<i class="bi bi-arrow-counterclockwise"></i> 清空当前箱产品'; clearBox.addEventListener('click',()=>{if(!confirm(`确认清空第 ${boxIndex + 1} 箱的产品吗？这些产品会回到待分配列表。`))return;box.items=[];renderBoxes();});
             const finishBox=document.createElement('button'); finishBox.type='button'; finishBox.className='btn btn-sm btn-success'; finishBox.disabled=!box.items.length; finishBox.innerHTML='<i class="bi bi-check-lg"></i> 完成箱子';
             finishBox.addEventListener('click',()=>finishBoxAndCreateNext(boxIndex));
-            boxActions.append(clearBox,finishBox);
+            boxActions.append(clearBox);
+            if (boxIndex === boxes.length - 1) boxActions.append(finishBox);
             body.append(measureFields,noteFields,cbm,itemList,boxActions); card.append(header,body); container.append(card);
             updateBoxSummary(boxIndex);
         });
@@ -715,14 +754,19 @@
             if(!response.ok || !result.success) throw new Error(result.error || '保存失败。');
             version=result.data.version; boxes=result.data.boxes;
             [...expandedBoxes].forEach(index => { if (index >= boxes.length) expandedBoxes.delete(index); });
-            if (!expandedBoxes.size) expandedBoxes.add(0);
+            if (selectedTargetBox !== null && !expandedBoxes.has(selectedTargetBox)) selectedTargetBox = null;
             showAlert(result.message,'success'); renderBoxes();
             if(action==='complete') setTimeout(()=>window.location.reload(),500);
         } catch(error) { showAlert(error.message || '保存失败，请稍后重试。'); }
         finally { buttons.forEach(button=>button.disabled=false); }
     }
 
-    targetBoxSelect.addEventListener('change', () => { selectedTargetBox = Number(targetBoxSelect.value) || 0; renderBoxes(); });
+    targetBoxSelect.addEventListener('change', () => {
+        selectedTargetBox = Number(targetBoxSelect.value);
+        expandedBoxes.clear();
+        expandedBoxes.add(selectedTargetBox);
+        renderBoxes();
+    });
     productSearch.addEventListener('input', renderPendingProducts);
     productFilterButtons.forEach(button => button.addEventListener('click', () => {
         productFilter = button.dataset.packingFilter === 'remaining' ? 'remaining' : 'all';
@@ -760,7 +804,7 @@
     });
     document.getElementById('batchAddProducts').addEventListener('click', () => {
         if (!selectedProductIds.size) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
-        if (!boxes[selectedTargetBox]) return showAlert('请选择要加入的目标箱。', 'warning');
+        if (selectedTargetBox === null || !expandedBoxes.has(selectedTargetBox) || !boxes[selectedTargetBox]) return showAlert('请先展开要放入产品的箱子。', 'warning');
         const packed = packedQuantities();
         const additions = [];
         for (const id of selectedProductIds) {
@@ -777,13 +821,12 @@
             if (existing) existing.quantity = integerValue(existing.quantity) + quantity;
             else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity, note:''});
         }
-        expandedBoxes.add(selectedTargetBox);
         clearProductSelection();
         renderBoxes();
         showAlert(`已将 ${additions.length} 项产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
     });
     document.getElementById('addAllRemainingProducts').addEventListener('click', () => {
-        if (!boxes[selectedTargetBox]) return showAlert('请选择要加入的目标箱。', 'warning');
+        if (selectedTargetBox === null || !expandedBoxes.has(selectedTargetBox) || !boxes[selectedTargetBox]) return showAlert('请先展开要放入产品的箱子。', 'warning');
         const packed = packedQuantities();
         const additions = products.filter(product => integerValue(product.quantity) > (packed[Number(product.id)] || 0));
         if (!additions.length) return showAlert('当前没有待分配产品。', 'warning');
@@ -794,7 +837,6 @@
             if (existing) existing.quantity = integerValue(existing.quantity) + remaining;
             else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity:remaining, note:''});
         });
-        expandedBoxes.add(selectedTargetBox);
         renderBoxes();
         showAlert(`已将全部 ${additions.length} 项剩余产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
     });
@@ -802,6 +844,7 @@
         if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
         boxes.push(emptyBox());
         selectedTargetBox = boxes.length - 1;
+        expandedBoxes.clear();
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
         scrollToBox(selectedTargetBox);
