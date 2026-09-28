@@ -15,6 +15,10 @@
     .packing-box-card.is-collapsed .packing-box-title { display:flex; align-items:center; gap:.65rem; flex-wrap:wrap; }
     .packing-box-card.is-collapsed .packing-box-title .fw-bold { flex:0 0 auto; }
     .packing-box-card.is-collapsed .packing-box-meta { font-size:.78rem; line-height:1.2; }
+    .packing-finished-group { border:1px solid #cfe2d6; border-radius:.55rem; background:#f6fbf8; margin-bottom:.65rem; overflow:hidden; }
+    .packing-finished-group-toggle { width:100%; border:0; background:transparent; padding:.65rem .75rem; color:#198754; text-align:left; }
+    .packing-finished-group-body { padding:.45rem; border-top:1px solid #dcebe2; background:#fff; }
+    .packing-finished-group-body[hidden] { display:none !important; }
     .packing-box-card .form-label { font-size: .8rem; color: #6c757d; margin-bottom: .2rem; }
     .packing-measure-fields > * { min-width: 0; }
     .packing-measure-fields .form-label { white-space: nowrap; }
@@ -350,6 +354,7 @@
     const selectedProductIds = new Set();
     const selectedProductQuantities = new Map();
     const expandedBoxes = new Set();
+    let finishedBoxesVisible = false;
     const container = document.getElementById('packingBoxes');
     const alertBox = document.getElementById('packingAlert');
     const targetBoxSelect = document.getElementById('packingTargetBox');
@@ -626,6 +631,33 @@
 
     function renderBoxes() {
         container.replaceChildren();
+        const finishedIndexes = boxes
+            .map((box, index) => index < boxes.length - 1 && Array.isArray(box.items) && box.items.length > 0 ? index : null)
+            .filter(index => index !== null);
+        let finishedGroupBody = null;
+        if (finishedIndexes.length) {
+            const finishedGroup = document.createElement('div');
+            finishedGroup.className = 'packing-finished-group';
+            const finishedToggle = document.createElement('button');
+            finishedToggle.type = 'button';
+            finishedToggle.className = 'packing-finished-group-toggle d-flex align-items-center justify-content-between gap-2';
+            finishedToggle.setAttribute('aria-expanded', String(finishedBoxesVisible));
+            const finishedPieces = finishedIndexes.reduce((total, index) => total + boxItemCount(boxes[index]), 0);
+            finishedToggle.innerHTML = `<span class="fw-bold"><i class="bi ${finishedBoxesVisible ? 'bi-chevron-down' : 'bi-chevron-right'} me-2"></i>已完成箱子（${finishedIndexes.length} 箱）</span><span class="small text-muted">共 ${finishedPieces} 件 · 点击${finishedBoxesVisible ? '收起' : '展开'}</span>`;
+            finishedGroupBody = document.createElement('div');
+            finishedGroupBody.className = 'packing-finished-group-body';
+            finishedGroupBody.hidden = !finishedBoxesVisible;
+            finishedToggle.addEventListener('click', () => {
+                finishedBoxesVisible = !finishedBoxesVisible;
+                if (!finishedBoxesVisible && selectedTargetBox !== null && finishedIndexes.includes(selectedTargetBox)) {
+                    expandedBoxes.clear();
+                    selectedTargetBox = null;
+                }
+                renderBoxes();
+            });
+            finishedGroup.append(finishedToggle, finishedGroupBody);
+            container.append(finishedGroup);
+        }
         boxes.forEach((box, boxIndex) => {
             if (!Array.isArray(box.items)) box.items = [];
             const isExpanded = expandedBoxes.has(boxIndex);
@@ -653,6 +685,7 @@
                     expandedBoxes.clear();
                     expandedBoxes.add(boxIndex);
                     selectedTargetBox = boxIndex;
+                    if (isFinished) finishedBoxesVisible = true;
                 }
                 renderBoxes();
             });
@@ -719,7 +752,9 @@
             finishBox.addEventListener('click',()=>finishBoxAndCreateNext(boxIndex));
             boxActions.append(clearBox);
             if (boxIndex === boxes.length - 1) boxActions.append(finishBox);
-            body.append(measureFields,noteFields,cbm,itemList,boxActions); card.append(header,body); container.append(card);
+            body.append(measureFields,noteFields,cbm,itemList,boxActions); card.append(header,body);
+            if (isFinished && finishedGroupBody) finishedGroupBody.append(card);
+            else container.append(card);
             updateBoxSummary(boxIndex);
         });
         renderOverview();
