@@ -40,7 +40,8 @@
     .packing-min-width-0 { min-width: 0; }
     .packing-box-item { border: 1px solid #dee2e6; border-radius: .5rem; padding: .65rem; background: #fff; }
     .packing-box-item + .packing-box-item { margin-top: .55rem; }
-    .packing-transfer-panel { position:sticky; top:50vh; transform:translateY(-50%); display:flex; flex-direction:column; align-items:stretch; gap:.65rem; }
+    .packing-transfer-column { position:relative; min-height:1px; }
+    .packing-transfer-panel { position:absolute; inset-inline:0; top:0; display:flex; flex-direction:column; align-items:stretch; gap:.65rem; transition:top .16s ease; }
     .packing-transfer-arrow { font-size:1.1rem; }
     .packing-inline-quantity { width:135px; flex:0 0 135px; }
     .packing-inline-quantity .form-control, .packing-inline-quantity .input-group-text { min-height:32px; padding-top:.2rem; padding-bottom:.2rem; }
@@ -52,7 +53,7 @@
     @media (max-width: 1199.98px) {
         .packing-unallocated-panel { position: static; }
         .packing-pending-list { max-height: none; }
-        .packing-transfer-panel { position:static; transform:none; flex-direction:row; flex-wrap:wrap; align-items:center; }
+        .packing-transfer-panel { position:static; flex-direction:row; flex-wrap:wrap; align-items:center; }
         .packing-transfer-panel .btn { flex:1 1 180px; }
         .packing-transfer-arrow { transform:rotate(90deg); display:inline-block; }
     }
@@ -183,8 +184,8 @@
             </div>
         </div>
     </div>
-    <div class="col-xl-1">
-        <div class="packing-transfer-panel mb-3">
+    <div id="packingTransferColumn" class="col-xl-1 packing-transfer-column">
+        <div id="packingTransferPanel" class="packing-transfer-panel mb-3">
             <select id="packingTargetBox" class="d-none" aria-hidden="true"></select>
             <div id="packingTargetLabel" class="small text-center text-muted">目标：第 1 箱</div>
             <button type="button" id="batchAddProducts" class="btn btn-primary px-2">
@@ -356,6 +357,8 @@
     const pendingCount = document.getElementById('packingPendingCount');
     const productSearch = document.getElementById('packingProductSearch');
     const targetLabel = document.getElementById('packingTargetLabel');
+    const transferColumn = document.getElementById('packingTransferColumn');
+    const transferPanel = document.getElementById('packingTransferPanel');
     const selectionCount = document.getElementById('packingSelectionCount');
     const clearSelectedProducts = document.getElementById('clearSelectedProducts');
     const productFilterButtons = [...document.querySelectorAll('[data-packing-filter]')];
@@ -501,6 +504,7 @@
         const batchButton = document.getElementById('batchAddProducts');
         const allButton = document.getElementById('addAllRemainingProducts');
         if (selectedTargetBox !== null && boxes[selectedTargetBox]) {
+            transferPanel.classList.remove('d-none');
             targetLabel.textContent = `目标：第 ${selectedTargetBox + 1} 箱`;
             if (batchButton) {
                 batchButton.disabled = false;
@@ -508,6 +512,7 @@
             }
             if (allButton) allButton.disabled = false;
         } else {
+            transferPanel.classList.add('d-none');
             targetLabel.textContent = '请先展开箱子';
             if (batchButton) {
                 batchButton.disabled = true;
@@ -515,6 +520,19 @@
             }
             if (allButton) allButton.disabled = true;
         }
+    }
+
+    function positionTransferPanel() {
+        if (!transferPanel || !transferColumn || transferPanel.classList.contains('d-none')) return;
+        if (window.innerWidth < 1200) {
+            transferPanel.style.top = '';
+            return;
+        }
+        const targetCard = container.querySelector(`[data-box-index="${selectedTargetBox}"]`);
+        if (!targetCard) return;
+        const columnRect = transferColumn.getBoundingClientRect();
+        const cardRect = targetCard.getBoundingClientRect();
+        transferPanel.style.top = `${Math.max(0, cardRect.top - columnRect.top)}px`;
     }
 
     function renderPendingProducts() {
@@ -707,6 +725,7 @@
         renderOverview();
         renderTargetBoxes();
         renderPendingProducts();
+        requestAnimationFrame(positionTransferPanel);
     }
 
     function showAlert(message, type='danger', shouldScroll=true) {
@@ -851,6 +870,7 @@
     });
     document.querySelectorAll('.packing-save').forEach(button=>button.addEventListener('click',()=>save(button.dataset.action)));
     renderBoxes();
+    window.addEventListener('resize', positionTransferPanel);
 })();
 </script>
 {% endif %}
