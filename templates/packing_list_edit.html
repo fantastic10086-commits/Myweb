@@ -51,6 +51,10 @@
     .packing-inline-quantity .form-control, .packing-inline-quantity .input-group-text { min-height:32px; padding-top:.2rem; padding-bottom:.2rem; }
     .packing-sticky-actions { position:sticky; bottom:.75rem; z-index:10; box-shadow:0 .3rem 1rem rgba(0,0,0,.12); }
     .packing-readonly-table td, .packing-readonly-table th { vertical-align:middle; }
+    .packing-shipment-card .card-header { padding:.55rem .8rem; }
+    .packing-shipment-card .card-body { padding:.65rem .8rem; }
+    .packing-shipment-card .form-label { margin-bottom:.2rem; font-size:.82rem; color:#495057; }
+    .packing-shipment-card textarea.form-control { min-height:38px; resize:vertical; }
     @media (min-width: 1200px) {
         .packing-side-column { flex:1 1 0 !important; width:0; min-width:0; max-width:none; }
     }
@@ -144,17 +148,17 @@
 
 {% if can_edit %}
 <div id="packingAlert" class="alert d-none" role="alert"></div>
-<div class="card mb-3">
-    <div class="card-header fw-bold">第 {{ packing_data.batch_no }} 批发货信息</div>
+<div class="card mb-3 packing-shipment-card">
+    <div class="card-header fw-bold small">第 {{ packing_data.batch_no }} 批发货信息</div>
     <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-4"><label class="form-label">计划发货日期</label><input type="date" id="plannedShippingDate" class="form-control" value="{{ packing_data.planned_shipping_date }}"></div>
-            <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" class="form-control" value="{{ packing_data.shipping_date }}"></div>
-            <div class="col-md-4"><label class="form-label">物流单号</label><input id="trackingNo" class="form-control" value="{{ packing_data.tracking_no }}"></div>
-            <div class="col-md-6"><label class="form-label">本批收货地址</label><textarea id="shippingAddress" class="form-control" rows="2">{{ packing_data.shipping_address }}</textarea></div>
-            <div class="col-md-3"><label class="form-label">联系人</label><input id="shippingContact" class="form-control" value="{{ packing_data.contact_name }}"></div>
-            <div class="col-md-3"><label class="form-label">联系电话</label><input id="shippingPhone" class="form-control" value="{{ packing_data.contact_phone }}"></div>
-            <div class="col-12"><label class="form-label">本批发货要求</label><textarea id="shippingRequirements" class="form-control" rows="2" placeholder="例如：指定货代、标签、包装或送仓要求">{{ packing_data.shipping_requirements }}</textarea></div>
+        <div class="row g-2">
+            <div class="col-md-4"><label class="form-label">计划发货日期</label><input type="date" id="plannedShippingDate" class="form-control form-control-sm" value="{{ packing_data.planned_shipping_date }}"></div>
+            <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" class="form-control form-control-sm" value="{{ packing_data.shipping_date }}"></div>
+            <div class="col-md-4"><label class="form-label">物流单号</label><input id="trackingNo" class="form-control form-control-sm" value="{{ packing_data.tracking_no }}"></div>
+            <div class="col-md-6"><label class="form-label">本批收货地址</label><textarea id="shippingAddress" class="form-control form-control-sm" rows="1">{{ packing_data.shipping_address }}</textarea></div>
+            <div class="col-md-3"><label class="form-label">联系人</label><input id="shippingContact" class="form-control form-control-sm" value="{{ packing_data.contact_name }}"></div>
+            <div class="col-md-3"><label class="form-label">联系电话</label><input id="shippingPhone" class="form-control form-control-sm" value="{{ packing_data.contact_phone }}"></div>
+            <div class="col-12"><label class="form-label">本批发货要求</label><textarea id="shippingRequirements" class="form-control form-control-sm" rows="1" placeholder="例如：指定货代、标签、包装或送仓要求">{{ packing_data.shipping_requirements }}</textarea></div>
         </div>
     </div>
 </div>
