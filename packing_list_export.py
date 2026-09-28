@@ -577,6 +577,25 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
         for col in range(1, 15):
             sheet.cell(row_no, col).alignment = left
 
+    # Shipment batches may have their own schedule and handling requirements.
+    # Keep this on the previously unused row so the stable item table layout
+    # and uploaded template styling remain compatible.
+    planned_date = getattr(packing_list, 'planned_shipping_date', None)
+    shipping_date = getattr(packing_list, 'shipping_date', None)
+    schedule = []
+    if planned_date:
+        schedule.append(f"Planned / 计划 {planned_date.isoformat()}")
+    if shipping_date:
+        schedule.append(f"Shipped / 发货 {shipping_date.isoformat()}")
+    sheet.cell(8, 1, "Requirements / 发货要求").font = label
+    sheet.merge_cells(start_row=8, start_column=2, end_row=8, end_column=8)
+    sheet.cell(8, 2, _text(getattr(packing_list, 'shipping_requirements', '') or '')).font = normal
+    sheet.cell(8, 9, "Schedule / 日期").font = label
+    sheet.merge_cells(start_row=8, start_column=10, end_row=8, end_column=14)
+    sheet.cell(8, 10, ' · '.join(schedule)).font = normal
+    for col in range(1, 15):
+        sheet.cell(8, col).alignment = left
+
     headers = [
         "箱号\nCarton No.", "产品编码\nCode", "产品\nProduct", "规格\nSpecification",
         "数量\nQty", "净重(kg)\nN.W.", "毛重(kg)\nG.W.", "长(cm)\nL",

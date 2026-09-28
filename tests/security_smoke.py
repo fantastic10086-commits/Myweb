@@ -4558,6 +4558,115 @@ class SecuritySmokeTests(unittest.TestCase):
                         pi.received_amount = original_received_amount
                 db.session.commit()
 
+    def test_packing_list_supports_independent_partial_shipment_batches(self):
+        original_received = None
+        original_quantity = None
+        item_id = None
+        try:
+            with application.app.app_context():
+                pi = db.session.get(PI, self.alice_pi)
+                original_received = pi.received_amount
+                pi.received_amount = 1
+                item = PIItem.query.filter_by(pi_id=self.alice_pi).first()
+                original_quantity = item.quantity
+                item.quantity = 6
+                item_id = item.id
+                db.session.commit()
+
+            self.login('admin-test')
+            created = self.client.post(
+                f'/packing-list/{self.alice_pi}/batches',
+                data={'csrf_token': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(created.status_code, 302)
+            with application.app.app_context():
+                packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
+                batch1_id = packing_list.batches[0].id
+                version = packing_list.version
+
+            def shipment(batch_id, submitted_version, quantity, address, planned):
+                return {
+                    'action': 'complete', 'version': submitted_version,
+                    'batch_id': batch_id, 'packing_date': '2026-09-28',
+                    'planned_shipping_date': planned, 'shipping_date': '',
+                    'shipping_address': address, 'contact_name': 'Receiver',
+                    'contact_phone': '123', 'shipping_requirements': '独立要求',
+                    'tracking_no': '', 'boxes': [{
+                        'net_weight': 1, 'gross_weight': 2, 'length_cm': 10,
+                        'width_cm': 10, 'height_cm': 10, 'shipping_mark': '',
+                        'note': '', 'items': [{
+                            'pi_item_id': item_id, 'quantity': quantity, 'note': '',
+                        }],
+                    }],
+                }
+
+            saved1 = self.client.post(
+                f'/api/packing-list/{self.alice_pi}',
+                json=shipment(batch1_id, version, 2, '第一批地址', '2026-10-01'),
+                headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(saved1.status_code, 200)
+
+            created2 = self.client.post(
+                f'/packing-list/{self.alice_pi}/batches',
+                data={'csrf_token': self.token(f'/packing-list/{self.alice_pi}')},
+            )
+            self.assertEqual(created2.status_code, 302)
+            with application.app.app_context():
+                packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
+                batch2_id = packing_list.batches[-1].id
+                version2 = packing_list.version
+
+            detail2 = self.client.get(
+                f'/packing-list/{self.alice_pi}?batch={batch2_id}'
+            ).get_data(as_text=True)
+            self.assertIn('第 2 批发货信息', detail2)
+            self.assertIn('第一批地址', self.client.get(
+                f'/packing-list/{self.alice_pi}?batch={batch1_id}'
+            ).get_data(as_text=True))
+
+            overflow = self.client.post(
+                f'/api/packing-list/{self.alice_pi}',
+                json=shipment(batch2_id, version2, 5, '第二批地址', '2026-10-15'),
+                headers={'X-CSRFToken': self.token(
+                    f'/packing-list/{self.alice_pi}?batch={batch2_id}'
+                )},
+            )
+            self.assertEqual(overflow.status_code, 400)
+            self.assertIn('超过 PI 数量', overflow.get_json()['error'])
+
+            saved2 = self.client.post(
+                f'/api/packing-list/{self.alice_pi}',
+                json=shipment(batch2_id, version2, 4, '第二批地址', '2026-10-15'),
+                headers={'X-CSRFToken': self.token(
+                    f'/packing-list/{self.alice_pi}?batch={batch2_id}'
+                )},
+            )
+            self.assertEqual(saved2.status_code, 200)
+            with application.app.app_context():
+                packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
+                self.assertEqual(packing_list.status, 'completed')
+                self.assertEqual(len(packing_list.batches), 2)
+                self.assertEqual(
+                    [row.shipping_address for row in packing_list.batches],
+                    ['第一批地址', '第二批地址'],
+                )
+                self.assertEqual(sum(len(row.boxes) for row in packing_list.batches), 2)
+        finally:
+            with application.app.app_context():
+                db.session.rollback()
+                packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).first()
+                if packing_list:
+                    db.session.delete(packing_list)
+                pi = db.session.get(PI, self.alice_pi)
+                if pi and original_received is not None:
+                    pi.received_amount = original_received
+                if item_id and original_quantity is not None:
+                    item = db.session.get(PIItem, item_id)
+                    if item:
+                        item.quantity = original_quantity
+                db.session.commit()
+
     @unittest.skipUnless(find_soffice(), 'LibreOffice is only required on the production server')
     def test_server_can_convert_custom_excel_template_to_pdf(self):
         work_dir = tempfile.mkdtemp(prefix='pi-template-convert-test-')

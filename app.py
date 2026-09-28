@@ -9,6 +9,7 @@ import sys
 import uuid
 import zipfile
 import shutil
+import copy
 import time
 import threading
 import sqlite3
@@ -44,7 +45,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Customer, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
-    DocumentTemplate, PackingList, PackingBox, PackingItem,
+    DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
 from pdf_generator import generate_pi_pdf
@@ -418,7 +419,8 @@ def _migrate_db():
             'chinese_name_snapshot': ('VARCHAR(200)', 'NULL'),
         },
         'packing_lists': {},  # tables auto-created by create_all
-        'packing_boxes': {},
+        'packing_batches': {},
+        'packing_boxes': {'shipment_batch_id': ('INTEGER', 'NULL')},
         'packing_items': {'note': 'VARCHAR(500)'},
         'customs_documents': {},
         'customs_revisions': {},
@@ -515,6 +517,47 @@ def _migrate_db():
                END
         """))
     db.session.commit()
+    if all(inspector.has_table(table) for table in ('packing_lists', 'packing_batches', 'packing_boxes')):
+        # Every historical packing list becomes shipment batch 1.  Boxes keep
+        # their identity and are only linked to the new batch container.
+        db.session.execute(text("""
+            INSERT INTO packing_batches (
+                packing_list_id, batch_no, status, packing_date,
+                planned_shipping_date, shipping_date,
+                shipping_address, contact_name, contact_phone,
+                shipping_requirements, tracking_no, created_at, updated_at
+            )
+            SELECT pl.id, 1,
+                   CASE WHEN coalesce(pi.shipping_completed, 0) = 1
+                        THEN 'shipped' ELSE pl.status END,
+                   pl.packing_date, NULL, pi.shipping_date,
+                   coalesce(pi.shipping_address, ''),
+                   coalesce(c.contact_person, ''), coalesce(c.phone, ''),
+                   coalesce(pi.shipping_record_note, ''),
+                   coalesce(pi.shipping_tracking_no, ''),
+                   pl.created_at, pl.updated_at
+              FROM packing_lists pl
+              JOIN pis pi ON pi.id = pl.pi_id
+              LEFT JOIN customers c ON c.id = pi.customer_id
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM packing_batches pb
+                  WHERE pb.packing_list_id = pl.id
+             )
+        """))
+        db.session.execute(text("""
+            UPDATE packing_boxes
+               SET shipment_batch_id = (
+                   SELECT pb.id FROM packing_batches pb
+                    WHERE pb.packing_list_id = packing_boxes.packing_list_id
+                    ORDER BY pb.batch_no LIMIT 1
+               )
+             WHERE shipment_batch_id IS NULL
+        """))
+        db.session.execute(text("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_packing_batches_list_no
+            ON packing_batches(packing_list_id, batch_no)
+        """))
+        db.session.commit()
     # Backfill normalized payment references before enforcing uniqueness.  The
     # production database was checked for duplicates before this migration.
     if inspector.has_table('payments'):
@@ -5563,6 +5606,7 @@ def _packing_pi_query():
         selectinload(PI.packing_list)
         .selectinload(PackingList.boxes)
         .selectinload(PackingBox.items),
+        selectinload(PI.packing_list).selectinload(PackingList.batches),
     ).filter(PI.deleted_at.is_(None))
 
 
@@ -5576,22 +5620,53 @@ def _packing_company(pi):
     return COMPANY_CONFIG['name'], COMPANY_CONFIG.get('address', '')
 
 
-def _packing_list_payload(pi, packing_list=None, prefill=False):
+def _packing_selected_batch(packing_list, batch_id=None):
+    if not packing_list or not packing_list.batches:
+        return None
+    if batch_id:
+        try:
+            wanted = int(batch_id)
+        except (TypeError, ValueError):
+            wanted = 0
+        for batch in packing_list.batches:
+            if batch.id == wanted:
+                return batch
+    return packing_list.batches[-1]
+
+
+def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
+    batch = batch or _packing_selected_batch(packing_list)
+    other_packed = {}
+    if packing_list:
+        for box in packing_list.boxes:
+            if batch and box.shipment_batch_id == batch.id:
+                continue
+            for packed_item in box.items:
+                other_packed[packed_item.pi_item_id] = (
+                    other_packed.get(packed_item.pi_item_id, 0)
+                    + int(packed_item.quantity or 0)
+                )
     pi_items = []
     for item in pi.items:
         product = item.product
+        order_quantity = int(item.quantity or 0)
+        already_other = other_packed.get(item.id, 0)
         pi_items.append({
             'id': item.id,
             'name': item.display_name,
             'product_code': product.product_code if product else '',
             'specification': item.display_specification,
             'image': item.display_image,
-            'quantity': int(item.quantity or 0),
+            'quantity': max(order_quantity - already_other, 0),
+            'order_quantity': order_quantity,
+            'other_batch_quantity': already_other,
         })
 
     boxes = []
-    if packing_list:
-        for box_index, box in enumerate(packing_list.boxes, 1):
+    if packing_list and batch:
+        batch_boxes = [box for box in packing_list.boxes
+                       if box.shipment_batch_id == batch.id]
+        for box_index, box in enumerate(batch_boxes, 1):
             boxes.append({
                 'box_no': str(box_index),
                 'net_weight': box.net_weight or 0,
@@ -5627,11 +5702,38 @@ def _packing_list_payload(pi, packing_list=None, prefill=False):
         'pi_number': pi.pi_number,
         'customer': pi.customer.name if pi.customer else '',
         'salesperson': pi.salesperson or '',
-        'status': packing_list.status if packing_list else 'unsaved',
+        'status': batch.status if batch else 'unsaved',
+        'batch_id': batch.id if batch else None,
+        'batch_no': batch.batch_no if batch else 1,
+        'batches': [{
+            'id': row.id, 'batch_no': row.batch_no, 'status': row.status,
+            'packing_date': row.packing_date.isoformat() if row.packing_date else '',
+            'box_count': len([box for box in packing_list.boxes
+                              if box.shipment_batch_id == row.id]),
+        } for row in (packing_list.batches if packing_list else [])],
         'packing_date': (
-            packing_list.packing_date.isoformat()
-            if packing_list and packing_list.packing_date else date.today().isoformat()
+            batch.packing_date.isoformat()
+            if batch and batch.packing_date else date.today().isoformat()
         ),
+        'planned_shipping_date': (
+            batch.planned_shipping_date.isoformat()
+            if batch and batch.planned_shipping_date else ''
+        ),
+        'shipping_date': (
+            batch.shipping_date.isoformat() if batch and batch.shipping_date else ''
+        ),
+        'shipping_address': (
+            batch.shipping_address if batch else
+            (pi.shipping_address or (pi.customer.address if pi.customer else ''))
+        ),
+        'contact_name': batch.contact_name if batch else (
+            pi.customer.contact_person if pi.customer else ''
+        ),
+        'contact_phone': batch.contact_phone if batch else (
+            pi.customer.phone if pi.customer else ''
+        ),
+        'shipping_requirements': batch.shipping_requirements if batch else '',
+        'tracking_no': batch.tracking_no if batch else '',
         'version': packing_list.version if packing_list else 0,
         'saved': packing_list is not None,
         'pi_items': pi_items,
@@ -5667,14 +5769,15 @@ def _packing_quantity(value):
     return quantity
 
 
-def _validate_packing_boxes(pi, raw_boxes, completing=False):
+def _validate_packing_boxes(pi, raw_boxes, completing=False, limits=None,
+                            box_number_start=0):
     if not isinstance(raw_boxes, list) or not raw_boxes:
         raise ValueError('请至少保留一个箱子。')
     if len(raw_boxes) > 200:
         raise ValueError('一份装箱单最多包含 200 个箱子。')
 
     pi_items = {item.id: item for item in pi.items}
-    required = {item.id: int(item.quantity or 0) for item in pi.items}
+    required = limits or {item.id: int(item.quantity or 0) for item in pi.items}
     packed = {item_id: 0 for item_id in required}
     result = []
     row_count = 0
@@ -5684,7 +5787,7 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False):
             raise ValueError('箱子数据格式不正确。')
         # Carton numbers are derived from the saved display order.  This keeps
         # the editor, stored data and one-page-per-carton exports in sync.
-        box_no = str(box_index + 1)
+        box_no = str(box_number_start + box_index + 1)
 
         net_weight = _packing_number(raw_box.get('net_weight'), '净重')
         gross_weight = _packing_number(raw_box.get('gross_weight'), '毛重')
@@ -5745,15 +5848,8 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False):
             'items': items,
         })
 
-    if completing:
-        missing = []
-        for item_id, quantity in required.items():
-            if packed[item_id] != quantity:
-                product = pi_items[item_id].product
-                name = product.name if product else f'产品 #{item_id}'
-                missing.append(f'{name}（已装 {packed[item_id]} / 应装 {quantity}）')
-        if missing:
-            raise ValueError('完成前请核对全部 PI 数量：' + '；'.join(missing[:5]))
+    if completing and not any(packed.values()):
+        raise ValueError('本批次至少需要装入一项产品。')
     return result
 
 
@@ -5804,12 +5900,13 @@ def packing_list_detail(pi_id):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
+    batch = _packing_selected_batch(packing_list, request.args.get('batch'))
     has_payment = (pi.received_amount or 0) > 0
     if packing_list is None and not has_payment:
         flash('PI 尚未回款，不能创建装箱单。', 'warning')
         return redirect(url_for('packing_list_index'))
     data = _packing_list_payload(
-        pi, packing_list,
+        pi, packing_list, batch,
         prefill=is_admin() and has_payment and packing_list is None,
     )
     edit_mode = bool(
@@ -5821,8 +5918,40 @@ def packing_list_detail(pi_id):
     )
     return render_template(
         'packing_list_edit.html', pi=pi, packing_list=packing_list,
-        packing_data=data, can_edit=edit_mode,
+        packing_batch=batch, packing_data=data, can_edit=edit_mode,
     )
+
+
+@app.route('/packing-list/<int:pi_id>/batches', methods=['POST'])
+@admin_required
+def packing_batch_create(pi_id):
+    pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
+    if (pi.received_amount or 0) <= 0:
+        abort(409, description='PI 尚未回款，不能新增发货批次。')
+    packing_list = pi.packing_list
+    user = get_current_user()
+    if packing_list is None:
+        packing_list = PackingList(
+            pi=pi, created_by=user.username, updated_by=user.username,
+            status='draft', packing_date=date.today(),
+        )
+        db.session.add(packing_list)
+        db.session.flush()
+    next_no = max([row.batch_no for row in packing_list.batches] or [0]) + 1
+    customer = pi.customer
+    batch = PackingBatch(
+        packing_list=packing_list, batch_no=next_no, status='draft',
+        packing_date=date.today(), shipping_address=pi.shipping_address or (
+            customer.address if customer else ''
+        ), contact_name=customer.contact_person if customer else '',
+        contact_phone=customer.phone if customer else '',
+    )
+    db.session.add(batch)
+    packing_list.status = 'draft'
+    packing_list.updated_by = user.username
+    db.session.commit()
+    flash(f'已创建第 {next_no} 批发货，请填写本批信息并装箱。', 'success')
+    return redirect(url_for('packing_list_detail', pi_id=pi.id, batch=batch.id))
 
 
 @app.route('/api/packing-list/<int:pi_id>', methods=['POST'])
@@ -5857,9 +5986,36 @@ def packing_list_save(pi_id):
             datetime.strptime(packing_date_value, '%Y-%m-%d').date()
             if packing_date_value else date.today()
         )
+        batch = _packing_selected_batch(packing_list, payload.get('batch_id'))
+        other_packed = {item.id: 0 for item in pi.items}
+        if packing_list:
+            for existing_box in packing_list.boxes:
+                if batch and existing_box.shipment_batch_id == batch.id:
+                    continue
+                for packed_item in existing_box.items:
+                    other_packed[packed_item.pi_item_id] += int(packed_item.quantity or 0)
+        limits = {
+            item.id: max(int(item.quantity or 0) - other_packed[item.id], 0)
+            for item in pi.items
+        }
+        other_box_count = len([
+            box for box in packing_list.boxes
+            if not batch or box.shipment_batch_id != batch.id
+        ]) if packing_list else 0
         boxes = _validate_packing_boxes(
-            pi, payload.get('boxes'), completing=action == 'complete'
+            pi, payload.get('boxes'), completing=action == 'complete',
+            limits=limits, box_number_start=other_box_count,
         )
+        def parsed_date(field):
+            raw = str(payload.get(field) or '').strip()
+            return datetime.strptime(raw, '%Y-%m-%d').date() if raw else None
+        planned_shipping_date = parsed_date('planned_shipping_date')
+        shipping_date = parsed_date('shipping_date')
+        shipping_address = _packing_text(payload.get('shipping_address'), '发货地址', 1000)
+        contact_name = _packing_text(payload.get('contact_name'), '联系人', 100)
+        contact_phone = _packing_text(payload.get('contact_phone'), '联系电话', 100)
+        shipping_requirements = _packing_text(payload.get('shipping_requirements'), '发货要求', 2000)
+        tracking_no = _packing_text(payload.get('tracking_no'), '物流单号', 200)
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
@@ -5873,16 +6029,36 @@ def packing_list_save(pi_id):
             )
             db.session.add(packing_list)
             db.session.flush()
-        else:
-            packing_list.boxes.clear()
+        if batch is None:
+            batch = PackingBatch(
+                packing_list=packing_list, batch_no=1, status='draft',
+            )
+            db.session.add(batch)
             db.session.flush()
-        packing_list.status = 'completed' if action == 'complete' else 'draft'
+        for existing_box in list(packing_list.boxes):
+            if existing_box.shipment_batch_id == batch.id:
+                db.session.delete(existing_box)
+        db.session.flush()
+        batch.status = (
+            'shipped' if action == 'complete' and shipping_date
+            else ('completed' if action == 'complete' else 'draft')
+        )
+        batch.packing_date = packing_date
+        batch.planned_shipping_date = planned_shipping_date
+        batch.shipping_date = shipping_date
+        batch.shipping_address = shipping_address
+        batch.contact_name = contact_name
+        batch.contact_phone = contact_phone
+        batch.shipping_requirements = shipping_requirements
+        batch.tracking_no = tracking_no
+        batch.updated_at = datetime.utcnow()
         packing_list.packing_date = packing_date
         packing_list.updated_by = user.username
         packing_list.updated_at = datetime.utcnow()
 
         for box_data in boxes:
             box = PackingBox(
+                shipment_batch_id=batch.id,
                 box_no=box_data['box_no'], net_weight=box_data['net_weight'],
                 gross_weight=box_data['gross_weight'], length_cm=box_data['length_cm'],
                 width_cm=box_data['width_cm'], height_cm=box_data['height_cm'],
@@ -5899,7 +6075,29 @@ def packing_list_save(pi_id):
                     note=item_data['note'], sort_order=item_data['sort_order'],
                 ))
         db.session.flush()
-        after = _packing_list_payload(pi, packing_list)
+        totals = {item.id: 0 for item in pi.items}
+        for saved_box in packing_list.boxes:
+            for packed_item in saved_box.items:
+                totals[packed_item.pi_item_id] += int(packed_item.quantity or 0)
+        all_allocated = all(
+            totals[item.id] == int(item.quantity or 0) for item in pi.items
+        )
+        all_batches_complete = all(row.is_completed for row in packing_list.batches)
+        packing_list.status = (
+            'completed' if all_allocated and all_batches_complete else 'draft'
+        )
+        all_batches_shipped = all(
+            row.status == 'shipped' for row in packing_list.batches
+        )
+        pi.shipping_completed = bool(all_allocated and all_batches_shipped)
+        if pi.shipping_completed:
+            shipped_dates = [row.shipping_date for row in packing_list.batches
+                             if row.shipping_date]
+            pi.shipping_date = max(shipped_dates) if shipped_dates else None
+            pi.shipping_tracking_no = '；'.join(
+                row.tracking_no for row in packing_list.batches if row.tracking_no
+            )[:200]
+        after = _packing_list_payload(pi, packing_list, batch)
         _audit(
             'complete' if action == 'complete' else 'save', 'packing_list',
             packing_list.id,
@@ -5920,7 +6118,7 @@ def packing_list_save(pi_id):
     return jsonify({
         'success': True,
         'message': '装箱单已完成。' if action == 'complete' else '装箱单草稿已保存。',
-        'data': _packing_list_payload(pi, packing_list),
+        'data': _packing_list_payload(pi, packing_list, batch),
     })
 
 
@@ -5928,19 +6126,24 @@ def _packing_export(pi_id, output_format):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    if not packing_list:
+    batch = _packing_selected_batch(packing_list, request.args.get('batch'))
+    if not packing_list or not batch:
         abort(404)
+    export_pi = copy.copy(pi)
+    export_pi.shipping_address = batch.shipping_address or pi.shipping_address
     company_name, company_address = _packing_company(pi)
     workbook_bytes = generate_packing_list_workbook(
-        pi, packing_list, company_name, company_address
+        export_pi, batch, company_name, company_address
     )
     template = DocumentTemplate.query.filter_by(code='packing-a4', active=True).first()
     if template:
         workbook_bytes = apply_packing_template_style(
             workbook_bytes, _template_file_path(template), compact=False
         )
-    suffix = '-DRAFT' if not packing_list.is_completed else ''
-    base_name = secure_filename(f'Packing-List-{pi.pi_number}{suffix}') or 'packing-list'
+    suffix = '-DRAFT' if not batch.is_completed else ''
+    base_name = secure_filename(
+        f'Packing-List-{pi.pi_number}-Batch-{batch.batch_no}{suffix}'
+    ) or 'packing-list'
     if output_format == 'xlsx':
         response = send_file(
             BytesIO(workbook_bytes),
@@ -5984,12 +6187,13 @@ def _packing_compact_export(pi_id, output_format):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
     require_pi_access(pi)
     packing_list = pi.packing_list
-    if not packing_list:
+    batch = _packing_selected_batch(packing_list, request.args.get('batch'))
+    if not packing_list or not batch:
         abort(404)
     requested_boxes = request.args.getlist('box')
     box_indexes = None
     if requested_boxes:
-        box_count = len(packing_list.boxes)
+        box_count = len(batch.boxes)
         selected_indexes = set()
         for value in requested_boxes:
             if not re.fullmatch(r'[1-9]\d*', value or ''):
@@ -5999,26 +6203,26 @@ def _packing_compact_export(pi_id, output_format):
                 abort(400, description='导出的箱子序号超出范围。')
             selected_indexes.add(box_position - 1)
         box_indexes = sorted(selected_indexes)
-    suffix = '-DRAFT' if not packing_list.is_completed else ''
+    suffix = '-DRAFT' if not batch.is_completed else ''
     selection_suffix = ''
     if box_indexes is not None:
         selection_suffix = '-Cartons-' + '-'.join(
             str(index + 1) for index in box_indexes
         )
     base_name = secure_filename(
-        f'Packing-List-{pi.pi_number}-Compact-100x150{selection_suffix}{suffix}'
+        f'Packing-List-{pi.pi_number}-Batch-{batch.batch_no}-Compact-100x150{selection_suffix}{suffix}'
     ) or 'packing-list-compact-100x150'
     if output_format == 'pdf':
         # Keep the label PDF at its exact physical size. Applying an editable
         # Excel template before LibreOffice conversion can replace the custom
         # 100 x 150 mm page with A4 and shrink the label into its centre.
         content = generate_compact_packing_list_pdf(
-            pi, packing_list, box_indexes=box_indexes
+            pi, batch, box_indexes=box_indexes
         )
         mimetype = 'application/pdf'
     else:
         content = generate_compact_packing_list_workbook(
-            pi, packing_list, box_indexes=box_indexes
+            pi, batch, box_indexes=box_indexes
         )
         template = DocumentTemplate.query.filter_by(
             code='packing-compact-100x150', active=True

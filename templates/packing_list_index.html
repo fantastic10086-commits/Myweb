@@ -68,7 +68,7 @@
                     <tr>
                         <th>PI 编号</th><th>客户</th><th>业务员</th><th>开单日期</th>
                         <th class="text-end">PI 数量</th><th class="text-end">已装数量</th>
-                        <th class="text-end">箱数</th><th>状态</th><th class="text-end">操作</th>
+                        <th class="text-end">批次 / 箱数</th><th>状态</th><th class="text-end">操作</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -87,7 +87,7 @@
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{{ ns.pi_qty }}</td>
                         <td class="text-end">{{ ns.packed_qty if pi.packing_list else '-' }}</td>
-                        <td class="text-end">{{ pi.packing_list.boxes|length if pi.packing_list else '-' }}</td>
+                        <td class="text-end">{% if pi.packing_list %}{{ pi.packing_list.batches|length }} 批 / {{ pi.packing_list.boxes|length }} 箱{% else %}-{% endif %}</td>
                         <td>
                             {% if not pi.packing_list %}<span class="badge bg-secondary">未创建</span>
                             {% elif pi.packing_list.is_completed %}<span class="badge bg-success">已完成</span>

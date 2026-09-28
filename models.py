@@ -665,10 +665,49 @@ class PackingList(db.Model):
         'PackingBox', backref='packing_list', lazy=True,
         cascade='all, delete-orphan', order_by='PackingBox.sort_order',
     )
+    batches = db.relationship(
+        'PackingBatch', backref='packing_list', lazy=True,
+        cascade='all, delete-orphan', order_by='PackingBatch.batch_no',
+    )
 
     @property
     def is_completed(self):
         return self.status == 'completed'
+
+
+class PackingBatch(db.Model):
+    """One independent shipment batch within a PI packing plan."""
+    __tablename__ = 'packing_batches'
+    __table_args__ = (
+        db.UniqueConstraint('packing_list_id', 'batch_no',
+                            name='uq_packing_list_batch_no'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    packing_list_id = db.Column(db.Integer, db.ForeignKey('packing_lists.id'),
+                                nullable=False, index=True)
+    batch_no = db.Column(db.Integer, nullable=False, default=1)
+    status = db.Column(db.String(20), nullable=False, default='draft')
+    packing_date = db.Column(db.Date, nullable=True)
+    planned_shipping_date = db.Column(db.Date, nullable=True)
+    shipping_date = db.Column(db.Date, nullable=True)
+    shipping_address = db.Column(db.Text, default='')
+    contact_name = db.Column(db.String(100), default='')
+    contact_phone = db.Column(db.String(100), default='')
+    shipping_requirements = db.Column(db.Text, default='')
+    tracking_no = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+
+    boxes = db.relationship(
+        'PackingBox', backref='shipment_batch', lazy=True,
+        order_by='PackingBox.sort_order',
+    )
+
+    @property
+    def is_completed(self):
+        return self.status in ('completed', 'shipped')
 
 
 class PackingBox(db.Model):
@@ -681,6 +720,9 @@ class PackingBox(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     packing_list_id = db.Column(db.Integer, db.ForeignKey('packing_lists.id'),
                                 nullable=False, index=True)
+    shipment_batch_id = db.Column(
+        db.Integer, db.ForeignKey('packing_batches.id'), nullable=True, index=True,
+    )
     box_no = db.Column(db.String(50), nullable=False)
     net_weight = db.Column(db.Float, nullable=False, default=0.0)
     gross_weight = db.Column(db.Float, nullable=False, default=0.0)

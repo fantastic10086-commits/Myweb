@@ -75,16 +75,17 @@
         <div class="d-flex align-items-center gap-2 flex-wrap">
             <a href="{{ url_for('packing_list_index') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> 返回</a>
             <h2 class="mb-0"><i class="bi bi-box-seam me-2"></i>装箱单</h2>
-            {% if packing_list and packing_list.is_completed %}<span class="badge bg-success">已完成</span>
-            {% elif packing_list %}<span class="badge bg-warning text-dark">草稿</span>
+            {% if packing_batch and packing_batch.status == 'shipped' %}<span class="badge bg-primary">本批已发货</span>
+            {% elif packing_batch and packing_batch.is_completed %}<span class="badge bg-success">本批已完成</span>
+            {% elif packing_list %}<span class="badge bg-warning text-dark">本批草稿</span>
             {% else %}<span class="badge bg-secondary">未创建</span>{% endif %}
         </div>
         <div class="text-muted mt-2">PI：<strong>{{ pi.pi_number }}</strong> · 客户：{{ pi.customer.name if pi.customer else '-' }} · 业务员：{{ pi.salesperson or '-' }}</div>
     </div>
     {% if packing_list %}
     <div class="d-flex gap-2 flex-wrap justify-content-end">
-        {% if is_admin and (pi.received_amount or 0) > 0 and packing_list.is_completed and not can_edit %}
-        <a href="{{ url_for('packing_list_detail', pi_id=pi.id, edit=1) }}"
+        {% if is_admin and (pi.received_amount or 0) > 0 and packing_batch and packing_batch.is_completed and not can_edit %}
+        <a href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=packing_batch.id, edit=1) }}"
            class="btn btn-primary"
            {% if pi.shipping_completed %}onclick="return confirm('该订单已经登记发货，确认仍要编辑装箱单吗？')"{% endif %}>
             <i class="bi bi-pencil-square"></i> 编辑装箱单
@@ -92,27 +93,48 @@
         {% endif %}
         <div class="btn-group" role="group" aria-label="完整 A4 装箱单导出">
             <span class="btn btn-outline-secondary disabled">完整 A4</span>
-            <a href="{{ url_for('packing_list_export_excel', pi_id=pi.id) }}" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
-            <a href="{{ url_for('packing_list_export_pdf', pi_id=pi.id) }}" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
+            <a href="{{ url_for('packing_list_export_excel', pi_id=pi.id, batch=packing_batch.id) }}" class="btn btn-outline-success"><i class="bi bi-file-earmark-excel"></i> Excel</a>
+            <a href="{{ url_for('packing_list_export_pdf', pi_id=pi.id, batch=packing_batch.id) }}" class="btn btn-outline-danger"><i class="bi bi-file-earmark-pdf"></i> PDF</a>
         </div>
         <div class="btn-group" role="group" aria-label="精简 100×150 装箱单导出">
             <span class="btn btn-outline-secondary disabled">精简 100×150</span>
             <button type="button" class="btn btn-outline-success compact-export-trigger"
                     data-bs-toggle="modal" data-bs-target="#compactExportModal"
                     data-export-format="xlsx"
-                    data-export-url="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id) }}">
+                    data-export-url="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id, batch=packing_batch.id) }}">
                 <i class="bi bi-file-earmark-excel"></i> Excel
             </button>
             <button type="button" class="btn btn-outline-danger compact-export-trigger"
                     data-bs-toggle="modal" data-bs-target="#compactExportModal"
                     data-export-format="pdf"
-                    data-export-url="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id) }}">
+                    data-export-url="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id, batch=packing_batch.id) }}">
                 <i class="bi bi-file-earmark-pdf"></i> PDF
             </button>
         </div>
     </div>
     {% endif %}
 </div>
+
+{% if packing_list %}
+<div class="card mb-3">
+    <div class="card-body d-flex flex-wrap align-items-center gap-2 py-2">
+        <strong class="me-1"><i class="bi bi-truck me-1"></i>发货批次</strong>
+        {% for batch in packing_list.batches %}
+        <a class="btn btn-sm {% if packing_batch and batch.id == packing_batch.id %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+           href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=batch.id, edit=1 if can_edit else None) }}">
+            第 {{ batch.batch_no }} 批
+            {% if batch.status == 'shipped' %}· 已发货{% elif batch.is_completed %}· 已完成{% else %}· 草稿{% endif %}
+        </a>
+        {% endfor %}
+        {% if is_admin and (pi.received_amount or 0) > 0 %}
+        <form method="post" action="{{ url_for('packing_batch_create', pi_id=pi.id) }}" class="ms-auto">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-outline-primary" type="submit"><i class="bi bi-plus-lg"></i> 新增发货批次</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 {% if packing_list and (pi.received_amount or 0) <= 0 %}
 <div class="alert alert-warning">
@@ -122,6 +144,20 @@
 
 {% if can_edit %}
 <div id="packingAlert" class="alert d-none" role="alert"></div>
+<div class="card mb-3">
+    <div class="card-header fw-bold">第 {{ packing_data.batch_no }} 批发货信息</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">计划发货日期</label><input type="date" id="plannedShippingDate" class="form-control" value="{{ packing_data.planned_shipping_date }}"></div>
+            <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" class="form-control" value="{{ packing_data.shipping_date }}"></div>
+            <div class="col-md-4"><label class="form-label">物流单号</label><input id="trackingNo" class="form-control" value="{{ packing_data.tracking_no }}"></div>
+            <div class="col-md-6"><label class="form-label">本批收货地址</label><textarea id="shippingAddress" class="form-control" rows="2">{{ packing_data.shipping_address }}</textarea></div>
+            <div class="col-md-3"><label class="form-label">联系人</label><input id="shippingContact" class="form-control" value="{{ packing_data.contact_name }}"></div>
+            <div class="col-md-3"><label class="form-label">联系电话</label><input id="shippingPhone" class="form-control" value="{{ packing_data.contact_phone }}"></div>
+            <div class="col-12"><label class="form-label">本批发货要求</label><textarea id="shippingRequirements" class="form-control" rows="2" placeholder="例如：指定货代、标签、包装或送仓要求">{{ packing_data.shipping_requirements }}</textarea></div>
+        </div>
+    </div>
+</div>
 <div class="card packing-overview-card mb-3">
     <div class="card-body">
         <div class="row g-3 align-items-center">
@@ -213,10 +249,10 @@
 
 <div class="card packing-sticky-actions">
     <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
-        <span class="text-muted small">草稿允许部分装箱；“完成装箱单”要求每项产品的装箱数量与 PI 完全一致。</span>
+        <span class="text-muted small">每个批次可装部分数量；各批次累计数量不能超过 PI 数量。</span>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-outline-primary packing-save" data-action="draft"><i class="bi bi-save"></i> 保存草稿</button>
-            <button type="button" class="btn btn-success packing-save" data-action="complete"><i class="bi bi-check-lg"></i> 保存并完成</button>
+            <button type="button" class="btn btn-success packing-save" data-action="complete"><i class="bi bi-check-lg"></i> 保存并完成本批</button>
         </div>
     </div>
 </div>
@@ -226,12 +262,22 @@
     <div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>管理员尚未创建这份装箱单。</div>
     {% else %}
     <div class="alert alert-light border">
-        <i class="bi bi-eye me-1"></i>当前为只读查看。装箱日期：<strong>{{ packing_list.packing_date.strftime('%Y-%m-%d') if packing_list.packing_date else '-' }}</strong>
+        <i class="bi bi-eye me-1"></i>当前为只读查看。第 {{ packing_batch.batch_no }} 批 · 装箱日期：<strong>{{ packing_batch.packing_date.strftime('%Y-%m-%d') if packing_batch and packing_batch.packing_date else '-' }}</strong>
+        · 计划发货：{{ packing_batch.planned_shipping_date.strftime('%Y-%m-%d') if packing_batch and packing_batch.planned_shipping_date else '-' }}
+        · 实际发货：{{ packing_batch.shipping_date.strftime('%Y-%m-%d') if packing_batch and packing_batch.shipping_date else '-' }}
         {% if packing_list.updated_at %}
         · 最后修改：{{ packing_list.updated_by or packing_list.created_by or '-' }}，{{ packing_list.updated_at.strftime('%Y-%m-%d %H:%M') }}
         {% endif %}
     </div>
-    {% for box in packing_list.boxes %}
+    {% if packing_batch and (packing_batch.shipping_address or packing_batch.shipping_requirements or packing_batch.tracking_no) %}
+    <div class="card mb-3"><div class="card-body small">
+        <div><strong>收货地址：</strong>{{ packing_batch.shipping_address or '-' }}</div>
+        <div><strong>联系人：</strong>{{ packing_batch.contact_name or '-' }} {{ packing_batch.contact_phone or '' }}</div>
+        <div><strong>发货要求：</strong>{{ packing_batch.shipping_requirements or '-' }}</div>
+        <div><strong>物流单号：</strong>{{ packing_batch.tracking_no or '-' }}</div>
+    </div></div>
+    {% endif %}
+    {% for box in packing_batch.boxes if packing_batch %}
     <div class="card packing-box-card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
             <strong>箱号：{{ box.box_no }}</strong><span class="text-muted">{{ box.items|length }} 项产品</span>
@@ -734,7 +780,7 @@
                 const productTd = document.createElement('div'); productTd.className='packing-min-width-0 flex-grow-1';
                 const product = products.find(row => Number(row.id) === productId(item.pi_item_id));
                 const productName = document.createElement('div'); productName.className='packing-product-name'; productName.textContent=product ? product.name : '产品已不存在';
-                const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `PI 数量 ${product.quantity}`].filter(Boolean).join(' · ') : '';
+                const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `本批最多 ${product.quantity}`, product.other_batch_quantity ? `其他批已装 ${product.other_batch_quantity}` : ''].filter(Boolean).join(' · ') : '';
                 productTd.append(productName, productMeta);
                 const qtyTd=document.createElement('div'); qtyTd.style.width='105px'; const qtyLabel=document.createElement('label'); qtyLabel.className='form-label small mb-1'; qtyLabel.textContent='装箱数量'; const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
                 qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
@@ -791,7 +837,6 @@
             const required = integerValue(product.quantity);
             const actual = packed[Number(product.id)] || 0;
             if (actual > required) return `产品“${product.name}”超装 ${actual - required} 件，请调整后再保存。`;
-            if (action === 'complete' && actual !== required) return `产品“${product.name}”尚有 ${required - actual} 件未装箱，不能完成装箱单。`;
         }
         return null;
     }
@@ -799,11 +844,11 @@
     async function save(action) {
         const validationError = validateBeforeSave(action);
         if (validationError) return showAlert(validationError, 'warning');
-        if (action === 'complete' && !confirm('确认所有产品和箱数均已核对，并完成这份装箱单吗？')) return;
+        if (action === 'complete' && !confirm('确认本批次的产品、数量和箱数均已核对吗？')) return;
         const buttons=[...document.querySelectorAll('.packing-save')]; buttons.forEach(button=>button.disabled=true);
         alertBox.classList.add('d-none');
         try {
-            const response=await fetch({{ url_for('packing_list_save', pi_id=pi.id)|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,version,packing_date:document.getElementById('packingDate').value,boxes})});
+            const response=await fetch({{ url_for('packing_list_save', pi_id=pi.id)|tojson }},{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,version,batch_id:data.batch_id,packing_date:document.getElementById('packingDate').value,planned_shipping_date:document.getElementById('plannedShippingDate').value,shipping_date:document.getElementById('shippingDate').value,shipping_address:document.getElementById('shippingAddress').value,contact_name:document.getElementById('shippingContact').value,contact_phone:document.getElementById('shippingPhone').value,shipping_requirements:document.getElementById('shippingRequirements').value,tracking_no:document.getElementById('trackingNo').value,boxes})});
             const result=await response.json();
             if(!response.ok || !result.success) throw new Error(result.error || '保存失败。');
             version=result.data.version; boxes=result.data.boxes;
