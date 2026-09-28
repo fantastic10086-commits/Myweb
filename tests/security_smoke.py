@@ -3046,6 +3046,9 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('public', cache_control)
         self.assertIn('max-age=3600', cache_control)
         self.assertNotIn('no-store', cache_control)
+        stylesheet = response.get_data(as_text=True)
+        self.assertIn('input[type="number"]::-webkit-inner-spin-button', stylesheet)
+        self.assertIn('-moz-appearance: textfield', stylesheet)
 
     def test_product_thumbnail_is_small_and_privately_cacheable(self):
         from PIL import Image

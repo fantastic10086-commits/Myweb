@@ -99,6 +99,17 @@ footer {
     box-shadow: 0 0 0 0.2rem rgba(26, 58, 92, 0.15);
 }
 
+/* Keep numeric validation while removing browser stepper arrows. */
+input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 /* Print-friendly tweaks */
 @media print {
     .navbar, footer, .btn, form, .alert {
