@@ -4621,6 +4621,15 @@ class SecuritySmokeTests(unittest.TestCase):
                 f'/packing-list/{self.alice_pi}?batch={batch2_id}'
             ).get_data(as_text=True)
             self.assertIn('第 2 批发货信息', detail2)
+            self.assertIn('id="packingShipmentDetails" class="collapse"', detail2)
+            self.assertIn('data-bs-target="#packingShipmentDetails"', detail2)
+            expanded_detail = self.client.get(
+                f'/packing-list/{self.alice_pi}?batch={batch2_id}&show_batch=1'
+            ).get_data(as_text=True)
+            self.assertIn(
+                'id="packingShipmentDetails" class="collapse show"',
+                expanded_detail,
+            )
             self.assertIn('第一批地址', self.client.get(
                 f'/packing-list/{self.alice_pi}?batch={batch1_id}'
             ).get_data(as_text=True))

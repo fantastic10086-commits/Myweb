@@ -55,6 +55,8 @@
     .packing-shipment-card .card-body { padding:.65rem .8rem; }
     .packing-shipment-card .form-label { margin-bottom:.2rem; font-size:.82rem; color:#495057; }
     .packing-shipment-card textarea.form-control { min-height:38px; resize:vertical; }
+    .packing-batch-toggle .bi-chevron-down { transition:transform .18s ease; }
+    .packing-batch-toggle[aria-expanded="true"] .bi-chevron-down { transform:rotate(180deg); }
     @media (min-width: 1200px) {
         .packing-side-column { flex:1 1 0 !important; width:0; min-width:0; max-width:none; }
     }
@@ -122,10 +124,15 @@
 {% if packing_list %}
 <div class="card mb-3">
     <div class="card-body d-flex flex-wrap align-items-center gap-2 py-2">
-        <strong class="me-1"><i class="bi bi-truck me-1"></i>发货批次</strong>
+        <button type="button" class="btn btn-sm btn-link text-dark text-decoration-none fw-bold p-0 me-1 packing-batch-toggle"
+                data-bs-toggle="collapse" data-bs-target="#packingShipmentDetails"
+                aria-expanded="{{ 'true' if request.args.get('show_batch') == '1' else 'false' }}"
+                aria-controls="packingShipmentDetails">
+            <i class="bi bi-truck me-1"></i>发货批次 <i class="bi bi-chevron-down ms-1"></i>
+        </button>
         {% for batch in packing_list.batches %}
         <a class="btn btn-sm {% if packing_batch and batch.id == packing_batch.id %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-           href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=batch.id, edit=1 if can_edit else None) }}">
+           href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=batch.id, edit=1 if can_edit else None, show_batch=1) }}">
             第 {{ batch.batch_no }} 批
             {% if batch.status == 'shipped' %}· 已发货{% elif batch.is_completed %}· 已完成{% else %}· 草稿{% endif %}
         </a>
@@ -148,10 +155,11 @@
 
 {% if can_edit %}
 <div id="packingAlert" class="alert d-none" role="alert"></div>
-<div class="card mb-3 packing-shipment-card">
-    <div class="card-header fw-bold small">第 {{ packing_data.batch_no }} 批发货信息</div>
-    <div class="card-body">
-        <div class="row g-2">
+<div id="packingShipmentDetails" class="collapse{% if request.args.get('show_batch') == '1' %} show{% endif %}">
+    <div class="card mb-3 packing-shipment-card">
+        <div class="card-header fw-bold small">第 {{ packing_data.batch_no }} 批发货信息</div>
+        <div class="card-body">
+            <div class="row g-2">
             <div class="col-md-4"><label class="form-label">计划发货日期</label><input type="date" id="plannedShippingDate" class="form-control form-control-sm" value="{{ packing_data.planned_shipping_date }}"></div>
             <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" class="form-control form-control-sm" value="{{ packing_data.shipping_date }}"></div>
             <div class="col-md-4"><label class="form-label">物流单号</label><input id="trackingNo" class="form-control form-control-sm" value="{{ packing_data.tracking_no }}"></div>
@@ -159,6 +167,7 @@
             <div class="col-md-3"><label class="form-label">联系人</label><input id="shippingContact" class="form-control form-control-sm" value="{{ packing_data.contact_name }}"></div>
             <div class="col-md-3"><label class="form-label">联系电话</label><input id="shippingPhone" class="form-control form-control-sm" value="{{ packing_data.contact_phone }}"></div>
             <div class="col-12"><label class="form-label">本批发货要求</label><textarea id="shippingRequirements" class="form-control form-control-sm" rows="1" placeholder="例如：指定货代、标签、包装或送仓要求">{{ packing_data.shipping_requirements }}</textarea></div>
+            </div>
         </div>
     </div>
 </div>

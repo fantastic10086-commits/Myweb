@@ -5951,7 +5951,9 @@ def packing_batch_create(pi_id):
     packing_list.updated_by = user.username
     db.session.commit()
     flash(f'已创建第 {next_no} 批发货，请填写本批信息并装箱。', 'success')
-    return redirect(url_for('packing_list_detail', pi_id=pi.id, batch=batch.id))
+    return redirect(url_for(
+        'packing_list_detail', pi_id=pi.id, batch=batch.id, show_batch=1,
+    ))
 
 
 @app.route('/api/packing-list/<int:pi_id>', methods=['POST'])
