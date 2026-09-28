@@ -73,11 +73,12 @@
                 </thead>
                 <tbody>
                     {% for pi in pis %}
-                    {% set ns = namespace(pi_qty=0, packed_qty=0) %}
+                    {% set ns = namespace(pi_qty=0, packed_qty=0, box_count=0) %}
                     {% for item in pi.items %}{% set ns.pi_qty = ns.pi_qty + (item.quantity or 0) %}{% endfor %}
                     {% if pi.packing_list %}
                         {% for box in pi.packing_list.boxes %}
-                            {% for item in box.items %}{% set ns.packed_qty = ns.packed_qty + (item.quantity or 0) %}{% endfor %}
+                            {% set ns.box_count = ns.box_count + (box.carton_count or 1) %}
+                            {% for item in box.items %}{% set ns.packed_qty = ns.packed_qty + ((item.quantity or 0) * (box.carton_count or 1)) %}{% endfor %}
                         {% endfor %}
                     {% endif %}
                     <tr>
@@ -87,7 +88,7 @@
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{{ ns.pi_qty }}</td>
                         <td class="text-end">{{ ns.packed_qty if pi.packing_list else '-' }}</td>
-                        <td class="text-end">{% if pi.packing_list %}{{ pi.packing_list.batches|length }} 批 / {{ pi.packing_list.boxes|length }} 箱{% else %}-{% endif %}</td>
+                        <td class="text-end">{% if pi.packing_list %}{{ pi.packing_list.batches|length }} 批 / {{ ns.box_count }} 箱{% else %}-{% endif %}</td>
                         <td>
                             {% if not pi.packing_list %}<span class="badge bg-secondary">未创建</span>
                             {% elif pi.packing_list.is_completed %}<span class="badge bg-success">已完成</span>

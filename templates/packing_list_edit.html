@@ -293,7 +293,7 @@
     {% for box in packing_batch.boxes if packing_batch %}
     <div class="card packing-box-card mb-3">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <strong>箱号：{{ box.box_no }}</strong><span class="text-muted">{{ box.items|length }} 项产品</span>
+            <strong>箱号：{{ box.box_no }}{% if (box.carton_count or 1) > 1 %}–{{ (box.box_no|int) + (box.carton_count or 1) - 1 }}（相同 {{ box.carton_count }} 箱）{% endif %}</strong><span class="text-muted">{{ box.items|length }} 项产品</span>
         </div>
         <div class="card-body pb-2">
             <div class="row g-2 small mb-3">
@@ -306,7 +306,7 @@
             </div>
             <div class="table-responsive">
                 <table class="table table-sm packing-readonly-table mb-0">
-                    <thead class="table-light"><tr><th>产品</th><th>产品编码</th><th>规格</th><th class="text-end">装箱数量</th></tr></thead>
+                    <thead class="table-light"><tr><th>产品</th><th>产品编码</th><th>规格</th><th class="text-end">每箱数量</th></tr></thead>
                     <tbody>{% for item in box.items %}<tr><td class="fw-bold">{{ item.product_name }}</td><td>{{ item.product_code or '-' }}</td><td>{{ item.specification or '-' }}</td><td class="text-end">{{ item.quantity }}</td></tr>{% endfor %}</tbody>
                 </table>
             </div>
@@ -333,7 +333,7 @@
                     {% for box in packing_list.boxes %}
                     <label class="border rounded px-3 py-2 m-0 d-flex align-items-center gap-2">
                         <input class="form-check-input compact-export-box m-0 flex-shrink-0" type="checkbox" value="{{ loop.index }}" checked>
-                        <span>第 {{ loop.index }} 箱 · 箱号 {{ box.box_no }}</span>
+                        <span>{% if (box.carton_count or 1) > 1 %}箱号 {{ box.box_no }}–{{ (box.box_no|int) + (box.carton_count or 1) - 1 }} · 相同 {{ box.carton_count }} 箱{% else %}第 {{ box.box_no }} 箱 · 箱号 {{ box.box_no }}{% endif %}</span>
                     </label>
                     {% endfor %}
                 </div>
@@ -430,8 +430,17 @@
     const numberValue = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
     const integerValue = (value) => Number.isInteger(Number(value)) ? Number(value) : 0;
     const productId = (value) => value === '' || value === null || value === undefined ? '' : Number(value);
-    const normalizeBoxNumbers = () => boxes.forEach((box, index) => { box.box_no = String(index + 1); });
-    const emptyBox = () => ({box_no:String(boxes.length + 1), net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
+    const cartonCount = (box) => Math.max(1, integerValue(box.carton_count) || 1);
+    const physicalBoxCount = () => boxes.reduce((total, box) => total + cartonCount(box), 0);
+    const normalizeBoxNumbers = () => {
+        let nextNumber = 1;
+        boxes.forEach(box => {
+            box.carton_count = cartonCount(box);
+            box.box_no = String(nextNumber);
+            nextNumber += cartonCount(box);
+        });
+    };
+    const emptyBox = () => ({box_no:String(physicalBoxCount() + 1), carton_count:1, net_weight:0, gross_weight:0, length_cm:0, width_cm:0, height_cm:0, volume_cbm:0, shipping_mark:'', note:'', items:[]});
     if (!boxes.length) boxes.push(emptyBox());
     normalizeBoxNumbers();
     selectedTargetBox = boxes.length - 1;
@@ -445,13 +454,21 @@
         const packed = Object.fromEntries(products.map(product => [Number(product.id), 0]));
         boxes.forEach(box => (box.items || []).forEach(item => {
             const id = productId(item.pi_item_id);
-            if (Object.prototype.hasOwnProperty.call(packed, id)) packed[id] += numberValue(item.quantity);
+            if (Object.prototype.hasOwnProperty.call(packed, id)) packed[id] += numberValue(item.quantity) * cartonCount(box);
         }));
         return packed;
     }
 
-    function boxItemCount(box) {
+    function boxItemCountPerCarton(box) {
         return (box.items || []).reduce((total, item) => total + integerValue(item.quantity), 0);
+    }
+
+    function boxItemCount(box) { return boxItemCountPerCarton(box) * cartonCount(box); }
+
+    function boxNumberLabel(box) {
+        const start = integerValue(box.box_no) || 1;
+        const end = start + cartonCount(box) - 1;
+        return start === end ? String(start) : `${start}–${end}`;
     }
 
     function field(label, type, value, key, boxIndex, options={}) {
@@ -461,7 +478,7 @@
         labelEl.className = 'form-label'; labelEl.textContent = label;
         const input = document.createElement('input');
         input.type = type; input.className = 'form-control form-control-sm'; input.value = value ?? '';
-        if (type === 'number') { input.min = '0'; input.step = options.step || '0.01'; }
+        if (type === 'number') { input.min = String(options.min ?? 0); input.step = options.step || '0.01'; }
         input.addEventListener('input', () => {
             boxes[boxIndex][key] = input.value;
             if (key === 'box_no') {
@@ -475,6 +492,11 @@
             }
             updateBoxSummary(boxIndex);
             renderOverview();
+        });
+        if (key === 'carton_count') input.addEventListener('change', () => {
+            boxes[boxIndex].carton_count = cartonCount(boxes[boxIndex]);
+            normalizeBoxNumbers();
+            renderBoxes();
         });
         wrap.append(labelEl, input); return wrap;
     }
@@ -490,18 +512,21 @@
         progressBar.style.width = `${progress}%`;
         progressBar.className = `progress-bar ${hasOverpacked ? 'bg-danger' : progress === 100 ? 'bg-success' : ''}`;
         progressBar.setAttribute('aria-valuenow', String(progress));
-        document.getElementById('packingBoxCount').textContent = boxes.length;
-        document.getElementById('packingNetTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.net_weight), 0).toFixed(2)} kg`;
-        document.getElementById('packingGrossTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.gross_weight), 0).toFixed(2)} kg`;
-        document.getElementById('packingVolumeTotal').textContent = `${boxes.reduce((total, box) => total + boxVolume(box), 0).toFixed(4)} m³`;
+        document.getElementById('packingBoxCount').textContent = physicalBoxCount();
+        document.getElementById('packingNetTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.net_weight) * cartonCount(box), 0).toFixed(2)} kg`;
+        document.getElementById('packingGrossTotal').textContent = `${boxes.reduce((total, box) => total + numberValue(box.gross_weight) * cartonCount(box), 0).toFixed(2)} kg`;
+        document.getElementById('packingVolumeTotal').textContent = `${boxes.reduce((total, box) => total + boxVolume(box) * cartonCount(box), 0).toFixed(4)} m³`;
     }
 
     function updateBoxSummary(boxIndex) {
         const box = boxes[boxIndex];
         const title = document.querySelector(`[data-box-title="${boxIndex}"]`);
         const meta = document.querySelector(`[data-box-meta="${boxIndex}"]`);
-        if (title) title.textContent = `第 ${boxIndex + 1} 箱 · 箱号 ${box.box_no || '未填写'}`;
-        if (meta) meta.textContent = `${box.items.length} 项 · ${boxItemCount(box)} 件 · 净重 ${numberValue(box.net_weight).toFixed(2)} kg · 毛重 ${numberValue(box.gross_weight).toFixed(2)} kg · ${boxVolume(box).toFixed(4)} m³`;
+        const copies = cartonCount(box);
+        if (title) title.textContent = copies > 1 ? `箱号 ${boxNumberLabel(box)} · 相同 ${copies} 箱` : `第 ${box.box_no || boxIndex + 1} 箱 · 箱号 ${box.box_no || '未填写'}`;
+        if (meta) meta.textContent = copies > 1
+            ? `${box.items.length} 项 · 每箱 ${boxItemCountPerCarton(box)} 件 × ${copies} 箱 = ${boxItemCount(box)} 件 · 总净重 ${(numberValue(box.net_weight) * copies).toFixed(2)} kg · 总毛重 ${(numberValue(box.gross_weight) * copies).toFixed(2)} kg · ${(boxVolume(box) * copies).toFixed(4)} m³`
+            : `${box.items.length} 项 · ${boxItemCount(box)} 件 · 净重 ${numberValue(box.net_weight).toFixed(2)} kg · 毛重 ${numberValue(box.gross_weight).toFixed(2)} kg · ${boxVolume(box).toFixed(4)} m³`;
     }
 
     function updateSelectionSummary() {
@@ -542,14 +567,14 @@
     function finishBoxAndCreateNext(boxIndex) {
         const box = boxes[boxIndex];
         if (!box || !box.items.length) return showAlert('当前箱子还没有产品，不能完成。', 'warning');
-        if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
+        if (physicalBoxCount() >= 200) return showAlert('一个发货批次最多包含 200 个实际箱子。', 'warning');
         boxes.push(emptyBox());
         normalizeBoxNumbers();
         selectedTargetBox=boxes.length-1;
         expandedBoxes.clear();
         expandedBoxes.add(selectedTargetBox);
         renderBoxes();
-        showAlert(`第 ${boxIndex + 1} 箱已完成，已自动创建第 ${selectedTargetBox + 1} 箱。`, 'success', false);
+        showAlert(`箱号 ${boxNumberLabel(box)} 已完成，已自动创建第 ${boxes[selectedTargetBox].box_no} 箱。`, 'success', false);
         scrollToBox(selectedTargetBox);
     }
 
@@ -561,18 +586,20 @@
         boxes.forEach((box, index) => {
             const option = document.createElement('option');
             option.value = String(index);
-            option.textContent = `第 ${index + 1} 箱（箱号 ${box.box_no || '未填写'}）`;
+            option.textContent = cartonCount(box) > 1 ? `箱号 ${boxNumberLabel(box)}（相同 ${cartonCount(box)} 箱）` : `第 ${box.box_no || index + 1} 箱`;
             option.selected = index === selectedTargetBox;
             targetBoxSelect.append(option);
         });
         const batchButton = document.getElementById('batchAddProducts');
         const allButton = document.getElementById('addAllRemainingProducts');
         if (selectedTargetBox !== null && boxes[selectedTargetBox]) {
+            const targetBox = boxes[selectedTargetBox];
+            const targetText = cartonCount(targetBox) > 1 ? `箱号 ${boxNumberLabel(targetBox)}` : `第 ${targetBox.box_no} 箱`;
             transferPanel.classList.remove('d-none');
-            targetLabel.textContent = `目标：第 ${selectedTargetBox + 1} 箱`;
+            targetLabel.textContent = `目标：${targetText}`;
             if (batchButton) {
                 batchButton.disabled = false;
-                batchButton.innerHTML = `放入第 ${selectedTargetBox + 1} 箱<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>`;
+                batchButton.innerHTML = `放入${targetText}<br><i class="bi bi-arrow-right packing-transfer-arrow"></i>`;
             }
             if (allButton) allButton.disabled = false;
         } else {
@@ -601,6 +628,8 @@
 
     function renderPendingProducts() {
         const packed = packedQuantities();
+        const targetCopies = selectedTargetBox !== null && boxes[selectedTargetBox]
+            ? cartonCount(boxes[selectedTargetBox]) : 1;
         const query = productSearch.value.trim().toLocaleLowerCase();
         const allProducts = products.map(product => ({
             ...product,
@@ -622,9 +651,13 @@
                 selectedProductQuantities.delete(id);
                 return;
             }
+            const maxPerCarton = Math.floor(product.remaining / targetCopies);
             const rememberedQuantity = integerValue(selectedProductQuantities.get(id));
-            if (rememberedQuantity <= 0 || rememberedQuantity > product.remaining) {
-                selectedProductQuantities.set(id, product.remaining);
+            if (maxPerCarton <= 0) {
+                selectedProductIds.delete(id);
+                selectedProductQuantities.delete(id);
+            } else if (rememberedQuantity <= 0 || rememberedQuantity > maxPerCarton) {
+                selectedProductQuantities.set(id, maxPerCarton);
             }
         });
         updateSelectionSummary();
@@ -641,15 +674,16 @@
             return;
         }
         visibleProducts.forEach(product => {
+            const selectablePerCarton = Math.floor(product.remaining / targetCopies);
             const card = document.createElement('div');
             card.className = `packing-pending-item ${selectedProductIds.has(Number(product.id)) ? 'is-selected' : ''} ${product.remaining === 0 ? 'is-complete' : product.remaining < 0 ? 'border-danger bg-danger-subtle' : ''}`;
             const top = document.createElement('div'); top.className = 'd-flex align-items-start gap-2';
-            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = product.remaining <= 0; check.checked = selectedProductIds.has(Number(product.id));
+            const check = document.createElement('input'); check.type = 'checkbox'; check.className = 'form-check-input mt-1 pending-product-check'; check.value = product.id; check.disabled = selectablePerCarton <= 0; check.checked = selectedProductIds.has(Number(product.id));
             check.addEventListener('change', () => {
                 const id = Number(product.id);
                 if (check.checked) {
                     selectedProductIds.add(id);
-                    if (!selectedProductQuantities.has(id)) selectedProductQuantities.set(id, product.remaining);
+                    if (!selectedProductQuantities.has(id)) selectedProductQuantities.set(id, Math.floor(product.remaining / targetCopies));
                 } else {
                     selectedProductIds.delete(id);
                     selectedProductQuantities.delete(id);
@@ -668,8 +702,9 @@
             content.append(name, code, state); top.append(check, sequence, thumb, content);
             if (product.remaining > 0) {
                 const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm packing-inline-quantity';
-                const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = '数量';
-                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(product.remaining); qty.step = '1'; qty.value = String(selectedProductQuantities.get(Number(product.id)) || product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id);
+                const maxPerCarton = Math.floor(product.remaining / targetCopies);
+                const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = targetCopies > 1 ? '每箱' : '数量';
+                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(Math.max(maxPerCarton, 1)); qty.step = '1'; qty.value = String(selectedProductQuantities.get(Number(product.id)) || Math.max(maxPerCarton, 1)); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id); qty.disabled = maxPerCarton <= 0;
                 qty.addEventListener('input', () => {
                     const id = Number(product.id);
                     selectedProductQuantities.set(id, qty.value);
@@ -702,7 +737,8 @@
             finishedToggle.className = 'packing-finished-group-toggle d-flex align-items-center justify-content-between gap-2';
             finishedToggle.setAttribute('aria-expanded', String(finishedBoxesVisible));
             const finishedPieces = finishedIndexes.reduce((total, index) => total + boxItemCount(boxes[index]), 0);
-            finishedToggle.innerHTML = `<span class="fw-bold"><i class="bi ${finishedBoxesVisible ? 'bi-chevron-down' : 'bi-chevron-right'} me-2"></i>已完成箱子（${finishedIndexes.length} 箱）</span><span class="small text-muted">共 ${finishedPieces} 件 · 点击${finishedBoxesVisible ? '收起' : '展开'}</span>`;
+            const finishedCartons = finishedIndexes.reduce((total, index) => total + cartonCount(boxes[index]), 0);
+            finishedToggle.innerHTML = `<span class="fw-bold"><i class="bi ${finishedBoxesVisible ? 'bi-chevron-down' : 'bi-chevron-right'} me-2"></i>已完成箱子（${finishedCartons} 箱）</span><span class="small text-muted">共 ${finishedPieces} 件 · 点击${finishedBoxesVisible ? '收起' : '展开'}</span>`;
             finishedGroupBody = document.createElement('div');
             finishedGroupBody.className = 'packing-finished-group-body';
             finishedGroupBody.hidden = !finishedBoxesVisible;
@@ -774,12 +810,14 @@
             const body = document.createElement('div'); body.className='card-body packing-box-body p-2'; body.hidden = !isExpanded;
             const measureFields = document.createElement('div'); measureFields.className='row g-2 mb-2 packing-measure-fields';
             measureFields.append(
+                field('相同箱数','number',box.carton_count,'carton_count',boxIndex,{className:'col',step:'1',min:1}),
                 field('净重 N.W.（kg）','number',box.net_weight,'net_weight',boxIndex,{className:'col'}),
                 field('毛重 G.W.（kg）','number',box.gross_weight,'gross_weight',boxIndex,{className:'col'}),
                 field('长（cm）','number',box.length_cm,'length_cm',boxIndex,{className:'col'}),
                 field('宽（cm）','number',box.width_cm,'width_cm',boxIndex,{className:'col'}),
                 field('高（cm）','number',box.height_cm,'height_cm',boxIndex,{className:'col'})
             );
+            const cartonHint = document.createElement('div'); cartonHint.className='small text-muted mb-2'; cartonHint.textContent='相同箱数用于产品、重量、尺寸、唛头和备注完全一致的箱子；下方数量为每箱数量。';
             const noteFields = document.createElement('div'); noteFields.className='row g-2 mb-2';
             noteFields.append(
                 field('唛头','text',box.shipping_mark,'shipping_mark',boxIndex,{className:'col-6'}),
@@ -795,7 +833,7 @@
                 const productName = document.createElement('div'); productName.className='packing-product-name'; productName.textContent=product ? product.name : '产品已不存在';
                 const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `本批最多 ${product.quantity}`, product.other_batch_quantity ? `其他批已装 ${product.other_batch_quantity}` : ''].filter(Boolean).join(' · ') : '';
                 productTd.append(productName, productMeta);
-                const qtyTd=document.createElement('div'); qtyTd.style.width='105px'; const qtyLabel=document.createElement('label'); qtyLabel.className='form-label small mb-1'; qtyLabel.textContent='装箱数量'; const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
+                const qtyTd=document.createElement('div'); qtyTd.style.width='105px'; const qtyLabel=document.createElement('label'); qtyLabel.className='form-label small mb-1'; qtyLabel.textContent='每箱数量'; const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
                 qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
                 qty.addEventListener('change',renderPendingProducts); qtyTd.append(qtyLabel,qty);
                 const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger mt-4'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();});
@@ -811,7 +849,7 @@
             finishBox.addEventListener('click',()=>finishBoxAndCreateNext(boxIndex));
             boxActions.append(clearBox);
             if (boxIndex === boxes.length - 1) boxActions.append(finishBox);
-            body.append(measureFields,noteFields,cbm,itemList,boxActions); card.append(header,body);
+            body.append(measureFields,cartonHint,noteFields,cbm,itemList,boxActions); card.append(header,body);
             if (isFinished && finishedGroupBody) finishedGroupBody.append(card);
             else container.append(card);
             updateBoxSummary(boxIndex);
@@ -831,9 +869,11 @@
         if (!document.getElementById('packingDate').value) return '请填写装箱日期。';
         if (!boxes.length) return '请至少添加一个箱子。';
         normalizeBoxNumbers();
+        if (physicalBoxCount() > 200) return '一个发货批次最多包含 200 个实际箱子。';
         for (let boxIndex = 0; boxIndex < boxes.length; boxIndex += 1) {
             const box = boxes[boxIndex];
-            const boxLabel = `第 ${boxIndex + 1} 箱`;
+            const boxLabel = `箱号 ${boxNumberLabel(box)}`;
+            if (integerValue(box.carton_count) <= 0) return `${boxLabel}的相同箱数必须是大于 0 的整数。`;
             if (numberValue(box.gross_weight) < numberValue(box.net_weight)) return `${boxLabel}的毛重不能小于净重。`;
             if (action === 'complete' && !box.items.length) return `${boxLabel}还没有产品，请先加入产品或删除空箱。`;
             const usedProducts = new Set();
@@ -901,7 +941,8 @@
                 if (!selectedProductQuantities.has(id)) {
                     const product = products.find(row => Number(row.id) === id);
                     const packed = packedQuantities();
-                    selectedProductQuantities.set(id, integerValue(product.quantity) - (packed[id] || 0));
+                    const copies = selectedTargetBox !== null && boxes[selectedTargetBox] ? cartonCount(boxes[selectedTargetBox]) : 1;
+                    selectedProductQuantities.set(id, Math.floor((integerValue(product.quantity) - (packed[id] || 0)) / copies));
                 }
             } else {
                 selectedProductIds.delete(id);
@@ -918,13 +959,15 @@
         if (!selectedProductIds.size) return showAlert('请先勾选需要加入箱子的产品。', 'warning');
         if (selectedTargetBox === null || !expandedBoxes.has(selectedTargetBox) || !boxes[selectedTargetBox]) return showAlert('请先展开要放入产品的箱子。', 'warning');
         const packed = packedQuantities();
+        const copies = cartonCount(boxes[selectedTargetBox]);
         const additions = [];
         for (const id of selectedProductIds) {
             const product = products.find(row => Number(row.id) === id);
             if (!product) continue;
             const remaining = integerValue(product.quantity) - (packed[id] || 0);
-            const quantity = integerValue(selectedProductQuantities.get(id) || remaining);
-            if (quantity <= 0 || quantity > remaining) return showAlert(`产品“${product.name}”的加入数量应为 1 至 ${remaining}。`, 'warning');
+            const quantity = integerValue(selectedProductQuantities.get(id) || Math.floor(remaining / copies));
+            const maxPerCarton = Math.floor(remaining / copies);
+            if (quantity <= 0 || quantity > maxPerCarton) return showAlert(`产品“${product.name}”的每箱加入数量应为 1 至 ${maxPerCarton}。`, 'warning');
             additions.push({id, quantity});
         }
         for (const addition of additions) {
@@ -935,25 +978,26 @@
         }
         clearProductSelection();
         renderBoxes();
-        showAlert(`已将 ${additions.length} 项产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
+        showAlert(`已将 ${additions.length} 项产品加入箱号 ${boxNumberLabel(boxes[selectedTargetBox])}。`, 'success', false);
     });
     document.getElementById('addAllRemainingProducts').addEventListener('click', () => {
         if (selectedTargetBox === null || !expandedBoxes.has(selectedTargetBox) || !boxes[selectedTargetBox]) return showAlert('请先展开要放入产品的箱子。', 'warning');
         const packed = packedQuantities();
-        const additions = products.filter(product => integerValue(product.quantity) > (packed[Number(product.id)] || 0));
+        const copies = cartonCount(boxes[selectedTargetBox]);
+        const additions = products.filter(product => Math.floor((integerValue(product.quantity) - (packed[Number(product.id)] || 0)) / copies) > 0);
         if (!additions.length) return showAlert('当前没有待分配产品。', 'warning');
         additions.forEach(product => {
             const id = Number(product.id);
-            const remaining = integerValue(product.quantity) - (packed[id] || 0);
+            const remaining = Math.floor((integerValue(product.quantity) - (packed[id] || 0)) / copies);
             const existing = boxes[selectedTargetBox].items.find(item => productId(item.pi_item_id) === id);
             if (existing) existing.quantity = integerValue(existing.quantity) + remaining;
             else boxes[selectedTargetBox].items.push({pi_item_id:id, quantity:remaining, note:''});
         });
         renderBoxes();
-        showAlert(`已将全部 ${additions.length} 项剩余产品加入第 ${selectedTargetBox + 1} 箱。`, 'success', false);
+        showAlert(`已将全部 ${additions.length} 项可平均分配的产品加入箱号 ${boxNumberLabel(boxes[selectedTargetBox])}。`, 'success', false);
     });
     document.getElementById('addBoxButton').addEventListener('click',()=>{
-        if (boxes.length >= 200) return showAlert('一份装箱单最多包含 200 个箱子。', 'warning');
+        if (physicalBoxCount() >= 200) return showAlert('一个发货批次最多包含 200 个实际箱子。', 'warning');
         boxes.push(emptyBox());
         selectedTargetBox = boxes.length - 1;
         expandedBoxes.clear();

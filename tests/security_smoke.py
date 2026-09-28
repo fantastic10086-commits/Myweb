@@ -4170,7 +4170,7 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn("const isFinished = boxIndex < boxes.length - 1", editor_html)
             self.assertIn('let finishedBoxesVisible = false', editor_html)
             self.assertIn("finishedGroup.className = 'packing-finished-group'", editor_html)
-            self.assertIn('已完成箱子（${finishedIndexes.length} 箱）', editor_html)
+            self.assertIn('已完成箱子（${finishedCartons} 箱）', editor_html)
             self.assertIn('finishedGroupBody.hidden = !finishedBoxesVisible', editor_html)
             self.assertIn('if (isFinished && finishedGroupBody) finishedGroupBody.append(card)', editor_html)
             self.assertIn("selectedTargetBox = null", editor_html)
@@ -4187,8 +4187,10 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertNotIn("field('箱号 *'", editor_html)
             self.assertIn("body.className='card-body packing-box-body p-2'", editor_html)
             self.assertIn("measureFields.className='row g-2 mb-2 packing-measure-fields'", editor_html)
-            self.assertIn("body.append(measureFields,noteFields,cbm,itemList,boxActions)", editor_html)
+            self.assertIn("body.append(measureFields,cartonHint,noteFields,cbm,itemList,boxActions)", editor_html)
             self.assertGreaterEqual(editor_html.count("{className:'col'}"), 5)
+            self.assertIn("field('相同箱数'", editor_html)
+            self.assertIn("qtyLabel.textContent='每箱数量'", editor_html)
             self.assertEqual(
                 editor_html.count('class="col-xl packing-side-column"'), 2,
             )
@@ -4584,7 +4586,8 @@ class SecuritySmokeTests(unittest.TestCase):
                 batch1_id = packing_list.batches[0].id
                 version = packing_list.version
 
-            def shipment(batch_id, submitted_version, quantity, address, planned):
+            def shipment(batch_id, submitted_version, quantity, address, planned,
+                         carton_count=1):
                 return {
                     'action': 'complete', 'version': submitted_version,
                     'batch_id': batch_id, 'packing_date': '2026-09-28',
@@ -4592,6 +4595,7 @@ class SecuritySmokeTests(unittest.TestCase):
                     'shipping_address': address, 'contact_name': 'Receiver',
                     'contact_phone': '123', 'shipping_requirements': '独立要求',
                     'tracking_no': '', 'boxes': [{
+                        'carton_count': carton_count,
                         'net_weight': 1, 'gross_weight': 2, 'length_cm': 10,
                         'width_cm': 10, 'height_cm': 10, 'shipping_mark': '',
                         'note': '', 'items': [{
@@ -4602,7 +4606,10 @@ class SecuritySmokeTests(unittest.TestCase):
 
             saved1 = self.client.post(
                 f'/api/packing-list/{self.alice_pi}',
-                json=shipment(batch1_id, version, 2, '第一批地址', '2026-10-01'),
+                json=shipment(
+                    batch1_id, version, 1, '第一批地址', '2026-10-01',
+                    carton_count=2,
+                ),
                 headers={'X-CSRFToken': self.token(f'/packing-list/{self.alice_pi}')},
             )
             self.assertEqual(saved1.status_code, 200)
@@ -4613,6 +4620,28 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertIn('当前为只读查看', completed_batch1)
             self.assertIn('重新编辑第 1 批', completed_batch1)
             self.assertNotIn('id="packingBoxes"', completed_batch1)
+            self.assertIn('相同 2 箱', completed_batch1)
+
+            grouped_export = self.client.get(
+                f'/packing-list/{self.alice_pi}/compact-100x150.xlsx?batch={batch1_id}'
+            )
+            self.assertEqual(grouped_export.status_code, 200)
+            grouped_workbook = load_workbook(BytesIO(grouped_export.data))
+            self.assertEqual(len(grouped_workbook.sheetnames), 2)
+            self.assertIn('1/2', str(grouped_workbook.worksheets[0]['C5'].value))
+            self.assertIn('2/2', str(grouped_workbook.worksheets[1]['C5'].value))
+            grouped_workbook.close()
+            grouped_export.close()
+            grouped_full = self.client.get(
+                f'/packing-list/{self.alice_pi}/export.xlsx?batch={batch1_id}'
+            )
+            grouped_full_book = load_workbook(BytesIO(grouped_full.data))
+            grouped_sheet = grouped_full_book['装箱单']
+            self.assertEqual(grouped_sheet['A11'].value, '1-2 (2 cartons)')
+            self.assertEqual(grouped_sheet['E11'].value, 2)
+            self.assertIn('2 箱', str(grouped_sheet.cell(grouped_sheet.max_row, 1).value))
+            grouped_full_book.close()
+            grouped_full.close()
 
             created2 = self.client.post(
                 f'/packing-list/{self.alice_pi}/batches',
@@ -4659,6 +4688,19 @@ class SecuritySmokeTests(unittest.TestCase):
                 )},
             )
             self.assertEqual(saved2.status_code, 200)
+            # Re-saving an earlier grouped batch must keep carton ranges
+            # globally continuous without colliding with a later batch.
+            resaved1 = self.client.post(
+                f'/api/packing-list/{self.alice_pi}',
+                json=shipment(
+                    batch1_id, saved2.get_json()['data']['version'], 1,
+                    '第一批地址', '2026-10-01', carton_count=2,
+                ),
+                headers={'X-CSRFToken': self.token(
+                    f'/packing-list/{self.alice_pi}?batch={batch1_id}&edit=1'
+                )},
+            )
+            self.assertEqual(resaved1.status_code, 200)
             with application.app.app_context():
                 packing_list = PackingList.query.filter_by(pi_id=self.alice_pi).one()
                 self.assertEqual(packing_list.status, 'completed')
@@ -4668,6 +4710,15 @@ class SecuritySmokeTests(unittest.TestCase):
                     ['第一批地址', '第二批地址'],
                 )
                 self.assertEqual(sum(len(row.boxes) for row in packing_list.batches), 2)
+                self.assertEqual(
+                    sum((box.carton_count or 1) for row in packing_list.batches
+                        for box in row.boxes),
+                    3,
+                )
+                self.assertEqual(
+                    [[box.box_no for box in row.boxes] for row in packing_list.batches],
+                    [['1'], ['3']],
+                )
         finally:
             with application.app.app_context():
                 db.session.rollback()

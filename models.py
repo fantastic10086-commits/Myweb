@@ -724,6 +724,9 @@ class PackingBox(db.Model):
         db.Integer, db.ForeignKey('packing_batches.id'), nullable=True, index=True,
     )
     box_no = db.Column(db.String(50), nullable=False)
+    # One record may describe several physically identical cartons. Item
+    # quantities and measurements on the record are values for one carton.
+    carton_count = db.Column(db.Integer, nullable=False, default=1)
     net_weight = db.Column(db.Float, nullable=False, default=0.0)
     gross_weight = db.Column(db.Float, nullable=False, default=0.0)
     length_cm = db.Column(db.Float, nullable=False, default=0.0)

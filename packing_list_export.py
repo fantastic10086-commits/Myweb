@@ -75,6 +75,29 @@ def _compact_sheet_title(index, box_no, used_titles):
     return title
 
 
+def _carton_count(box):
+    """Return a safe physical-carton multiplier for old and new records."""
+    try:
+        return max(1, int(getattr(box, "carton_count", 1) or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _expanded_cartons(boxes, box_indexes=None):
+    """Expand grouped records into one entry per physical carton/label."""
+    selected = None if box_indexes is None else set(box_indexes)
+    expanded = []
+    physical_number = 1
+    for record_index, box in enumerate(boxes):
+        count = _carton_count(box)
+        if selected is None or record_index in selected:
+            expanded.extend((box, number) for number in range(
+                physical_number, physical_number + count
+            ))
+        physical_number += count
+    return expanded, physical_number - 1
+
+
 def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     """Lay out one 100 x 150 mm compact carton page on one worksheet."""
     sheet.sheet_view.showGridLines = False
@@ -206,13 +229,11 @@ def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None):
     workbook.remove(workbook.active)
     used_titles = set()
     boxes = list(packing_list.boxes)
-    selected_indexes = range(len(boxes)) if box_indexes is None else box_indexes
-    for zero_based_index in selected_indexes:
-        box = boxes[zero_based_index]
-        box_index = zero_based_index + 1
+    expanded, total_cartons = _expanded_cartons(boxes, box_indexes)
+    for box, box_index in expanded:
         title = _compact_sheet_title(box_index, box_index, used_titles)
         sheet = workbook.create_sheet(title)
-        _compact_excel_sheet(sheet, pi, packing_list, box, box_index, len(boxes))
+        _compact_excel_sheet(sheet, pi, packing_list, box, box_index, total_cartons)
 
     output = BytesIO()
     workbook.save(output)
@@ -391,10 +412,8 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
     margin = 5 * mm
     content_width = page_width - 2 * margin
     boxes = list(packing_list.boxes)
-    selected_indexes = range(len(boxes)) if box_indexes is None else box_indexes
-    for zero_based_index in selected_indexes:
-        box = boxes[zero_based_index]
-        box_index = zero_based_index + 1
+    expanded, total_cartons = _expanded_cartons(boxes, box_indexes)
+    for box, box_index in expanded:
         document.setFillColor(HexColor(f"#{COMPACT_WHITE}"))
         document.setStrokeColor(HexColor(f"#{COMPACT_BLACK}"))
         document.setLineWidth(0.6)
@@ -410,7 +429,7 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
             document,
             page_width - margin - 4 * mm,
             page_height - 20 * mm,
-            f"Carton {box_index}/{len(boxes)}",
+            f"Carton {box_index}/{total_cartons}",
         )
 
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
@@ -613,21 +632,32 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
 
     row_no = header_row + 1
     total_qty = total_net = total_gross = total_cbm = 0
+    physical_box_count = 0
     for box_index, box in enumerate(packing_list.boxes):
+        carton_count = _carton_count(box)
+        carton_start = physical_box_count + 1
+        physical_box_count += carton_count
+        carton_label = (
+            str(carton_start) if carton_count == 1
+            else f"{carton_start}-{physical_box_count} ({carton_count} cartons)"
+        )
         box_items = list(box.items)
         for item_index, item in enumerate(box_items):
             values = [
-                str(box_index + 1) if item_index == 0 else "",
+                carton_label if item_index == 0 else "",
                 item.product_code,
                 item.product_name,
                 item.specification,
-                int(item.quantity),
-                box.net_weight if item_index == 0 else "",
-                box.gross_weight if item_index == 0 else "",
+                int(item.quantity) * carton_count,
+                ((f"{_compact_number(box.net_weight)} × {carton_count}")
+                 if carton_count > 1 else box.net_weight) if item_index == 0 else "",
+                ((f"{_compact_number(box.gross_weight)} × {carton_count}")
+                 if carton_count > 1 else box.gross_weight) if item_index == 0 else "",
                 box.length_cm if item_index == 0 else "",
                 box.width_cm if item_index == 0 else "",
                 box.height_cm if item_index == 0 else "",
-                box.volume_cbm if item_index == 0 else "",
+                ((f"{_compact_number(box.volume_cbm)} × {carton_count}")
+                 if carton_count > 1 else box.volume_cbm) if item_index == 0 else "",
                 box.shipping_mark if item_index == 0 else "",
                 box.note if item_index == 0 else "",
                 item.note,
@@ -644,15 +674,15 @@ def generate_packing_list_workbook(pi, packing_list, company_name, company_addre
                 if col == 11:
                     cell.number_format = '0.0000'
             sheet.row_dimensions[row_no].height = 32
-            total_qty += int(item.quantity)
+            total_qty += int(item.quantity) * carton_count
             row_no += 1
-        total_net += float(box.net_weight or 0)
-        total_gross += float(box.gross_weight or 0)
-        total_cbm += float(box.volume_cbm or 0)
+        total_net += float(box.net_weight or 0) * carton_count
+        total_gross += float(box.gross_weight or 0) * carton_count
+        total_cbm += float(box.volume_cbm or 0) * carton_count
 
     total_row = row_no
     sheet.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
-    sheet.cell(total_row, 1, f"合计 / Total — {len(packing_list.boxes)} 箱 / cartons").alignment = right
+    sheet.cell(total_row, 1, f"合计 / Total — {physical_box_count} 箱 / cartons").alignment = right
     sheet.cell(total_row, 5, total_qty)
     sheet.cell(total_row, 6, round(total_net, 2))
     sheet.cell(total_row, 7, round(total_gross, 2))

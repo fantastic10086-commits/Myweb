@@ -420,7 +420,10 @@ def _migrate_db():
         },
         'packing_lists': {},  # tables auto-created by create_all
         'packing_batches': {},
-        'packing_boxes': {'shipment_batch_id': ('INTEGER', 'NULL')},
+        'packing_boxes': {
+            'shipment_batch_id': ('INTEGER', 'NULL'),
+            'carton_count': ('INTEGER', '1'),
+        },
         'packing_items': {'note': 'VARCHAR(500)'},
         'customs_documents': {},
         'customs_revisions': {},
@@ -5644,7 +5647,7 @@ def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
             for packed_item in box.items:
                 other_packed[packed_item.pi_item_id] = (
                     other_packed.get(packed_item.pi_item_id, 0)
-                    + int(packed_item.quantity or 0)
+                    + int(packed_item.quantity or 0) * max(int(box.carton_count or 1), 1)
                 )
     pi_items = []
     for item in pi.items:
@@ -5668,7 +5671,8 @@ def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
                        if box.shipment_batch_id == batch.id]
         for box_index, box in enumerate(batch_boxes, 1):
             boxes.append({
-                'box_no': str(box_index),
+                'box_no': str(box.box_no or box_index),
+                'carton_count': max(int(box.carton_count or 1), 1),
                 'net_weight': box.net_weight or 0,
                 'gross_weight': box.gross_weight or 0,
                 'length_cm': box.length_cm or 0,
@@ -5686,6 +5690,7 @@ def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
     elif prefill and pi_items:
         boxes.append({
             'box_no': '1',
+            'carton_count': 1,
             'net_weight': 0,
             'gross_weight': 0,
             'length_cm': 0,
@@ -5708,8 +5713,11 @@ def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
         'batches': [{
             'id': row.id, 'batch_no': row.batch_no, 'status': row.status,
             'packing_date': row.packing_date.isoformat() if row.packing_date else '',
-            'box_count': len([box for box in packing_list.boxes
-                              if box.shipment_batch_id == row.id]),
+            'box_count': sum(
+                max(int(box.carton_count or 1), 1)
+                for box in packing_list.boxes
+                if box.shipment_batch_id == row.id
+            ),
         } for row in (packing_list.batches if packing_list else [])],
         'packing_date': (
             batch.packing_date.isoformat()
@@ -5774,7 +5782,7 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False, limits=None,
     if not isinstance(raw_boxes, list) or not raw_boxes:
         raise ValueError('请至少保留一个箱子。')
     if len(raw_boxes) > 200:
-        raise ValueError('一份装箱单最多包含 200 个箱子。')
+        raise ValueError('一份装箱单最多包含 200 组箱子。')
 
     pi_items = {item.id: item for item in pi.items}
     required = limits or {item.id: int(item.quantity or 0) for item in pi.items}
@@ -5782,12 +5790,19 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False, limits=None,
     result = []
     row_count = 0
 
+    next_box_number = box_number_start + 1
+    physical_box_count = 0
     for box_index, raw_box in enumerate(raw_boxes):
         if not isinstance(raw_box, dict):
             raise ValueError('箱子数据格式不正确。')
         # Carton numbers are derived from the saved display order.  This keeps
         # the editor, stored data and one-page-per-carton exports in sync.
-        box_no = str(box_number_start + box_index + 1)
+        carton_count = _packing_quantity(raw_box.get('carton_count') or 1)
+        physical_box_count += carton_count
+        if physical_box_count > 200:
+            raise ValueError('一个发货批次最多包含 200 个实际箱子。')
+        box_no = str(next_box_number)
+        next_box_number += carton_count
 
         net_weight = _packing_number(raw_box.get('net_weight'), '净重')
         gross_weight = _packing_number(raw_box.get('gross_weight'), '毛重')
@@ -5818,7 +5833,7 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False, limits=None,
                 raise ValueError(f'箱号“{box_no}”中同一产品不能重复。')
             box_seen_items.add(pi_item_id)
             quantity = _packing_quantity(raw_item.get('quantity'))
-            packed[pi_item_id] += quantity
+            packed[pi_item_id] += quantity * carton_count
             if packed[pi_item_id] > required[pi_item_id]:
                 product = pi_items[pi_item_id].product
                 name = product.name if product else f'产品 #{pi_item_id}'
@@ -5836,6 +5851,7 @@ def _validate_packing_boxes(pi, raw_boxes, completing=False, limits=None,
 
         result.append({
             'box_no': box_no,
+            'carton_count': carton_count,
             'net_weight': net_weight,
             'gross_weight': gross_weight,
             'length_cm': length_cm,
@@ -5996,15 +6012,19 @@ def packing_list_save(pi_id):
                 if batch and existing_box.shipment_batch_id == batch.id:
                     continue
                 for packed_item in existing_box.items:
-                    other_packed[packed_item.pi_item_id] += int(packed_item.quantity or 0)
+                    other_packed[packed_item.pi_item_id] += (
+                        int(packed_item.quantity or 0)
+                        * max(int(existing_box.carton_count or 1), 1)
+                    )
         limits = {
             item.id: max(int(item.quantity or 0) - other_packed[item.id], 0)
             for item in pi.items
         }
-        other_box_count = len([
-            box for box in packing_list.boxes
+        other_box_count = sum(
+            max(int(box.carton_count or 1), 1)
+            for box in packing_list.boxes
             if not batch or box.shipment_batch_id != batch.id
-        ]) if packing_list else 0
+        ) if packing_list else 0
         boxes = _validate_packing_boxes(
             pi, payload.get('boxes'), completing=action == 'complete',
             limits=limits, box_number_start=other_box_count,
@@ -6062,7 +6082,11 @@ def packing_list_save(pi_id):
         for box_data in boxes:
             box = PackingBox(
                 shipment_batch_id=batch.id,
-                box_no=box_data['box_no'], net_weight=box_data['net_weight'],
+                # Use a temporary unique value while replacing an earlier
+                # batch. All carton ranges are normalized after insertion.
+                box_no=f'tmp-{batch.id}-{box_data["sort_order"]}-{submitted_version + 1}',
+                carton_count=box_data['carton_count'],
+                net_weight=box_data['net_weight'],
                 gross_weight=box_data['gross_weight'], length_cm=box_data['length_cm'],
                 width_cm=box_data['width_cm'], height_cm=box_data['height_cm'],
                 volume_cbm=box_data['volume_cbm'], shipping_mark=box_data['shipping_mark'],
@@ -6078,10 +6102,28 @@ def packing_list_save(pi_id):
                     note=item_data['note'], sort_order=item_data['sort_order'],
                 ))
         db.session.flush()
+        ordered_boxes = (
+            PackingBox.query.join(PackingBatch).filter(
+                PackingBox.packing_list_id == packing_list.id
+            ).order_by(PackingBatch.batch_no, PackingBox.sort_order, PackingBox.id).all()
+        )
+        # Move every record out of the final namespace first so swaps and
+        # grouped carton ranges cannot violate the unique constraint.
+        for saved_box in ordered_boxes:
+            saved_box.box_no = f'tmp-box-{saved_box.id}'
+        db.session.flush()
+        next_carton_no = 1
+        for saved_box in ordered_boxes:
+            saved_box.box_no = str(next_carton_no)
+            next_carton_no += max(int(saved_box.carton_count or 1), 1)
+        db.session.flush()
         totals = {item.id: 0 for item in pi.items}
-        for saved_box in packing_list.boxes:
+        for saved_box in ordered_boxes:
             for packed_item in saved_box.items:
-                totals[packed_item.pi_item_id] += int(packed_item.quantity or 0)
+                totals[packed_item.pi_item_id] += (
+                    int(packed_item.quantity or 0)
+                    * max(int(saved_box.carton_count or 1), 1)
+                )
         all_allocated = all(
             totals[item.id] == int(item.quantity or 0) for item in pi.items
         )
@@ -7016,7 +7058,9 @@ def _pi_downstream_impact(pi):
     box_count = 0
     packing_item_count = 0
     if packing_list:
-        box_count = PackingBox.query.filter_by(packing_list_id=packing_list.id).count()
+        box_count = sum(
+            max(int(box.carton_count or 1), 1) for box in packing_list.boxes
+        )
         packing_item_count = PackingItem.query.join(PackingBox).filter(
             PackingBox.packing_list_id == packing_list.id
         ).count()
