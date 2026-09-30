@@ -1895,6 +1895,8 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('var ids = pickerSelectionOrder.slice();', html)
         self.assertNotIn('Object.keys(pickerSelections)', html)
         self.assertIn('body > .container', html)
+        self.assertIn('max-width: 1320px', html)
+        self.assertNotIn('max-width: 1760px', html)
         self.assertIn('id="selected_products_area"', html)
         self.assertIn('table-layout: fixed', html)
         self.assertIn('<colgroup><col style="width:5%">', html)
