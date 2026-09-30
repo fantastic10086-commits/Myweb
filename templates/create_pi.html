@@ -50,6 +50,10 @@ var adjustmentUsd = 0;
     function getSymbol() {
         return getCurrency() === 'RMB' ? '¥' : '$';
     }
+    function signedAdjustment() {
+        var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
+        return document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
+    }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
         var total = 0, sym = getSymbol();
@@ -60,8 +64,7 @@ var adjustmentUsd = 0;
         }
         var subtotalDisplay = document.getElementById('subtotal_display');
         if (subtotalDisplay) subtotalDisplay.textContent = sym + total.toFixed(2);
-        var shippingEl = document.getElementById('shipping_cost');
-        var shipping = parseFloat(shippingEl ? shippingEl.value : '0') || 0;
+        var shipping = signedAdjustment();
         total += shipping;
         var shippingDisplay = document.getElementById('shipping_display');
         if (shippingDisplay) shippingDisplay.textContent = sym + shipping.toFixed(2);
@@ -211,7 +214,7 @@ var adjustmentUsd = 0;
             row.querySelector('.sel-amt').textContent = getSymbol() + PIPrices.amount(p.price, p.qty).toFixed(2);
         }
         var shippingEl = document.getElementById('shipping_cost');
-        if (shippingEl) shippingEl.value = fromUsd(adjustmentUsd).toFixed(2);
+        if (shippingEl) shippingEl.value = Math.abs(fromUsd(adjustmentUsd)).toFixed(2);
         updateTotal();
     }
 
@@ -414,7 +417,11 @@ var adjustmentUsd = 0;
             if (getCurrency() === 'RMB') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
-            adjustmentUsd = toUsd(parseFloat(this.value) || 0);
+            adjustmentUsd = toUsd(signedAdjustment());
+            updateTotal();
+        });
+        document.getElementById('adjustment_operation').addEventListener('change', function() {
+            adjustmentUsd = toUsd(signedAdjustment());
             updateTotal();
         });
 
@@ -452,7 +459,7 @@ var adjustmentUsd = 0;
                 if (addrEl) { addrEl.value = addr; }
             }
         }
-        adjustmentUsd = toUsd(parseFloat(document.getElementById('shipping_cost').value) || 0);
+        adjustmentUsd = toUsd(signedAdjustment());
         applyCurrency();
         PIRowDrag(selectedTableBody, function() {
             selectedProductOrder = Array.from(selectedTableBody.querySelectorAll('tr')).map(function(row) { return Number(row.id.replace('product_row_', '')); });
@@ -463,6 +470,11 @@ var adjustmentUsd = 0;
                 var el = form.elements.namedItem(key);
                 if (el) el.value = draftData.fields[key];
             });
+            if (!draftData.fields.adjustment_operation) {
+                var legacyAdjustment = parseFloat(draftData.fields.shipping_cost || '0') || 0;
+                document.getElementById('adjustment_operation').value = legacyAdjustment < 0 ? 'subtract' : 'add';
+                document.getElementById('shipping_cost').value = Math.abs(legacyAdjustment).toFixed(2);
+            }
             curSel.value = draftData.fields.currency || '';
             applyCurrency();
             document.getElementById('cust_search').value = custSelect.selectedOptions.length ? custSelect.selectedOptions[0].text.trim() : '';
@@ -476,7 +488,7 @@ var adjustmentUsd = 0;
                 row.querySelector('.sel-qty').value = saved.qtyRaw != null ? saved.qtyRaw : saved.qty;
                 nextCopyId = Math.min(nextCopyId, Number(p.id) - 1);
             });
-            adjustmentUsd = toUsd(parseFloat(document.getElementById('shipping_cost').value) || 0);
+            adjustmentUsd = toUsd(signedAdjustment());
             renumberRows(); showHideEmpty(); updateTotal();
         }
     });
@@ -656,15 +668,22 @@ var adjustmentUsd = 0;
             <div class="card mb-3">
                 <div class="card-body">
                     <div class="row align-items-start">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label class="form-label">客户费用 / 折扣</label>
                             <div class="input-group">
                                 <span class="input-group-text" id="shipping_sym">$</span>
-                                <input type="number" step="0.01" class="form-control" name="shipping_cost" id="shipping_cost" value="0.00" oninput="updateTotal()">
+                                <input type="number" step="0.01" min="0" class="form-control" name="shipping_cost" id="shipping_cost" value="0.00" oninput="updateTotal()">
                             </div>
-                            <small class="text-muted">正数为向客户加收，负数为折扣；计入订单总金额</small>
+                            <small class="text-muted">只需填写正数金额</small>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-2">
+                            <label class="form-label">加减方式</label>
+                            <select class="form-select" name="adjustment_operation" id="adjustment_operation">
+                                <option value="add">＋ 加收</option>
+                                <option value="subtract">－ 扣减</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
                             <label class="form-label">客户费用 / 折扣类型</label>
                             <select class="form-select" name="shipping_note" id="shipping_note">
                                 <option value="">— 请选择客户费用 / 折扣类型 —</option>

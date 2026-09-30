@@ -43,6 +43,10 @@
     function getSymbol() {
         return getCurrency() === 'RMB' ? '¥' : '$';
     }
+    function signedAdjustment() {
+        var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
+        return document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
+    }
     function structuralEditLocked() {
         if (!hasDownstreamRecords) return false;
         var unlock = document.getElementById('downstream_unlock');
@@ -61,8 +65,7 @@
         var total = 0, sym = getSymbol();
         var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) { var p = selectedProducts[keys[i]]; total += PIPrices.amount(p.price || 0, p.qty || 0); }
-        var shippingEl = document.getElementById('shipping_cost');
-        var shipping = parseFloat(shippingEl ? shippingEl.value : '0') || 0;
+        var shipping = signedAdjustment();
         total += shipping;
         var shippingDisplay = document.getElementById('shipping_display');
         if (shippingDisplay) shippingDisplay.textContent = sym + shipping.toFixed(2);
@@ -194,7 +197,7 @@
             row.querySelector('.sel-amt').textContent = getSymbol() + PIPrices.amount(p.price, p.qty).toFixed(2);
         }
         var shippingEl = document.getElementById('shipping_cost');
-        if (shippingEl) shippingEl.value = fromUsd(adjustmentUsd).toFixed(2);
+        if (shippingEl) shippingEl.value = Math.abs(fromUsd(adjustmentUsd)).toFixed(2);
         updateTotal();
     }
     function applyCurrency() {
@@ -379,7 +382,11 @@
             if (getCurrency() === 'RMB') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
-            adjustmentUsd = toUsd(parseFloat(this.value) || 0);
+            adjustmentUsd = toUsd(signedAdjustment());
+            updateTotal();
+        });
+        document.getElementById('adjustment_operation').addEventListener('change', function() {
+            adjustmentUsd = toUsd(signedAdjustment());
             updateTotal();
         });
         var form = document.getElementById('pi-form');
@@ -486,14 +493,22 @@
         <div class="card mb-3">
             <div class="card-body">
                 <div class="row align-items-start">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label">客户费用 / 折扣</label>
                         <div class="input-group">
                             <span class="input-group-text" id="shipping_sym">{{ '¥' if pi and pi.currency == 'RMB' else '$' }}</span>
-                            <input type="number" step="0.01" class="form-control pi-structural-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format(pi.shipping_cost) if pi and pi.shipping_cost else '0.00' }}" oninput="updateTotal()">
+                            <input type="number" step="0.01" min="0" class="form-control pi-structural-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" oninput="updateTotal()">
                         </div>
+                        <small class="text-muted">只需填写正数金额</small>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-2">
+                        <label class="form-label">加减方式</label>
+                        <select class="form-select pi-structural-control" name="adjustment_operation" id="adjustment_operation">
+                            <option value="add" {% if (pi.shipping_cost or 0) >= 0 %}selected{% endif %}>＋ 加收</option>
+                            <option value="subtract" {% if (pi.shipping_cost or 0) < 0 %}selected{% endif %}>－ 扣减</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
                         <label class="form-label">类型</label>
                         <select class="form-select pi-structural-control" name="shipping_note" id="shipping_note">
                             <option value="" {% if not pi.shipping_note %}selected{% endif %}>— 请选择客户费用 / 折扣类型 —</option>

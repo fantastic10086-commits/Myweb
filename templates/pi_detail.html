@@ -123,7 +123,7 @@
                         <label class="form-label">客户费用 / 折扣（计入订单总额）</label>
                         <div class="input-group">
                             <span class="input-group-text">{{ sym }}</span>
-                            <input type="text" class="form-control" value="{{ '%.2f'|format(pi.shipping_cost or 0) }}" readonly>
+                            <input type="text" class="form-control" value="{{ '加收 +' if (pi.shipping_cost or 0) >= 0 else '扣减 −' }}{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" readonly>
                         </div>
                     </div>
                     <div class="col-md-4">

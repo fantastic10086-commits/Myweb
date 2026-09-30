@@ -4690,6 +4690,18 @@ def _require_customer_adjustment_type(amount, value):
         raise ValueError('填写客户费用/折扣金额后，必须选择对应类型。')
 
 
+def _customer_adjustment_amount(raw_amount, operation=''):
+    """Build a signed adjustment from a positive amount and add/subtract choice."""
+    amount = _signed_float(raw_amount, '客户费用/折扣')
+    operation = (operation or '').strip().lower()
+    if not operation:
+        return amount
+    if operation not in {'add', 'subtract'}:
+        raise ValueError('请选择费用的加减方式。')
+    amount = abs(amount)
+    return -amount if operation == 'subtract' else amount
+
+
 @app.route('/accounts')
 @app.route('/field-management')
 @admin_required
@@ -5249,7 +5261,8 @@ def pi_draft_save():
         fields = {key: value for key, value in request.form.items() if key in {
             'customer_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
             'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
-            'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note'}}
+            'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note',
+            'adjustment_operation'}}
         if fields.get('customer_id'):
             require_customer_access(Customer.query.get_or_404(int(fields['customer_id'])))
         if not is_admin():
@@ -5366,7 +5379,10 @@ def pi_create():
 
         shipping_address = request.form.get('shipping_address', '').strip()
         try:
-            shipping_cost = _signed_float(request.form.get('shipping_cost', '0'), '客户费用/折扣')
+            shipping_cost = _customer_adjustment_amount(
+                request.form.get('shipping_cost', '0'),
+                request.form.get('adjustment_operation', ''),
+            )
             shipping_note = _managed_field_value('shipping_note', request.form.get('shipping_note', ''))
             shipping_note_en = _managed_field_english(
                 'shipping_note', request.form.get('shipping_note', '')
@@ -7381,7 +7397,10 @@ def pi_edit(id):
 
         shipping_address = request.form.get('shipping_address', '').strip()
         try:
-            shipping_cost = _signed_float(request.form.get('shipping_cost', '0'), '客户费用/折扣')
+            shipping_cost = _customer_adjustment_amount(
+                request.form.get('shipping_cost', '0'),
+                request.form.get('adjustment_operation', ''),
+            )
             shipping_note = _managed_field_value(
                 'shipping_note', request.form.get('shipping_note', ''), pi.shipping_note
             )
@@ -7552,7 +7571,9 @@ def _apply_form_to_pi(form, pi):
         previous_shipping_note, previous_shipping_note_en,
     )
     pi.notes = form.get('notes', '').strip()
-    pi.shipping_cost = _signed_float(form.get('shipping_cost', '0'), '客户费用/折扣')
+    pi.shipping_cost = _customer_adjustment_amount(
+        form.get('shipping_cost', '0'), form.get('adjustment_operation', '')
+    )
     _require_customer_adjustment_type(pi.shipping_cost, pi.shipping_note)
 
     # Customer fields (in memory)
@@ -7715,8 +7736,8 @@ def _apply_export_form(form, export_pi):
         'shipping_note', form.get('shipping_note', ''),
         previous_shipping_note, previous_shipping_note_en,
     )
-    export_pi.shipping_cost = _signed_float(
-        form.get('shipping_cost', '0'), '客户费用/折扣'
+    export_pi.shipping_cost = _customer_adjustment_amount(
+        form.get('shipping_cost', '0'), form.get('adjustment_operation', '')
     )
     _require_customer_adjustment_type(export_pi.shipping_cost, export_pi.shipping_note)
 

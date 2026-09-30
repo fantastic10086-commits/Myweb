@@ -3737,6 +3737,9 @@ class SecuritySmokeTests(unittest.TestCase):
 
         create_html = self.client.get('/pi/create').get_data(as_text=True)
         self.assertIn('name="shipping_note" id="shipping_note"', create_html)
+        self.assertIn('name="adjustment_operation" id="adjustment_operation"', create_html)
+        self.assertIn('value="subtract">－ 扣减', create_html)
+        self.assertIn('name="shipping_cost" id="shipping_cost" value="0.00"', create_html)
         self.assertIn('测试附加费', create_html)
         self.assertIn('Test Surcharge', create_html)
         with application.app.app_context():
@@ -3758,6 +3761,11 @@ class SecuritySmokeTests(unittest.TestCase):
             pi.shipping_note, pi.shipping_note_en, pi.shipping_cost = old_note, old_note_en, old_cost
             with self.assertRaises(ValueError):
                 application._managed_field_value('shipping_note', '未配置备注')
+            self.assertEqual(application._customer_adjustment_amount('15.5', 'add'), 15.5)
+            self.assertEqual(application._customer_adjustment_amount('15.5', 'subtract'), -15.5)
+            self.assertEqual(application._customer_adjustment_amount('-15.5', 'add'), 15.5)
+            with self.assertRaises(ValueError):
+                application._customer_adjustment_amount('15.5', 'invalid')
 
         cost_response = self.client.post('/field-options/add', data={
             'field_key': 'expense_category',
