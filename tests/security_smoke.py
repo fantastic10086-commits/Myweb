@@ -776,7 +776,13 @@ class SecuritySmokeTests(unittest.TestCase):
             'csrf_token': self.token('/pi/create'),
         }, follow_redirects=True)
         self.assertEqual(missing_trade_terms.status_code, 200)
-        self.assertIn('请填写贸易条款。', missing_trade_terms.get_data(as_text=True))
+        missing_trade_html = missing_trade_terms.get_data(as_text=True)
+        self.assertIn('请填写贸易条款。', missing_trade_html)
+        self.assertIn('贸易条款服务端校验', missing_trade_html)
+        self.assertIn('Original Product', missing_trade_html)
+        self.assertIn('form.requestSubmit()', missing_trade_html)
+        self.assertIn("if (!tradeTerms.value.trim())", missing_trade_html)
+        self.assertNotIn('f.submit()', missing_trade_html)
         with application.app.app_context():
             self.assertEqual(PI.query.count(), before_count)
 
@@ -2083,6 +2089,8 @@ class SecuritySmokeTests(unittest.TestCase):
             create_html = self.client.get('/pi/create').get_data(as_text=True)
             self.assertIn('name="exchange_rate"', create_html)
             self.assertIn('value="8.25"', create_html)
+            self.assertIn('var defaultBusinessRate = 8.25;', create_html)
+            self.assertNotIn("this.value = '7.0000'", create_html)
 
             edit_html = self.client.get(f'/pi/{self.alice_pi}/edit').get_data(as_text=True)
             self.assertIn('本单业务汇率', edit_html)

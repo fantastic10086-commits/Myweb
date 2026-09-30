@@ -427,7 +427,7 @@ class PI(db.Model):
     # Snapshot of the USD -> RMB business rate used by this PI.  It must not
     # follow later changes to the system default because historical quotation,
     # procurement and profit figures need to remain reproducible.
-    exchange_rate = db.Column(db.Float, nullable=False, default=7.0)
+    exchange_rate = db.Column(db.Float, nullable=False, default=6.5)
     company = db.Column(db.String(50), default='klista')
     total_amount = db.Column(db.Float, default=0.0)
     shipping_cost = db.Column(db.Float, default=0.0)

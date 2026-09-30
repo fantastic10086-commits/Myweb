@@ -88,6 +88,7 @@ PACKING_TEMPLATE_DEFINITIONS = {
 
 # Sales-performance reporting deliberately uses a stable rate so changing the
 # quotation/profit rate never rewrites a salesperson's historical performance.
+DEFAULT_BUSINESS_EXCHANGE_RATE = 6.5
 PERFORMANCE_EXCHANGE_RATE = 7.0
 
 PRODUCT_CUSTOMS_DEFAULTS = {
@@ -388,7 +389,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '7.0'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -659,10 +660,12 @@ def _save_settings(data):
 def _get_exchange_rate():
     """Return the validated default business rate for newly created PIs."""
     try:
-        rate = float(_load_settings().get('exchange_rate', '7.0') or '7.0')
+        rate = float(_load_settings().get(
+            'exchange_rate', DEFAULT_BUSINESS_EXCHANGE_RATE
+        ) or DEFAULT_BUSINESS_EXCHANGE_RATE)
     except (TypeError, ValueError):
-        return 7.0
-    return rate if math.isfinite(rate) and rate > 0 else 7.0
+        return DEFAULT_BUSINESS_EXCHANGE_RATE
+    return rate if math.isfinite(rate) and rate > 0 else DEFAULT_BUSINESS_EXCHANGE_RATE
 
 
 def _pi_exchange_rate(pi):
@@ -671,7 +674,7 @@ def _pi_exchange_rate(pi):
         rate = float(getattr(pi, 'exchange_rate', None))
     except (TypeError, ValueError):
         rate = 0
-    return rate if math.isfinite(rate) and rate > 0 else PERFORMANCE_EXCHANGE_RATE
+    return rate if math.isfinite(rate) and rate > 0 else _get_exchange_rate()
 
 def _setting_enabled(settings, key, default=True):
     """Read a persisted on/off setting while keeping legacy installs enabled."""
@@ -1709,6 +1712,7 @@ def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=Non
         unit_price = _pi_unit_price(unit_price)
         amount = _pi_line_amount(unit_price, quantity)
         selected_items.append({
+            'row_id': row_id,
             'product': product,
             'item_id': form.get(f'row_item_{row_id}', type=int) if hasattr(form, 'get') else None,
             'explicit_row': f'row_product_{row_id}' in form,
@@ -2504,7 +2508,9 @@ def settings_page():
                            dingtalk_appkey=settings.get('dingtalk_appkey', ''),
                            dingtalk_appsecret='',
                            dingtalk_agent_id=settings.get('dingtalk_agent_id', ''),
-                           exchange_rate=settings.get('exchange_rate', '7.0'),
+                           exchange_rate=settings.get(
+                               'exchange_rate', DEFAULT_BUSINESS_EXCHANGE_RATE
+                           ),
                            followup_days_potential=settings.get('followup_days_potential', '7'),
                            followup_days_converted=settings.get('followup_days_converted', '30'),
                            followup_days_key=settings.get('followup_days_key', '7'),
@@ -5267,6 +5273,46 @@ def _draft_images(draft):
     return {row.get('imageSource') for row in json.loads(draft.payload).get('rows', []) if row.get('imageSource')}
 
 
+def _pi_create_postback_data(form, draft=None):
+    """Rebuild the Create PI browser state after a validation error."""
+    field_names = {
+        'customer_id', 'salesperson', 'notes', 'account_id', 'currency',
+        'company', 'exchange_rate', 'issue_date', 'payment_terms',
+        'price_terms', 'delivery_time', 'bank_info', 'shipping_address',
+        'shipping_cost', 'shipping_note', 'adjustment_operation',
+    }
+    fields = {key: value for key, value in form.items() if key in field_names}
+    selected_items, _ = _submitted_pi_items(
+        form, allowed_image_sources=_draft_images(draft) if draft else None
+    )
+    rows = []
+    for item in selected_items:
+        product = item['product']
+        image_mode = item['image_mode']
+        image_source = item['image_source']
+        rows.append({
+            'id': item['row_id'],
+            'productId': product.id,
+            'itemId': item['item_id'],
+            'name': item['name_override'] if item['name_override'] is not None else product.name,
+            'chinese_name': product.chinese_name or '',
+            'code': item['code_override'] if item['code_override'] is not None else (product.product_code or ''),
+            'spec': item['spec_override'] if item['spec_override'] is not None else (product.specification or ''),
+            'originalName': product.name,
+            'originalCode': product.product_code or '',
+            'originalSpec': product.specification or '',
+            'price': item['unit_price'],
+            'priceRaw': form.get(f"unit_price_{item['row_id']}", item['unit_price']),
+            'qty': item['quantity'],
+            'qtyRaw': form.get(f"qty_{item['row_id']}", item['quantity']),
+            'img': image_source or (product.image if image_mode != 'clear' else '') or '',
+            'originalImage': product.image or '',
+            'imageSource': image_source,
+            'imageMode': image_mode,
+        })
+    return {'fields': fields, 'rows': rows}
+
+
 @app.route('/pi/drafts')
 @login_required
 def pi_drafts():
@@ -5368,6 +5414,26 @@ def pi_create():
     if draft and draft.converted_pi_id:
         return redirect(url_for('pi_detail', id=draft.converted_pi_id))
 
+    def render_postback(message):
+        """Show a validation error without discarding the submitted PI form."""
+        flash(message, 'danger')
+        selected_customer_id = request.form.get('customer_id', type=int)
+        issue_date_value = request.form.get('issue_date', '').strip()
+        try:
+            datetime.strptime(issue_date_value, '%Y-%m-%d')
+        except ValueError:
+            issue_date_value = date.today().strftime('%Y-%m-%d')
+        return render_template(
+            'create_pi.html', customers=customers, pi=None,
+            today=issue_date_value,
+            selected_customer_id=selected_customer_id,
+            draft_data=_pi_create_postback_data(request.form, draft),
+            draft_id=draft.id if draft else '',
+            draft_version=draft.version if draft else '',
+            preselected_salesperson=request.form.get('salesperson', '').strip(),
+            is_admin=admin_flag,
+        )
+
     if request.method == 'POST':
         customer_id = request.form.get('customer_id', type=int)
         salesperson = request.form.get('salesperson', '').strip()
@@ -5380,16 +5446,13 @@ def pi_create():
                 'delivery_time', request.form.get('delivery_time', '')
             )
         except ValueError as exc:
-            flash(str(exc), 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback(str(exc))
         if not price_terms:
-            flash('请填写贸易条款。', 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback('请填写贸易条款。')
         bank_info = request.form.get('bank_info', '').strip()
         notes = request.form.get('notes', '').strip()
         if not notes:
-            flash('请填写 PI 备注。', 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback('请填写 PI 备注。')
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', '').strip().upper()
         if currency not in {'USD', 'RMB'}:
@@ -5400,11 +5463,9 @@ def pi_create():
                 '本单业务汇率',
             )
         except ValueError as exc:
-            flash(str(exc), 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback(str(exc))
         if business_exchange_rate <= 0:
-            flash('本单业务汇率必须大于 0。', 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback('本单业务汇率必须大于 0。')
         company = request.form.get('company', 'klista').strip()
         account_id = request.form.get('account_id', type=int)
         selected_account = db.session.get(Account, account_id) if account_id else None
@@ -5417,12 +5478,7 @@ def pi_create():
             abort(400)
 
         if not customer_id:
-            flash('请选择客户。', 'danger')
-            return render_template('create_pi.html', customers=customers,
-                                   pi=None,
-                                   today=date.today().strftime('%Y-%m-%d'),
-                                   selected_customer_id=None,
-                                   is_admin=admin_flag)
+            return render_postback('请选择客户。')
 
         customer = Customer.query.get_or_404(customer_id)
         require_customer_access(customer)
@@ -5430,12 +5486,7 @@ def pi_create():
             salesperson = current_salesperson_name()
 
         if not salesperson:
-            flash('请选择业务员。', 'danger')
-            return render_template('create_pi.html', customers=customers,
-                                   pi=None,
-                                   today=date.today().strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id,
-                                   is_admin=admin_flag)
+            return render_postback('请选择业务员。')
 
         shipping_address = request.form.get('shipping_address', '').strip()
         try:
@@ -5449,8 +5500,7 @@ def pi_create():
             )
             _require_customer_adjustment_type(shipping_cost, shipping_note)
         except ValueError as exc:
-            flash(str(exc), 'danger')
-            return redirect(url_for('pi_create'))
+            return render_postback(str(exc))
 
         # Parse issue date
         try:
@@ -5464,12 +5514,7 @@ def pi_create():
         selected_items, total_amount = _submitted_pi_items(request.form, allowed_image_sources=_draft_images(draft) if draft else None)
 
         if not selected_items:
-            flash('请至少选择一个产品。', 'danger')
-            return render_template('create_pi.html', customers=customers,
-                                   pi=None,
-                                   today=issue_date.strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id,
-                                   is_admin=admin_flag)
+            return render_postback('请至少选择一个产品。')
 
         if draft:
             expected = request.form.get('draft_version', type=int)

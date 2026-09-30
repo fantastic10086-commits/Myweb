@@ -187,7 +187,7 @@
 
 <script>
 var editModeActive = false;
-var exchangeRate = parseFloat(document.getElementById('rateValue').value) || 7.0;
+var exchangeRate = parseFloat(document.getElementById('rateValue').value) || {{ exchange_rate|tojson }};
 
 // ── Exchange Rate ──
 document.getElementById('rateInput').addEventListener('input', function() {

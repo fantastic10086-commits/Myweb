@@ -74,6 +74,7 @@ var pickerPages = 1;
 var pickerPageSize = 40;
 var pickerLoading = false;
 var adjustmentUsd = 0;
+var defaultBusinessRate = {{ exchange_rate|tojson }};
     var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
     function getCurrency() {
@@ -83,7 +84,7 @@ var adjustmentUsd = 0;
     function getBusinessRate() {
         var el = document.getElementById('exchange_rate');
         var rate = parseFloat(el ? el.value : '');
-        return isFinite(rate) && rate > 0 ? rate : 7;
+        return isFinite(rate) && rate > 0 ? rate : defaultBusinessRate;
     }
     function fromUsd(value) {
         return getCurrency() === 'RMB' ? value * getBusinessRate() : value;
@@ -97,6 +98,29 @@ var adjustmentUsd = 0;
     function signedAdjustment() {
         var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
         return document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
+    }
+
+    function submitPiForm() {
+        var form = document.getElementById('pi-form');
+        if (!form) { alert('未找到表单！'); return; }
+        var account = document.getElementById('account_select');
+        var currency = document.getElementById('currency_select');
+        var customer = document.getElementById('customer_id');
+        var salesperson = document.getElementById('pi_salesperson');
+        var notes = document.getElementById('notes');
+        var tradeTerms = document.getElementById('price_terms');
+        var rate = document.getElementById('exchange_rate');
+        if (!account.value) { alert('请选择收款账户。'); account.focus(); return; }
+        if (!currency.value) { alert('请选择币种。'); currency.focus(); return; }
+        if (!customer.value) { alert('请选择客户。'); document.getElementById('cust_search').focus(); return; }
+        if (!salesperson.value) { alert('请选择业务员。'); document.getElementById('sp_search').focus(); return; }
+        if (!notes.value.trim()) { alert('请填写 PI 备注。'); notes.focus(); return; }
+        if (!tradeTerms.value.trim()) { alert('请填写贸易条款。'); tradeTerms.focus(); return; }
+        if (!(parseFloat(rate.value) > 0)) { alert('本单业务汇率必须大于 0。'); rate.focus(); return; }
+        if (selectedProductOrder.length === 0) { alert('请至少添加一个产品。'); return; }
+        if (!form.reportValidity()) return;
+        updateTotal();
+        form.requestSubmit();
     }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
@@ -457,7 +481,7 @@ var adjustmentUsd = 0;
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', applyCurrency);
         document.getElementById('exchange_rate').addEventListener('change', function() {
-            if (!(parseFloat(this.value) > 0)) this.value = '7.0000';
+            if (!(parseFloat(this.value) > 0)) this.value = Number(defaultBusinessRate).toFixed(4);
             if (getCurrency() === 'RMB') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
@@ -514,6 +538,9 @@ var adjustmentUsd = 0;
                 var el = form.elements.namedItem(key);
                 if (el) el.value = draftData.fields[key];
             });
+            if (!(parseFloat(document.getElementById('exchange_rate').value) > 0)) {
+                document.getElementById('exchange_rate').value = Number(defaultBusinessRate).toFixed(4);
+            }
             if (!draftData.fields.adjustment_operation) {
                 var legacyAdjustment = parseFloat(draftData.fields.shipping_cost || '0') || 0;
                 document.getElementById('adjustment_operation').value = legacyAdjustment < 0 ? 'subtract' : 'add';
@@ -750,7 +777,7 @@ var adjustmentUsd = 0;
                 <span id="draft_status" class="text-muted me-2"></span>
                 <a class="btn btn-outline-secondary" href="{{ url_for('pi_drafts') }}">我的草稿</a>
                 <button id="save_draft" type="button" class="btn btn-outline-primary" onclick="saveDraft()">暂存草稿</button>
-                <button type="button" class="btn btn-primary btn-lg" onclick="var st=document.getElementById('submit_status');if(st){st.style.display='block';st.textContent='正在提交……';st.style.background='#cce5ff';} var f=document.getElementById('pi-form'); if(f){ var cust=f.querySelector('#customer_id'); var sp=f.querySelector('#pi_salesperson'); var notes=f.querySelector('#notes'); var np=selectedProductOrder.length; if(!f.querySelector('#account_select').value){alert('请选择收款账户。');f.querySelector('#account_select').focus();return;} if(!cust.value){alert('请选择客户。');return;} if(!sp.value){alert('请选择业务员。');return;} if(!notes.value.trim()){alert('请填写 PI 备注。');notes.focus();return;} if(np===0){alert('请至少添加一个产品。');return;} st.textContent='正在提交……'; updateTotal(); f.submit(); } else { alert('未找到表单！'); }"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
+                <button type="button" class="btn btn-primary btn-lg" onclick="submitPiForm()"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
             </div>
         </div>
     </div>

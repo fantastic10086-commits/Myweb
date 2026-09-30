@@ -26,7 +26,7 @@
     var pickerLoading = false;
     var hasDownstreamRecords = {{ downstream_impact.has_downstream|tojson }};
     var downstreamEditAdmin = {{ is_admin|tojson }};
-    var adjustmentUsd = {{ ((pi.shipping_cost or 0) / (pi.exchange_rate or 7) if pi.currency == 'RMB' else (pi.shipping_cost or 0))|tojson }};
+    var adjustmentUsd = {{ ((pi.shipping_cost or 0) / (pi.exchange_rate or exchange_rate) if pi.currency == 'RMB' else (pi.shipping_cost or 0))|tojson }};
     var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
     function getCurrency() {
@@ -36,7 +36,7 @@
     function getBusinessRate() {
         var el = document.getElementById('exchange_rate');
         var rate = parseFloat(el ? el.value : '');
-        return isFinite(rate) && rate > 0 ? rate : 7;
+        return isFinite(rate) && rate > 0 ? rate : {{ exchange_rate|tojson }};
     }
     function fromUsd(value) { return getCurrency() === 'RMB' ? value * getBusinessRate() : value; }
     function toUsd(value) { return getCurrency() === 'RMB' ? value / getBusinessRate() : value; }
@@ -378,7 +378,7 @@
         var curSel = document.getElementById('currency_select');
         curSel.addEventListener('change', applyCurrency);
         document.getElementById('exchange_rate').addEventListener('change', function() {
-            if (!(parseFloat(this.value) > 0)) this.value = '7.0000';
+            if (!(parseFloat(this.value) > 0)) this.value = Number({{ exchange_rate|tojson }}).toFixed(4);
             if (getCurrency() === 'RMB') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {

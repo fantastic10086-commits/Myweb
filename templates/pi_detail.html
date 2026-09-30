@@ -44,7 +44,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">本单业务汇率</label>
-                    <input type="text" class="form-control" value="1 USD = {{ '%.4f'|format(pi.exchange_rate or 7) }} RMB" readonly>
+                    <input type="text" class="form-control" value="1 USD = {{ '%.4f'|format(pi.exchange_rate or exchange_rate) }} RMB" readonly>
                     <small class="text-muted">用于本单报价、采购和利润核算；不会随系统默认汇率变化。</small>
                 </div>
                 <div class="mb-3">
