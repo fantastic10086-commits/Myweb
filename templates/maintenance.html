@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN" translate="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex,nofollow">
+    <title>系统维护中 — PI Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap-icons.css') }}">
+</head>
+<body class="bg-light">
+    <main class="container min-vh-100 d-flex align-items-center justify-content-center py-5">
+        <div class="card border-0 shadow-sm text-center" style="max-width:620px;width:100%;">
+            <div class="card-body p-4 p-md-5">
+                <div class="text-warning mb-3"><i class="bi bi-tools" style="font-size:3.5rem;"></i></div>
+                <h1 class="h3 mb-3">系统维护中</h1>
+                <p class="lead text-secondary mb-3">{{ maintenance.message }}</p>
+                {% if maintenance.until %}
+                <p class="mb-4"><span class="badge text-bg-light border fs-6">预计恢复：{{ maintenance.until|replace('T', ' ') }}</span></p>
+                {% endif %}
+                <p class="small text-muted mb-4">维护期间无法查看或提交业务数据，请稍后刷新页面。</p>
+                <div class="d-flex justify-content-center gap-2">
+                    <a class="btn btn-primary" href="{{ request.path }}"><i class="bi bi-arrow-clockwise me-1"></i>重新检查</a>
+                    <a class="btn btn-outline-secondary" href="{{ url_for('login') }}"><i class="bi bi-shield-lock me-1"></i>管理员登录</a>
+                </div>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

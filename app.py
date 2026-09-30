@@ -683,6 +683,16 @@ def _setting_enabled(settings, key, default=True):
     return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def _maintenance_state(settings=None):
+    """Return the persisted maintenance status shown to non-admin users."""
+    settings = settings if settings is not None else _load_settings()
+    return {
+        'enabled': _setting_enabled(settings, 'maintenance_enabled', default=False),
+        'message': (settings.get('maintenance_message') or '系统正在升级维护，请稍后再试。').strip(),
+        'until': (settings.get('maintenance_until') or '').strip(),
+    }
+
+
 def _get_webhook(settings=None):
     """Get DingTalk webhook URL from settings file or env."""
     settings = settings if settings is not None else _load_settings()
@@ -1511,6 +1521,29 @@ def enforce_password_change():
         flash('请先修改临时密码后再继续使用。', 'warning')
         return redirect(url_for('profile'))
     return None
+
+
+@app.before_request
+def enforce_maintenance_mode():
+    state = _maintenance_state()
+    if not state['enabled']:
+        return None
+    if request.endpoint in {
+        'static', 'favicon', 'login', 'login_account_name', 'logout',
+        'maintenance_page',
+    }:
+        return None
+    if is_admin():
+        return None
+    return render_template('maintenance.html', maintenance=state), 503
+
+
+@app.route('/maintenance')
+def maintenance_page():
+    state = _maintenance_state()
+    if not state['enabled'] or is_admin():
+        return redirect(url_for('index'))
+    return render_template('maintenance.html', maintenance=state), 503
 
 
 # ── Helper ─────────────────────────────────────────────────────────────
@@ -2382,6 +2415,32 @@ def settings_page():
     if request.method == 'POST':
         settings = _load_settings()
         import json as _json
+        if request.form.get('settings_action') == 'maintenance':
+            message = request.form.get('maintenance_message', '').strip()
+            until = request.form.get('maintenance_until', '').strip()
+            if len(message) > 300:
+                flash('维护提示不能超过 300 个字符。', 'danger')
+                return redirect(url_for('settings_page'))
+            if until:
+                try:
+                    datetime.strptime(until, '%Y-%m-%dT%H:%M')
+                except ValueError:
+                    flash('预计恢复时间格式不正确。', 'danger')
+                    return redirect(url_for('settings_page'))
+            enabled = bool(request.form.get('maintenance_enabled'))
+            before = _maintenance_state(settings)
+            settings['maintenance_enabled'] = '1' if enabled else '0'
+            settings['maintenance_message'] = message or '系统正在升级维护，请稍后再试。'
+            settings['maintenance_until'] = until
+            _save_settings(settings)
+            _audit(
+                'maintenance_on' if enabled else 'maintenance_off',
+                'system_settings', summary='开启系统维护模式' if enabled else '关闭系统维护模式',
+                before=before, after=_maintenance_state(settings),
+            )
+            db.session.commit()
+            flash('维护模式已开启，普通用户暂时无法进入系统。' if enabled else '维护模式已关闭，系统已恢复正常访问。', 'warning' if enabled else 'success')
+            return redirect(url_for('settings_page'))
         webhook = request.form.get('dingtalk_webhook', '').strip()
         shu_kei_webhook = request.form.get('dingtalk_shu_kei_webhook', '').strip()
         appkey = request.form.get('dingtalk_appkey', '').strip()
@@ -2455,6 +2514,7 @@ def settings_page():
                            report_enabled=_setting_enabled(settings, 'dingtalk_report_enabled'),
                            task_enabled=_setting_enabled(settings, 'dingtalk_task_enabled'),
                            task_ok=bool(settings.get('dingtalk_appkey') and settings.get('dingtalk_appsecret')),
+                           maintenance=_maintenance_state(settings),
                            dt_sps=dt_sps,
                            default_execs=default_execs)
 
@@ -8887,6 +8947,7 @@ def inject_globals():
         'exchange_rate': _get_exchange_rate(),
         'performance_exchange_rate': PERFORMANCE_EXCHANGE_RATE,
         'today_str': date.today().strftime('%Y-%m-%d'),
+        'maintenance': _maintenance_state(settings),
     }
 
 

@@ -3788,6 +3788,57 @@ class SecuritySmokeTests(unittest.TestCase):
         with application.app.app_context():
             self.assertIsNone(FieldOption.query.filter_by(value='越权选项').first())
 
+    def test_maintenance_mode_blocks_regular_access_but_keeps_admin_control(self):
+        settings = application._load_settings()
+        original = {
+            key: settings.get(key) for key in (
+                'maintenance_enabled', 'maintenance_message', 'maintenance_until'
+            )
+        }
+        try:
+            self.login('admin-test')
+            response = self.client.post('/settings', data={
+                'settings_action': 'maintenance',
+                'maintenance_enabled': 'on',
+                'maintenance_message': '系统升级测试中',
+                'maintenance_until': '2026-09-30T12:30',
+                'csrf_token': self.token('/settings'),
+            })
+            self.assertEqual(response.status_code, 302)
+            admin_page = self.client.get('/')
+            self.assertEqual(admin_page.status_code, 200)
+            self.assertIn('维护模式已开启', admin_page.get_data(as_text=True))
+
+            self.client.get('/logout')
+            maintenance_page = self.client.get('/')
+            self.assertEqual(maintenance_page.status_code, 503)
+            html = maintenance_page.get_data(as_text=True)
+            self.assertIn('系统升级测试中', html)
+            self.assertIn('2026-09-30 12:30', html)
+            self.assertEqual(self.client.get('/login').status_code, 200)
+
+            self.login('alice')
+            self.assertEqual(self.client.get('/pi/list').status_code, 503)
+            self.client.get('/logout')
+            self.login('admin-test')
+            response = self.client.post('/settings', data={
+                'settings_action': 'maintenance',
+                'maintenance_message': '系统升级测试中',
+                'maintenance_until': '',
+                'csrf_token': self.token('/settings'),
+            })
+            self.assertEqual(response.status_code, 302)
+            self.client.get('/logout')
+            self.login('alice')
+            self.assertEqual(self.client.get('/').status_code, 200)
+        finally:
+            settings = application._load_settings()
+            for key, value in original.items():
+                if value is None:
+                    settings.pop(key, None)
+                else:
+                    settings[key] = value
+            application._save_settings(settings)
     def test_export_workbench_uses_copy_and_keeps_original_pi_unchanged(self):
         self.login('alice')
         page = self.client.get(f'/pi/{self.alice_pi}/export')
