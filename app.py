@@ -37,7 +37,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
-from sqlalchemy import event, func, case
+from sqlalchemy import event, func, case, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
@@ -5633,6 +5633,7 @@ def pi_list():
     customs_status = request.args.get('customs_status', '').strip()
     payment_labels = {
         'unpaid': '未回款',
+        'received': '有回款（部分回款 + 已付清）',
         'partial': '部分回款',
         'paid': '已付清',
     }
@@ -5683,6 +5684,11 @@ def pi_list():
 
     if payment_status == 'paid':
         query = query.filter(PI.paid.is_(True))
+    elif payment_status == 'received':
+        query = query.filter(or_(
+            PI.paid.is_(True),
+            func.coalesce(PI.received_amount, 0) > 0,
+        ))
     elif payment_status == 'partial':
         query = query.filter(
             PI.paid.is_not(True),

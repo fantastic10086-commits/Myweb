@@ -87,6 +87,7 @@
                 <select class="form-select form-select-sm" name="payment_status">
                     <option value="">— 全部 —</option>
                     <option value="unpaid" {% if payment_status == 'unpaid' %}selected{% endif %}>未回款</option>
+                    <option value="received" {% if payment_status == 'received' %}selected{% endif %}>有回款（部分回款 + 已付清）</option>
                     <option value="partial" {% if payment_status == 'partial' %}selected{% endif %}>部分回款</option>
                     <option value="paid" {% if payment_status == 'paid' %}selected{% endif %}>已付清</option>
                 </select>
