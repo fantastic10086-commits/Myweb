@@ -457,6 +457,7 @@ class PI(db.Model):
     shipping_address = db.Column(db.Text, default='')
     notes = db.Column(db.Text, default='')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=True, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
     version = db.Column(db.Integer, nullable=False, default=1)
     __mapper_args__ = {'version_id_col': version}
