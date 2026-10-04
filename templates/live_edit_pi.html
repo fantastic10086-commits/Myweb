@@ -2,361 +2,164 @@
 {% block title %}导出 {{ pi.pi_number }}{% endblock %}
 
 {% block content %}
-<div class="row mb-3 align-items-center">
-    <div class="col-md-7">
-        <h2><i class="bi bi-box-arrow-up-right me-2"></i>PI 导出工作台 — {{ pi.pi_number }}</h2>
-        <p class="text-muted mb-0">选择模板和文件格式；需要时可先调整本次导出副本。</p>
-    </div>
-    <div class="col-md-5 text-md-end">
-        <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left"></i> 返回 PI 列表
-        </a>
-    </div>
-</div>
+<style>
+    .pi-export-heading { max-width: 210mm; margin: 0 auto 1rem; }
+    .pi-export-heading h2 { font-size: 1.45rem; }
+    .pi-export-controls { max-width: 210mm; margin: 0 auto 1.25rem; }
+    .pi-export-stage { overflow-x: auto; padding: .25rem 0 1.5rem; }
+    .pi-export-paper {
+        --pi-navy: #1d4169; --pi-rule: #aebdcd; --pi-ink: #161b22; --pi-muted: #64748b;
+        position: relative; display: flex; flex-direction: column; box-sizing: border-box;
+        width: 210mm; min-height: 297mm; margin: 0 auto; padding: 31mm 7.4mm 14mm;
+        color: var(--pi-ink); background: #fff; box-shadow: 0 3px 18px rgba(15, 23, 42, .18);
+        font-family: Arial, Helvetica, sans-serif; font-size: 10pt; line-height: 1.24;
+    }
+    .pi-export-paper *, .pi-export-paper *::before, .pi-export-paper *::after { box-sizing: border-box; }
+    .pi-paper-company { position: absolute; top: 7.5mm; left: 7.4mm; width: 195.2mm; height: 17mm; padding: 2.2mm 6mm; color: #fff; background: var(--pi-navy); text-align: center; }
+    .pi-paper-company-name, .pi-paper-company-address { display: block; width: 100%; padding: 0; overflow: hidden; color: inherit; background: transparent; border: 0; border-bottom: 1px solid transparent; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+    .pi-paper-company-name { height: 6.5mm; font-size: 16pt; font-weight: 700; line-height: 1.15; }
+    .pi-paper-company-address { margin-top: .8mm; font-size: 7.5pt; line-height: 1.2; }
+    .pi-paper-title { margin: 0 0 7mm; color: var(--pi-navy); font-size: 24pt; font-weight: 700; line-height: 1; text-align: center; }
+    .pi-paper-rule { height: 1.1px; margin-bottom: 5.6mm; background: var(--pi-navy); }
+    .pi-paper-input, .pi-paper-select, .pi-paper-textarea { min-width: 0; margin: 0; padding: 0; color: inherit; background: transparent; border: 0; border-radius: 0; box-shadow: none !important; font: inherit; line-height: 1.24; }
+    .pi-paper-input, .pi-paper-select { width: 100%; height: 1.24em; }
+    .pi-paper-textarea { display: block; width: 100%; resize: none; overflow: hidden; }
+    .pi-paper-input:hover, .pi-paper-select:hover, .pi-paper-textarea:hover, .pi-paper-input:focus, .pi-paper-select:focus, .pi-paper-textarea:focus, .pi-paper-company-name:hover, .pi-paper-company-address:hover, .pi-paper-company-name:focus, .pi-paper-company-address:focus { outline: 0; border-bottom-color: #60a5fa; background: rgba(219, 234, 254, .7); }
+    .pi-paper-input[readonly], .pi-paper-textarea[readonly], .pi-paper-company-name[readonly], .pi-paper-company-address[readonly] { cursor: default; }
+    .pi-paper-input[readonly]:hover, .pi-paper-textarea[readonly]:hover, .pi-paper-company-name[readonly]:hover, .pi-paper-company-address[readonly]:hover { border-bottom-color: transparent; background: transparent; }
+    .pi-paper-info { display: grid; grid-template-columns: 1.04fr .96fr; gap: 11mm; }
+    .pi-paper-info-column { display: grid; align-content: start; gap: 2.2mm; }
+    .pi-paper-info-row { display: grid; grid-template-columns: 34mm minmax(0, 1fr); align-items: baseline; min-height: 4.6mm; }
+    .pi-paper-info-label { font-weight: 700; }
+    .pi-paper-section-title { margin: 8.2mm 0 2.5mm; color: var(--pi-navy); font-size: 12pt; font-weight: 700; }
+    .pi-paper-products { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .pi-paper-products th { padding: 2.6mm 1.6mm; color: #fff; background: var(--pi-navy); border: 1px solid var(--pi-rule); font-size: 9pt; font-weight: 700; line-height: 1.05; text-align: center; }
+    .pi-paper-products td { padding: 1.8mm 1.4mm; border: 1px solid #c7d1dc; vertical-align: middle; word-break: break-word; }
+    .pi-paper-products tbody tr:nth-child(even) { background: #f0f4f8; }
+    .pi-paper-products .pi-product-image, .pi-paper-products .pi-empty-image { display: block; width: 9mm; height: 9mm; margin: 0 auto; object-fit: contain; }
+    .pi-paper-products .pi-paper-textarea { min-height: 1.24em; }
+    .pi-paper-products .pi-number { text-align: right; }
+    .pi-paper-products input[type=number]::-webkit-inner-spin-button, .pi-paper-products input[type=number]::-webkit-outer-spin-button { margin: 0; -webkit-appearance: none; }
+    .pi-paper-summary { width: 47%; margin: 5.2mm 0 0 auto; color: var(--pi-ink); }
+    .pi-paper-summary-row { display: grid; grid-template-columns: minmax(0, 1fr) 25mm; gap: 2mm; min-height: 5.2mm; align-items: baseline; }
+    .pi-paper-summary-row > :first-child { text-align: right; }
+    .pi-paper-summary-row > :last-child { text-align: right; }
+    .pi-paper-adjustment-note { min-height: 4.5mm; margin: .2mm 0 1.2mm; color: var(--pi-muted); font-size: 8.5pt; font-style: italic; text-align: center; }
+    .pi-paper-adjustment-note .pi-paper-select { width: auto; max-width: 75%; text-align: center; }
+    .pi-paper-operation { width: 6mm !important; margin-right: 1mm; text-align: center; }
+    .pi-paper-total { padding-top: 1.8mm; border-top: 2px solid var(--pi-navy); color: var(--pi-navy); font-size: 14pt; font-weight: 700; }
+    .pi-paper-payment { margin-top: 8.5mm; }
+    .pi-paper-payment-row { display: grid; grid-template-columns: 36mm minmax(0, 1fr); padding: 1.4mm 0; }
+    .pi-paper-payment-label { font-weight: 700; }
+    .pi-paper-bank { min-height: 20mm; white-space: pre-wrap; }
+    .pi-paper-notes { margin-top: 8mm; }
+    .pi-paper-notes-box { min-height: 15.5mm; padding: 2.2mm; background: #e9eff6; border: 1px solid var(--pi-rule); }
+    .pi-paper-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 30mm; margin-top: 7.5mm; }
+    .pi-paper-signature-label { min-height: 20mm; font-weight: 700; }
+    .pi-paper-signature-company { margin-top: 2mm; }
+    .pi-paper-signature-line { display: block; width: 46mm; margin: 7mm auto 0; border-top: 1px solid #333; text-align: center; }
+    .pi-paper-signature-right { text-align: center; }
+    .pi-paper-footer { margin-top: auto; padding-top: 5.5mm; }
+    .pi-paper-footer-note { padding-top: 2.5mm; border-top: 1px solid var(--pi-rule); color: var(--pi-muted); font-size: 8.5pt; font-style: italic; text-align: center; }
+    .pi-paper-footer-page { margin-top: 20mm; color: var(--pi-muted); font-size: 8.5pt; text-align: center; }
+    .pi-export-extra { max-width: 210mm; margin: 0 auto; }
+    .pi-export-extra summary { cursor: pointer; }
+    @media (max-width: 900px) {
+        .pi-export-paper { width: 100%; min-width: 0; min-height: 0; padding: 8rem 1.2rem 1.5rem; font-size: 9.5pt; }
+        .pi-paper-company { top: 1.2rem; left: 1.2rem; width: calc(100% - 2.4rem); }
+        .pi-paper-company-name { font-size: clamp(11pt, 4vw, 16pt); }
+        .pi-paper-info { grid-template-columns: 1fr; gap: 4mm; }
+        .pi-paper-products-wrap { overflow-x: auto; }
+        .pi-paper-products { min-width: 175mm; }
+        .pi-paper-summary { width: 100%; }
+        .pi-paper-signatures { gap: 1.5rem; }
+        .pi-paper-footer-page { margin-top: 3rem; }
+    }
+</style>
 
-<div class="alert alert-success d-flex align-items-start" role="alert">
-    <i class="bi bi-shield-check fs-4 me-2"></i>
+<div class="pi-export-heading d-flex justify-content-between align-items-start gap-3">
     <div>
-        <strong>原始 PI 不会被修改。</strong>
-        本页所有调整只用于这一次预览或下载；重新打开页面时会恢复为数据库中的原始内容。
+        <h2 class="mb-1"><i class="bi bi-box-arrow-up-right me-2"></i>PI 导出工作台</h2>
+        <p class="text-muted mb-0">直接在 A4 单据画布上修改本次导出内容，画布与系统默认 PDF 使用相同版式。</p>
     </div>
+    <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary flex-shrink-0"><i class="bi bi-arrow-left"></i> 返回 PI 列表</a>
 </div>
+<div class="alert alert-success pi-export-controls d-flex align-items-start mb-3" role="alert"><i class="bi bi-shield-check fs-4 me-2"></i><div><strong>原始 PI 不会被修改。</strong> 本页内容仅用于这一次预览或下载；重新打开页面会恢复数据库中的原始内容。</div></div>
 
 <form method="post" id="exportForm">
-<div class="card shadow-sm mb-3 border-primary">
-    <div class="card-header bg-primary text-white"><strong><i class="bi bi-sliders me-1"></i>导出设置</strong></div>
-    <div class="card-body">
-        <div class="row g-3 align-items-end">
-            <div class="col-lg-3">
-                <label class="form-label fw-bold" for="template_id">PI 模板</label>
-                <select class="form-select" name="template_id" id="template_id" required>
-                    {% for template in templates %}
-                    <option value="{{ template.id }}" {% if template.id == selected_template.id %}selected{% endif %}>
-                        {{ template.name }}{% if template.is_default %}（默认）{% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
-                <div class="form-text">选择版式；公司抬头单独选择。</div>
+    <div class="card shadow-sm border-primary pi-export-controls">
+        <div class="card-header bg-primary text-white"><strong><i class="bi bi-sliders me-1"></i>导出设置</strong></div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-lg-3"><label class="form-label fw-bold" for="template_id">PI 模板</label><select class="form-select" name="template_id" id="template_id" required>{% for template in templates %}<option value="{{ template.id }}" {% if template.id == selected_template.id %}selected{% endif %}>{{ template.name }}{% if template.is_default %}（默认）{% endif %}</option>{% endfor %}</select></div>
+                <div class="col-lg-3"><label class="form-label fw-bold" for="company_header">公司抬头</label><select class="form-select" name="company_header" id="company_header" onchange="onCompanyHeaderChange()"><option value="klista" {% if pi.company != 'qisuo' %}selected{% endif %}>KLISTA</option><option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>QISUO</option></select></div>
+                <div class="col-lg-2"><label class="form-label fw-bold" for="output_format">下载格式</label><select class="form-select" name="output_format" id="output_format"><option value="pdf">PDF 文件</option><option value="xlsx">Excel 文件</option></select></div>
+                {% if is_admin %}<div class="col-lg-4"><label class="form-label fw-bold" for="export_account_select">收款账户</label><select class="form-select" name="account_id" id="export_account_select" onchange="onExportAccountChange()"><option value="" selected>— 使用原 PI 收款信息{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-bank="{{ a.bank_info() }}" data-brands="{{ a.brand }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %} / {{ a.brand_label }}</option>{% endfor %}</select></div>{% endif %}
+                <div class="{% if is_admin %}col-lg-12{% else %}col-lg-4{% endif %} text-lg-end"><button type="button" class="btn btn-outline-primary" id="previewButton" onclick="exportDocument('preview')"><i class="bi bi-eye"></i> 预览</button> <button type="button" class="btn btn-primary" id="downloadButton" onclick="exportDocument('download')"><i class="bi bi-download"></i> 导出下载</button> <button type="button" class="btn btn-outline-secondary" onclick="restoreOriginal()"><i class="bi bi-arrow-counterclockwise"></i> 恢复原始数据</button></div>
             </div>
-            <div class="col-lg-3">
-                <label class="form-label fw-bold" for="company_header">公司抬头</label>
-                <select class="form-select" name="company_header" id="company_header" onchange="onCompanyHeaderChange()">
-                    <option value="klista" {% if pi.company != 'qisuo' %}selected{% endif %}>KLISTA</option>
-                    <option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>QISUO</option>
-                </select>
-                <div class="form-text">仅本次导出；抬头须匹配账户所属品牌。</div>
-            </div>
-            <div class="col-lg-2">
-                <label class="form-label fw-bold" for="output_format">下载格式</label>
-                <select class="form-select" name="output_format" id="output_format">
-                    <option value="pdf">PDF 文件</option>
-                    <option value="xlsx">Excel 文件</option>
-                </select>
-                <div class="form-text">预览始终以 PDF 形式打开。</div>
-            </div>
-            <div class="col-lg-4 text-lg-end">
-                <button type="button" class="btn btn-outline-primary" id="previewButton" onclick="exportDocument('preview')">
-                    <i class="bi bi-eye"></i> 预览
-                </button>
-                <button type="button" class="btn btn-primary" id="downloadButton" onclick="exportDocument('download')">
-                    <i class="bi bi-download"></i> 导出下载
-                </button>
-                <button type="button" class="btn btn-outline-secondary" onclick="restoreOriginal()">
-                    <i class="bi bi-arrow-counterclockwise"></i> 恢复原始数据
-                </button>
-            </div>
-        </div>
-        <div id="exportStatus" class="small mt-3" aria-live="polite"></div>
-    </div>
-</div>
-
-<div class="card shadow-sm">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <strong><i class="bi bi-pencil-square me-1"></i>本次导出副本</strong>
-        <span class="badge bg-light text-dark border">不保存到原始 PI</span>
-    </div>
-    <div class="card-body p-4" style="max-width:1050px;margin:0 auto;width:100%;">
-        <div class="text-center mb-3 pb-3" style="border-bottom:2px solid #1a3a5c;">
-            <input type="text" class="form-control-plaintext text-center fw-bold" name="company_name"
-                   value="{% if pi.company == 'qisuo' %}Changzhou Qisuo welding and cutting Equipment Co., LTD{% else %}CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.{% endif %}"
-                   {% if not is_admin %}readonly{% endif %}>
-            <input type="text" class="form-control-plaintext text-center text-muted small" name="company_addr"
-                   value="{% if pi.company == 'qisuo' %}No. 158, Jingchuang Road, Yaoguan Town, Changzhou District, Jiangsu Province{% else %}No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China{% endif %}"
-                   {% if not is_admin %}readonly{% endif %}>
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-md-6">
-                <div class="row g-2">
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">PI 编号（已锁定）</label>
-                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.pi_number }}" readonly>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">开单日期</label>
-                        <input type="date" class="form-control form-control-sm" name="issue_date"
-                               value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}">
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">业务员（已锁定）</label>
-                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.salesperson or '' }}" readonly>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">币种（已锁定）</label>
-                        <input type="text" class="form-control form-control-sm bg-light" value="{{ pi.currency or 'USD' }}" readonly>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="row g-2">
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">买方</label>
-                        <input type="text" class="form-control form-control-sm" name="cust_name"
-                               value="{{ pi.customer.name if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">联系人</label>
-                        <input type="text" class="form-control form-control-sm" name="cust_contact"
-                               value="{{ pi.customer.contact_person if pi.customer else '' }}">
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">国家</label>
-                        <input type="text" class="form-control form-control-sm" name="cust_country"
-                               value="{{ pi.customer.country if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}>
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">邮箱</label>
-                        <input type="email" class="form-control form-control-sm" name="cust_email"
-                               value="{{ pi.customer.email if pi.customer else '' }}">
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">电话</label>
-                        <input type="text" class="form-control form-control-sm" name="cust_phone"
-                               value="{{ pi.customer.phone if pi.customer else '' }}">
-                    </div>
-                    <div class="col-sm-6">
-                        <label class="form-label fw-bold small">客户地址</label>
-                        <input type="text" class="form-control form-control-sm" name="cust_address"
-                               value="{{ pi.customer.address if pi.customer else '' }}">
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <h6 class="fw-bold mb-2" style="color:#1a3a5c;">产品明细</h6>
-        <div class="table-responsive mb-3">
-            <table class="table table-sm table-bordered mb-0 align-middle">
-                <thead class="table-dark">
-                    <tr>
-                        <th class="text-center">序号</th>
-                        <th>产品 / 描述</th>
-                        <th>编码</th>
-                        <th>规格</th>
-                        <th class="text-end">数量</th>
-                        <th class="text-end">单价</th>
-                        <th class="text-end">金额</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in pi.items %}
-                    <tr>
-                        <td class="text-center">{{ loop.index }}</td>
-                        <td><input type="text" class="form-control form-control-sm" name="prod_name_{{ item.id }}" value="{{ item.display_name }}" {% if not is_admin %}readonly{% endif %}></td>
-                        <td><input type="text" class="form-control form-control-sm" name="prod_code_{{ item.id }}" value="{{ item.display_code }}" {% if not is_admin %}readonly{% endif %}></td>
-                        <td><input type="text" class="form-control form-control-sm" name="prod_spec_{{ item.id }}" value="{{ item.display_specification if item.product else '' }}" {% if not is_admin %}readonly{% endif %}></td>
-                        <td><input type="number" class="form-control form-control-sm text-end item-quantity" name="qty_{{ item.id }}" value="{{ item.quantity }}" min="1" required oninput="recalculateExport()"></td>
-                        <td><input type="number" step="0.001" class="form-control form-control-sm text-end item-price" name="price_{{ item.id }}" value="{{ '%.3f'|format(item.unit_price) }}" min="0" required oninput="recalculateExport()" onblur="if(this.value!=='')this.value=PIPrices.price(this.value).toFixed(3)"></td>
-                        <td class="text-end fw-bold item-total">{{ '%.2f'|format(item.amount) }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-md-4">
-                <label class="form-label fw-bold small">客户费用 / 折扣类型</label>
-                <select class="form-select form-select-sm" name="shipping_note">
-                    <option value="" {% if not pi.shipping_note %}selected{% endif %}>— 请选择 —</option>
-                    {% if pi.shipping_note and not shipping_note_options|selectattr('value', 'equalto', pi.shipping_note)|list %}<option value="{{ pi.shipping_note }}" selected>{{ pi.shipping_note }}（{{ pi.shipping_note_en or '历史值' }}）</option>{% endif %}
-                    {% for option in shipping_note_options %}<option value="{{ option.value }}" {% if option.value == pi.shipping_note %}selected{% endif %}>{{ option.value }}（{{ option.english_value or option.value }}）</option>{% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label class="form-label fw-bold small">加减方式</label>
-                <select class="form-select form-select-sm" name="adjustment_operation" id="adjustment_operation" onchange="recalculateExport()">
-                    <option value="add" {% if (pi.shipping_cost or 0) >= 0 %}selected{% endif %}>＋ 加收</option>
-                    <option value="subtract" {% if (pi.shipping_cost or 0) < 0 %}selected{% endif %}>－ 扣减</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label fw-bold small">客户费用 / 折扣金额</label>
-                <div class="input-group input-group-sm">
-                    <span class="input-group-text">{{ '¥' if pi.currency == 'RMB' else '$' }}</span>
-                    <input type="number" step="0.01" min="0" class="form-control text-end" name="shipping_cost" id="shipping_cost"
-                           value="{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" oninput="recalculateExport()">
-                </div>
-                <div class="form-text">填写正数金额，由左侧选择加收或扣减。</div>
-            </div>
-            <div class="col-md-3">
-                <div class="border rounded p-3 bg-light h-100 text-end">
-                    <div>产品总金额：<strong id="subtotalAmount">{{ '%.2f'|format(pi.total_amount) }}</strong></div>
-                    <div>客户费用 / 折扣：<strong id="adjustmentAmount">{{ '%.2f'|format(pi.shipping_cost or 0) }}</strong></div>
-                    <div class="fs-5 mt-1">订单总金额（{{ pi.currency or 'USD' }}）：
-                        <strong class="text-primary" id="grandTotal">{{ '%.2f'|format(pi.grand_total) }}</strong>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-md-4">
-                <label class="form-label fw-bold small">付款条款</label>
-                <input class="form-control form-control-sm" name="payment_terms" value="{{ pi.payment_terms or '' }}">
-            </div>
-            <div class="col-md-4">
-                <label class="form-label fw-bold small">贸易条款</label>
-                <input class="form-control form-control-sm" name="price_terms" list="export_price_terms_options" value="{{ pi.price_terms or '' }}" placeholder="请选择或临时输入……">
-                <datalist id="export_price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
-            </div>
-            <div class="col-md-4">
-                <label class="form-label fw-bold small">交货期</label>
-                <input class="form-control form-control-sm" name="delivery_time" list="export_delivery_time_options" value="{{ pi.delivery_time or '' }}" placeholder="请选择或临时输入……">
-                <datalist id="export_delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
-            </div>
-            {% if is_admin %}
-            <div class="col-md-4">
-                <label class="form-label fw-bold small">收款账户（整组切换）</label>
-                <select class="form-select form-select-sm" name="account_id" id="export_account_select" onchange="onExportAccountChange()">
-                    <option value="" selected>— 使用原 PI 收款信息{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>
-                    {% for a in all_accounts %}
-                    <option value="{{ a.id }}" data-bank="{{ a.bank_info() }}" data-brands="{{ a.brand }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %} / {{ a.brand_label }}</option>
-                    {% endfor %}
-                </select>
-                <div class="form-text">原账户与抬头匹配时可直接导出。切换仅用于本次导出，不修改原 PI。</div>
-            </div>
-            {% endif %}
-            <div class="{% if is_admin %}col-md-8{% else %}col-md-12{% endif %}">
-                <div class="small text-muted mb-1">原 PI 收款账户：{% if current_receiving_account %}{{ current_receiving_account.name }} / {{ current_receiving_account.brand_label }}{% else %}暂无法确认，请选择有效账户{% endif %}</div>
-                <label class="form-label fw-bold small">银行信息快照{% if not is_admin %}（只读）{% endif %}</label>
-                <textarea class="form-control form-control-sm" id="export_bank_info" readonly name="bank_info" rows="6">{{ pi.bank_info or '' }}</textarea>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">收货地址</label>
-                <textarea class="form-control form-control-sm" name="shipping_address" rows="3">{{ pi.shipping_address or '' }}</textarea>
-            </div>
-            <div class="col-md-6">
-                <label class="form-label fw-bold small">PI 备注</label>
-                <textarea class="form-control form-control-sm" name="notes" rows="3">{{ pi.notes or '' }}</textarea>
-            </div>
+            <div id="exportStatus" class="small mt-3" aria-live="polite"></div>
         </div>
     </div>
-</div>
+
+    {% set salesperson_matches = all_salespersons | selectattr('name', 'equalto', pi.salesperson) | list %}
+    {% set pi_salesperson = salesperson_matches[0] if salesperson_matches else none %}
+    {% set company_key = 'qisuo' if pi.company == 'qisuo' else 'klista' %}
+    <div class="pi-export-stage">
+        <article class="pi-export-paper" aria-label="PI 导出单据画布">
+            <header class="pi-paper-company"><input class="pi-paper-company-name" type="text" name="company_name" value="{{ company_headers[company_key].name }}" {% if not is_admin %}readonly{% endif %}><input class="pi-paper-company-address" type="text" name="company_addr" value="{{ company_headers[company_key].address }}" {% if not is_admin %}readonly{% endif %}></header>
+            <h1 class="pi-paper-title">PROFORMA INVOICE</h1><div class="pi-paper-rule"></div>
+            <section class="pi-paper-info">
+                <div class="pi-paper-info-column">
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">PI Number:</span><span>{{ pi.pi_number }}</span></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Date:</span><input class="pi-paper-input" type="text" name="issue_date" value="{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}" pattern="\d{4}-\d{2}-\d{2}" title="请使用 YYYY-MM-DD 日期格式"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Salesperson:</span><span>{{ pi.salesperson or '' }}</span></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Tel:</span><span>{{ pi_salesperson.phone if pi_salesperson else '' }}</span></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Email:</span><span>{{ pi_salesperson.email if pi_salesperson else '' }}</span></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Trade Terms:</span><input class="pi-paper-input" type="text" name="price_terms" list="export_price_terms_options" value="{{ pi.price_terms or '' }}"></div>
+                </div>
+                <div class="pi-paper-info-column">
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">To / Buyer:</span><input class="pi-paper-input" type="text" name="cust_name" value="{{ pi.customer.name if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Contact:</span><input class="pi-paper-input" type="text" name="cust_contact" value="{{ pi.customer.contact_person if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Country:</span><input class="pi-paper-input" type="text" name="cust_country" value="{{ pi.customer.country if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Email:</span><input class="pi-paper-input" type="email" name="cust_email" value="{{ pi.customer.email if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Phone:</span><input class="pi-paper-input" type="text" name="cust_phone" value="{{ pi.customer.phone if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Address:</span><input class="pi-paper-input" type="text" name="cust_address" value="{{ pi.customer.address if pi.customer else '' }}"></div>
+                </div>
+            </section>
+            <section>
+                <h2 class="pi-paper-section-title">ITEM DETAILS</h2>
+                <div class="pi-paper-products-wrap"><table class="pi-paper-products"><colgroup><col style="width:11%"><col style="width:7.5%"><col style="width:12%"><col style="width:21.5%"><col style="width:15%"><col style="width:6.5%"><col style="width:13%"><col style="width:13.5%"></colgroup><thead><tr><th>No.</th><th>Image</th><th>Product<br>Code</th><th>Description</th><th>Specification</th><th>Qty</th><th>Unit Price<br>({{ pi.currency or 'USD' }})</th><th>Amount<br>({{ pi.currency or 'USD' }})</th></tr></thead><tbody>{% for item in pi.items %}<tr><td class="text-center">{{ loop.index }}</td><td>{% if item.display_image %}<img class="pi-product-image" src="{{ url_for('uploaded_product_thumbnail', filename=item.display_image) }}" alt="">{% else %}<span class="pi-empty-image"></span>{% endif %}</td><td><input class="pi-paper-input text-center" type="text" name="prod_code_{{ item.id }}" value="{{ item.display_code }}" {% if not is_admin %}readonly{% endif %}></td><td><textarea class="pi-paper-textarea pi-auto-height" name="prod_name_{{ item.id }}" rows="1" {% if not is_admin %}readonly{% endif %}>{{ item.display_name }}</textarea></td><td><textarea class="pi-paper-textarea pi-auto-height text-center" name="prod_spec_{{ item.id }}" rows="1" {% if not is_admin %}readonly{% endif %}>{{ item.display_specification if item.product else '' }}</textarea></td><td><input class="pi-paper-input pi-number item-quantity" type="number" name="qty_{{ item.id }}" value="{{ item.quantity }}" min="1" required oninput="recalculateExport()"></td><td><input class="pi-paper-input pi-number item-price" type="number" name="price_{{ item.id }}" value="{{ '%.3f'|format(item.unit_price) }}" step="0.001" min="0" required oninput="recalculateExport()" onblur="if(this.value!=='')this.value=PIPrices.price(this.value).toFixed(3)"></td><td class="pi-number fw-bold item-total">{{ '%.2f'|format(item.amount) }}</td></tr>{% endfor %}</tbody></table></div>
+            </section>
+            <section class="pi-paper-summary">
+                <div class="pi-paper-summary-row"><span>Product Subtotal ({{ pi.currency or 'USD' }}):</span><strong id="subtotalAmount">{{ '%.2f'|format(pi.total_amount) }}</strong></div>
+                <div class="pi-paper-summary-row"><span>Other Charges ({{ pi.currency or 'USD' }}):</span><span><select class="pi-paper-select pi-paper-operation" name="adjustment_operation" id="adjustment_operation" onchange="recalculateExport()"><option value="add" {% if (pi.shipping_cost or 0) >= 0 %}selected{% endif %}>+</option><option value="subtract" {% if (pi.shipping_cost or 0) < 0 %}selected{% endif %}>−</option></select><input class="pi-paper-input pi-number" style="display:inline-block;width:17mm" type="number" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" step="0.01" min="0" oninput="recalculateExport()"></span></div>
+                <div class="pi-paper-adjustment-note"><select class="pi-paper-select" name="shipping_note"><option value="" {% if not pi.shipping_note %}selected{% endif %}>Adjustment type</option>{% if pi.shipping_note and not shipping_note_options|selectattr('value', 'equalto', pi.shipping_note)|list %}<option value="{{ pi.shipping_note }}" selected>{{ pi.shipping_note_en or pi.shipping_note }}</option>{% endif %}{% for option in shipping_note_options %}<option value="{{ option.value }}" {% if option.value == pi.shipping_note %}selected{% endif %}>{{ option.english_value or option.value }}</option>{% endfor %}</select></div>
+                <div class="pi-paper-summary-row pi-paper-total"><span>TOTAL AMOUNT ({{ pi.currency or 'USD' }}):</span><span id="grandTotal">{{ '%.2f'|format(pi.grand_total) }}</span></div>
+            </section>
+            <section class="pi-paper-payment"><h2 class="pi-paper-section-title">PAYMENT &amp; BANK DETAILS</h2><div class="pi-paper-payment-row"><span class="pi-paper-payment-label">Payment Terms:</span><input class="pi-paper-input" type="text" name="payment_terms" value="{{ pi.payment_terms or '' }}"></div><div class="pi-paper-payment-row"><span class="pi-paper-payment-label">Bank Info:</span><textarea class="pi-paper-textarea pi-paper-bank" id="export_bank_info" name="bank_info" rows="4" readonly>{{ pi.bank_info or '' }}</textarea></div></section>
+            <section class="pi-paper-notes"><h2 class="pi-paper-section-title">NOTES</h2><textarea class="pi-paper-textarea pi-paper-notes-box pi-auto-height" name="notes" rows="3" placeholder=" ">{{ pi.notes or '' }}</textarea></section>
+            <section class="pi-paper-signatures"><div><div class="pi-paper-signature-label">Issued By:</div><div class="pi-paper-signature-company">{{ company_headers[company_key].name }}<br>Date: {{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '' }}</div></div><div class="pi-paper-signature-right"><div class="pi-paper-signature-label">Authorized Signature &amp; Stamp:</div><span class="pi-paper-signature-line">(Company Chop / Signature)</span></div></section>
+            <footer class="pi-paper-footer"><div class="pi-paper-footer-note">This Proforma Invoice is for order confirmation only and is not a tax or customs invoice.</div><div class="pi-paper-footer-page">Page 1 of 1</div></footer>
+        </article>
+    </div>
+    <details class="card shadow-sm pi-export-extra mb-3"><summary class="card-header fw-bold"><i class="bi bi-sliders2 me-1"></i>PDF 页面外的本次导出字段</summary><div class="card-body row g-3"><div class="col-md-6"><label class="form-label fw-bold small">交货期</label><input class="form-control form-control-sm" name="delivery_time" list="export_delivery_time_options" value="{{ pi.delivery_time or '' }}"><datalist id="export_delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist></div><div class="col-md-6"><label class="form-label fw-bold small">收货地址</label><textarea class="form-control form-control-sm" name="shipping_address" rows="2">{{ pi.shipping_address or '' }}</textarea></div></div></details>
 </form>
+<datalist id="export_price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist>
 
 <script src="{{ url_for('static', filename='pi_prices.js') }}"></script>
 <script>
-function recalculateExport() {
-    let subtotal = 0;
-    document.querySelectorAll('#exportForm tbody tr').forEach(function(row) {
-        const quantity = parseInt(row.querySelector('.item-quantity').value, 10) || 0;
-        const price = parseFloat(row.querySelector('.item-price').value) || 0;
-        const amount = PIPrices.amount(price, quantity);
-        row.querySelector('.item-total').textContent = amount.toFixed(2);
-        subtotal += amount;
-    });
-    const amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
-    const adjustment = document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
-    document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2);
-    document.getElementById('adjustmentAmount').textContent = adjustment.toFixed(2);
-    document.getElementById('grandTotal').textContent = (subtotal + adjustment).toFixed(2);
-}
-
+function resizeDocumentTextareas() { document.querySelectorAll('.pi-auto-height').forEach(function(field) { field.style.height = 'auto'; field.style.height = Math.max(field.scrollHeight, field.offsetHeight) + 'px'; }); }
+function recalculateExport() { let subtotal = 0; document.querySelectorAll('#exportForm tbody tr').forEach(function(row) { const quantity = parseInt(row.querySelector('.item-quantity').value, 10) || 0; const price = parseFloat(row.querySelector('.item-price').value) || 0; const amount = PIPrices.amount(price, quantity); row.querySelector('.item-total').textContent = amount.toFixed(2); subtotal += amount; }); const amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0); const adjustment = document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount; document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2); document.getElementById('grandTotal').textContent = (subtotal + adjustment).toFixed(2); resizeDocumentTextareas(); }
 const companyHeaders = {{ company_headers|tojson }};
-function onCompanyHeaderChange() {
-    const profile = companyHeaders[document.getElementById('company_header').value];
-    if (!profile) return;
-    document.querySelector('#exportForm [name="company_name"]').value = profile.name;
-    document.querySelector('#exportForm [name="company_addr"]').value = profile.address;
-}
-
-function onExportAccountChange() {
-    const select = document.getElementById('export_account_select');
-    const bankInfo = document.getElementById('export_bank_info');
-    if (!select || !bankInfo || !select.value) return;
-    const option = select.options[select.selectedIndex];
-    bankInfo.value = option.getAttribute('data-bank') || '';
-}
-
-function restoreOriginal() {
-    if (confirm('确定恢复本页原始数据吗？尚未下载的临时调整将被清除。')) {
-        window.location.reload();
-    }
-}
-
-function responseFilename(response, fallback) {
-    const disposition = response.headers.get('Content-Disposition') || '';
-    const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-    if (utf8) return decodeURIComponent(utf8[1]);
-    const regular = disposition.match(/filename="?([^";]+)"?/i);
-    return regular ? regular[1] : fallback;
-}
-
-function setExportBusy(busy, message, error) {
-    document.getElementById('previewButton').disabled = busy;
-    document.getElementById('downloadButton').disabled = busy;
-    const status = document.getElementById('exportStatus');
-    status.className = 'small mt-3 ' + (error ? 'text-danger' : (busy ? 'text-primary' : 'text-success'));
-    status.textContent = message || '';
-}
-
+function onCompanyHeaderChange() { const profile = companyHeaders[document.getElementById('company_header').value]; if (!profile) return; document.querySelector('#exportForm [name="company_name"]').value = profile.name; document.querySelector('#exportForm [name="company_addr"]').value = profile.address; }
+function onExportAccountChange() { const select = document.getElementById('export_account_select'); const bankInfo = document.getElementById('export_bank_info'); if (!select || !bankInfo || !select.value) return; bankInfo.value = select.options[select.selectedIndex].getAttribute('data-bank') || ''; resizeDocumentTextareas(); }
+function restoreOriginal() { if (confirm('确定恢复本页原始数据吗？尚未下载的临时调整将被清除。')) window.location.reload(); }
+function responseFilename(response, fallback) { const disposition = response.headers.get('Content-Disposition') || ''; const utf8 = disposition.match(/filename\*=UTF-8''([^;]+)/i); if (utf8) return decodeURIComponent(utf8[1]); const regular = disposition.match(/filename="?([^";]+)"?/i); return regular ? regular[1] : fallback; }
+function setExportBusy(busy, message, error) { document.getElementById('previewButton').disabled = busy; document.getElementById('downloadButton').disabled = busy; const status = document.getElementById('exportStatus'); status.className = 'small mt-3 ' + (error ? 'text-danger' : (busy ? 'text-primary' : 'text-success')); status.textContent = message || ''; }
 const currentAccountBrands = {{ (current_receiving_account.brands if current_receiving_account else [])|tojson }};
-function exportBrandError() {
-    const select = document.getElementById('export_account_select');
-    let brands = currentAccountBrands;
-    if (select && select.value) brands = (select.options[select.selectedIndex].getAttribute('data-brands') || '').split(',');
-    if (!brands.length || !brands.some(b => b === 'klista' || b === 'qisuo')) return '当前收款账户无法确认或未设置所属品牌，请先完善收款账户。';
-    if (!brands.includes(document.getElementById('company_header').value)) return '公司抬头与收款账户所属品牌不一致，禁止预览和导出。请更换抬头或收款账户。';
-    return '';
-}
-async function exportDocument(mode) {
-    const form = document.getElementById('exportForm');
-    if (!form.reportValidity()) return;
-    const brandError = exportBrandError();
-    if (brandError) { alert(brandError); setExportBusy(false, brandError, true); return; }
-    const data = new FormData(form);
-    data.set('mode', mode);
-    setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false);
-    try {
-        const response = await fetch(window.location.href, {method: 'POST', body: data});
-        if (!response.ok) {
-            let message = '导出失败。';
-            try { message = (await response.json()).error || message; } catch (_error) {}
-            throw new Error(message);
-        }
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        if (mode === 'preview') {
-            const previewWindow = window.open(url, '_blank', 'noopener');
-            if (!previewWindow) throw new Error('浏览器阻止了预览窗口，请允许弹出窗口后重试。');
-            setTimeout(function() { URL.revokeObjectURL(url); }, 300000);
-            setExportBusy(false, '预览已在新窗口打开；原始 PI 未被修改。', false);
-        } else {
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = responseFilename(response, '{{ pi.pi_number }}.' + document.getElementById('output_format').value);
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
-            setExportBusy(false, '文件已导出；原始 PI 未被修改。', false);
-        }
-    } catch (error) {
-        alert(error.message || '导出失败。');
-        setExportBusy(false, error.message || '导出失败。', true);
-    }
-}
-
-recalculateExport();
+function exportBrandError() { const select = document.getElementById('export_account_select'); let brands = currentAccountBrands; if (select && select.value) brands = (select.options[select.selectedIndex].getAttribute('data-brands') || '').split(','); if (!brands.length || !brands.some(b => b === 'klista' || b === 'qisuo')) return '当前收款账户无法确认或未设置所属品牌，请先完善收款账户。'; if (!brands.includes(document.getElementById('company_header').value)) return '公司抬头与收款账户所属品牌不一致，禁止预览和导出。请更换抬头或收款账户。'; return ''; }
+async function exportDocument(mode) { const form = document.getElementById('exportForm'); if (!form.reportValidity()) return; const brandError = exportBrandError(); if (brandError) { alert(brandError); setExportBusy(false, brandError, true); return; } const data = new FormData(form); data.set('mode', mode); setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false); try { const response = await fetch(window.location.href, {method: 'POST', body: data}); if (!response.ok) { let message = '导出失败。'; try { message = (await response.json()).error || message; } catch (_error) {} throw new Error(message); } const blob = await response.blob(); const url = URL.createObjectURL(blob); if (mode === 'preview') { const previewWindow = window.open(url, '_blank', 'noopener'); if (!previewWindow) throw new Error('浏览器阻止了预览窗口，请允许弹出窗口后重试。'); setTimeout(function() { URL.revokeObjectURL(url); }, 300000); setExportBusy(false, '预览已在新窗口打开；原始 PI 未被修改。', false); } else { const link = document.createElement('a'); link.href = url; link.download = responseFilename(response, '{{ pi.pi_number }}.' + document.getElementById('output_format').value); document.body.appendChild(link); link.click(); link.remove(); setTimeout(function() { URL.revokeObjectURL(url); }, 1000); setExportBusy(false, '文件已导出；原始 PI 未被修改。', false); } } catch (error) { alert(error.message || '导出失败。'); setExportBusy(false, error.message || '导出失败。', true); } }
+document.querySelectorAll('.pi-auto-height').forEach(function(field) { field.addEventListener('input', resizeDocumentTextareas); });
+resizeDocumentTextareas(); recalculateExport();
 </script>
 {% endblock %}
