@@ -11,6 +11,32 @@ APP_DIR=/opt/pi-manager
 RELEASE="$APP_DIR/releases/$(date +%Y%m%d%H%M%S)"
 PREVIOUS="$(readlink -f "$APP_DIR/current" || true)"
 
+# The login route can render without CSS or JavaScript.  Keep this explicit
+# list so an incomplete staging upload can never be published as a usable UI.
+REQUIRED_STATIC_ASSETS=(
+    static/favicon.svg
+    static/style.css
+    static/lib/bootstrap.min.css
+    static/lib/bootstrap-icons.css
+    static/lib/bootstrap-icons.woff2
+    static/lib/bootstrap.bundle.min.js
+)
+
+require_static_assets() {
+    local root="$1"
+    local asset
+
+    for asset in "${REQUIRED_STATIC_ASSETS[@]}"; do
+        if [ ! -s "$root/$asset" ]; then
+            echo "Required static asset is missing: $root/$asset" >&2
+            return 1
+        fi
+    done
+}
+
+# Fail before making a release if the staging directory lost its static/ tree.
+require_static_assets "$SOURCE_DIR"
+
 mkdir -p "$RELEASE"
 rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'static/uploads' \
     --exclude 'pdf' --exclude 'backups' --exclude 'settings.json' --exclude '*.log' \
@@ -25,6 +51,8 @@ rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'stati
     --exclude '__pycache__' --exclude '.DS_Store' \
     --exclude 'auth*' --exclude 'tmp' "$SOURCE_DIR/" "$RELEASE/"
 
+require_static_assets "$RELEASE"
+
 "$APP_DIR/venv/bin/pip" install -r "$RELEASE/requirements.txt"
 ln -sfn "$RELEASE" "$APP_DIR/current"
 install -m 0644 "$RELEASE/ops/pi-manager.service" /etc/systemd/system/pi-manager.service
@@ -35,7 +63,9 @@ systemctl daemon-reload
 health_ok=false
 if systemctl restart pi-manager; then
     for attempt in $(seq 1 20); do
-        if curl --fail --silent --max-time 5 http://127.0.0.1:8000/login >/dev/null; then
+        if curl --fail --silent --max-time 5 http://127.0.0.1:8000/login >/dev/null \
+            && curl --fail --silent --max-time 5 http://127.0.0.1:8000/static/style.css >/dev/null \
+            && curl --fail --silent --max-time 5 http://127.0.0.1:8000/static/lib/bootstrap.min.css >/dev/null; then
             health_ok=true
             break
         fi
