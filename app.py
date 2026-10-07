@@ -43,7 +43,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
-    db, Customer, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
+    db, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
@@ -376,7 +376,7 @@ def _migrate_db():
     )
     pi_exchange_rate_was_missing = 'exchange_rate' not in pi_columns_before
     expected = {
-        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'priority_level': ('VARCHAR(20)', "'normal'"), 'follow_up_status': ('VARCHAR(20)', "'needs_followup'"), 'next_follow_up_date': ('DATE', 'NULL'), 'last_follow_up_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'customer_type_id': ('INTEGER REFERENCES customer_types(id)', 'NULL'), 'priority_level': ('VARCHAR(20)', "'normal'"), 'follow_up_status': ('VARCHAR(20)', "'needs_followup'"), 'next_follow_up_date': ('DATE', 'NULL'), 'last_follow_up_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'products': {
             'image': 'VARCHAR(500)',
             'chinese_name': 'VARCHAR(200)',
@@ -458,6 +458,15 @@ def _migrate_db():
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
+    if inspector.has_table('customers'):
+        # SQLite cannot add an indexed foreign-key column through create_all()
+        # once the table already exists, so preserve list-filter performance on
+        # upgraded databases as well as fresh installs.
+        db.session.execute(text("""
+            CREATE INDEX IF NOT EXISTS ix_customers_customer_type_id
+            ON customers(customer_type_id)
+        """))
+        db.session.commit()
     if inspector.has_table('users'):
         # Keep every existing user able to sign in after introducing a
         # separate login account.  Existing usernames become the initial
@@ -676,6 +685,64 @@ def _get_exchange_rate():
     except (TypeError, ValueError):
         return DEFAULT_BUSINESS_EXCHANGE_RATE
     return rate if math.isfinite(rate) and rate > 0 else DEFAULT_BUSINESS_EXCHANGE_RATE
+
+
+CUSTOMER_TYPE_DEFAULTS = (
+    # `code` remains stable for compatibility with the former fixed
+    # priority_level values. Administrators may rename these visible labels.
+    ('potential', '潜在客户', 10, 'followup_days_potential', 7),
+    ('converted', '成交客户', 20, 'followup_days_converted', 30),
+    ('key', '重点客户', 30, 'followup_days_key', 7),
+    ('invalid', '无效客户', 40, None, None),
+)
+
+
+def _configured_follow_up_days(settings, key, fallback):
+    """Read a legacy follow-up setting safely while seeding customer types."""
+    try:
+        value = int(settings.get(key, fallback))
+    except (TypeError, ValueError):
+        value = fallback
+    return max(1, min(value, 365))
+
+
+def _ensure_customer_types():
+    """Seed built-in types once and assign every legacy customer a stable type."""
+    settings = _load_settings()
+    types_by_code = {}
+    for code, name, sort_order, setting_key, fallback_days in CUSTOMER_TYPE_DEFAULTS:
+        customer_type = CustomerType.query.filter_by(code=code).first()
+        if not customer_type:
+            days = (
+                _configured_follow_up_days(settings, setting_key, fallback_days)
+                if setting_key else None
+            )
+            customer_type = CustomerType(
+                code=code,
+                name=name,
+                sort_order=sort_order,
+                active=True,
+                default_follow_up_days=days,
+            )
+            db.session.add(customer_type)
+        types_by_code[code] = customer_type
+    db.session.flush()
+
+    # Historical "normal" customers used to switch between potential and
+    # converted automatically whenever their deal total changed. Freeze the
+    # effective category during this one-time migration so later order changes
+    # do not silently change a customer type chosen in the new system.
+    for customer in Customer.query.filter(Customer.customer_type_id.is_(None)).all():
+        if customer.priority_level == 'invalid':
+            code = 'invalid'
+        elif customer.priority_level == 'key':
+            code = 'key'
+        elif customer.cumulative_deal_usd > 0:
+            code = 'converted'
+        else:
+            code = 'potential'
+        customer.customer_type_id = types_by_code[code].id
+    db.session.commit()
 
 
 def _pi_exchange_rate(pi):
@@ -1297,6 +1364,7 @@ def create_app():
             connection.exec_driver_sql('PRAGMA journal_mode=WAL')
         db.create_all()
         _migrate_db()
+        _ensure_customer_types()
 
         # The built-in design is a real editable Excel source.  Excel download
         # and PDF conversion both use this same file, so their layouts match.
@@ -2485,22 +2553,18 @@ def settings_page():
                 flash('默认业务汇率必须大于 0。', 'danger')
                 return redirect(url_for('settings_page'))
             settings['exchange_rate'] = str(parsed_rate)
-        for key, label, fallback in (
-            ('followup_days_potential', '潜在客户默认跟进天数', 7),
-            ('followup_days_converted', '成交客户默认跟进天数', 30),
-            ('followup_days_key', '重点客户默认跟进天数', 7),
-            ('followup_days_waiting', '等待回复默认跟进天数', 3),
-        ):
-            raw = request.form.get(key, str(fallback)).strip()
-            try:
-                days = int(raw)
-            except ValueError:
-                flash(f'{label}必须是整数。', 'danger')
-                return redirect(url_for('settings_page'))
-            if days < 1 or days > 365:
-                flash(f'{label}必须在 1 到 365 天之间。', 'danger')
-                return redirect(url_for('settings_page'))
-            settings[key] = str(days)
+        raw_waiting_days = request.form.get(
+            'followup_days_waiting', settings.get('followup_days_waiting', '3')
+        ).strip()
+        try:
+            waiting_days = int(raw_waiting_days)
+        except ValueError:
+            flash('等待客户回复默认跟进天数必须是整数。', 'danger')
+            return redirect(url_for('settings_page'))
+        if waiting_days < 1 or waiting_days > 365:
+            flash('等待客户回复默认跟进天数必须在 1 到 365 天之间。', 'danger')
+            return redirect(url_for('settings_page'))
+        settings['followup_days_waiting'] = str(waiting_days)
         _save_settings(settings)
         flash('设置已保存。', 'success')
         return redirect(url_for('settings_page'))
@@ -2521,9 +2585,6 @@ def settings_page():
                            exchange_rate=settings.get(
                                'exchange_rate', DEFAULT_BUSINESS_EXCHANGE_RATE
                            ),
-                           followup_days_potential=settings.get('followup_days_potential', '7'),
-                           followup_days_converted=settings.get('followup_days_converted', '30'),
-                           followup_days_key=settings.get('followup_days_key', '7'),
                            followup_days_waiting=settings.get('followup_days_waiting', '3'),
                            webhook_ok=bool(settings.get('dingtalk_webhook')),
                            shu_kei_webhook_ok=bool(settings.get('dingtalk_shu_kei_webhook')),
@@ -2576,20 +2637,87 @@ CUSTOMER_FOLLOW_UP_STATUSES = {
     'waiting_reply': '等待客户回复',
     'paused': '暂不跟进',
 }
-CUSTOMER_PRIORITY_LEVELS = {'normal': '普通客户', 'key': '重点客户', 'invalid': '无效客户'}
+
+
+def _customer_types_query():
+    return CustomerType.query.order_by(CustomerType.sort_order, CustomerType.id)
+
+
+def _default_customer_type():
+    potential = CustomerType.query.filter_by(code='potential', active=True).first()
+    return potential or _customer_types_query().filter(CustomerType.active.is_(True)).first()
+
+
+def _customer_type_is_invalid(customer):
+    customer_type = getattr(customer, 'customer_type_option', None)
+    if customer_type:
+        return customer_type.code == 'invalid'
+    return customer.priority_level == 'invalid'
+
+
+def _customer_type_from_request(customer=None):
+    """Select a valid type, ignoring forged type changes from sales accounts."""
+    if not is_admin():
+        return (customer.customer_type_option if customer else None) or _default_customer_type()
+
+    raw_id = request.form.get('customer_type_id', '').strip()
+    if not raw_id:
+        return (customer.customer_type_option if customer else None) or _default_customer_type()
+    try:
+        customer_type_id = int(raw_id)
+    except ValueError:
+        raise ValueError('请选择有效的客户类型。')
+    customer_type = CustomerType.query.get(customer_type_id)
+    if not customer_type:
+        raise ValueError('所选客户类型不存在。')
+    if not customer_type.active and (
+        not customer or customer.customer_type_id != customer_type.id
+    ):
+        raise ValueError('所选客户类型已停用，请选择启用中的类型。')
+    return customer_type
+
+
+def _sync_legacy_customer_priority(customer):
+    """Keep the retired flag useful if an older backup is ever reopened."""
+    code = customer.customer_type_option.code if customer.customer_type_option else None
+    customer.priority_level = code if code in {'key', 'invalid'} else 'normal'
+
+
+def _render_customer_form(customer, editing):
+    default_customer_type = _default_customer_type()
+    return render_template(
+        'customer_form.html', customer=customer, editing=editing,
+        customer_type_options=_customer_types_query().all(),
+        default_customer_type_id=default_customer_type.id if default_customer_type else None,
+        default_customer_type_name=default_customer_type.name if default_customer_type else '未设置',
+    )
 
 
 def _follow_up_default_days(customer, status='needs_followup'):
-    if status == 'paused' or customer.priority_level == 'invalid':
+    if status == 'paused' or _customer_type_is_invalid(customer):
         return None
     settings = _load_settings()
-    setting_key = 'followup_days_waiting' if status == 'waiting_reply' else (
-        'followup_days_key' if customer.priority_level == 'key' else
-        'followup_days_converted' if customer.cumulative_deal_usd > 0 else
-        'followup_days_potential'
-    )
-    fallback = {'followup_days_waiting': 3, 'followup_days_key': 7,
-                'followup_days_converted': 30, 'followup_days_potential': 7}[setting_key]
+    if status == 'waiting_reply':
+        setting_key, fallback = 'followup_days_waiting', 3
+    elif customer.customer_type_option:
+        # A blank default in type management means that this type does not
+        # auto-suggest a next follow-up date. Users may still choose one
+        # manually when recording an individual contact.
+        days = customer.customer_type_option.default_follow_up_days
+        if days is None:
+            return None
+        try:
+            return max(1, min(int(days), 365))
+        except (TypeError, ValueError):
+            return None
+    else:
+        setting_key = (
+            'followup_days_key' if customer.priority_level == 'key' else
+            'followup_days_converted' if customer.cumulative_deal_usd > 0 else
+            'followup_days_potential'
+        )
+        fallback = {'followup_days_key': 7, 'followup_days_converted': 30,
+                    'followup_days_potential': 7}[setting_key]
     try:
         value = int(settings.get(setting_key, fallback))
     except (TypeError, ValueError):
@@ -2598,8 +2726,7 @@ def _follow_up_default_days(customer, status='needs_followup'):
 
 
 def _customer_type_label(customer):
-    return {'potential': '潜在客户', 'converted': '成交客户',
-            'key': '重点客户', 'invalid': '无效客户'}[customer.customer_type]
+    return customer.customer_type_label
 
 @app.route('/customers')
 @login_required
@@ -2615,6 +2742,7 @@ def customer_list():
     follow_filter = request.args.get('follow', '').strip()
 
     cumulative = func.coalesce(Customer.total_deal_usd, 0) + func.coalesce(Customer.historical_deal_usd, 0)
+    customer_type_options = _customer_types_query().all()
     query = filter_by_user(Customer.query, Customer, 'salesperson')
     if search:
         query = query.filter(
@@ -2627,14 +2755,20 @@ def customer_list():
         )
     if sp_filter:
         query = query.filter(Customer.salesperson == sp_filter)
-    if customer_type == 'key':
-        query = query.filter(Customer.priority_level == 'key')
-    elif customer_type == 'invalid':
-        query = query.filter(Customer.priority_level == 'invalid')
-    elif customer_type == 'converted':
-        query = query.filter(Customer.priority_level == 'normal', cumulative > 0)
-    elif customer_type == 'potential':
-        query = query.filter(Customer.priority_level == 'normal', cumulative <= 0)
+    if customer_type:
+        selected_customer_type = next(
+            (item for item in customer_type_options if str(item.id) == customer_type),
+            None,
+        )
+        # Keep saved links from the original fixed four types working.
+        if not selected_customer_type:
+            selected_customer_type = next(
+                (item for item in customer_type_options if item.code == customer_type),
+                None,
+            )
+        if selected_customer_type:
+            customer_type = str(selected_customer_type.id)
+            query = query.filter(Customer.customer_type_id == selected_customer_type.id)
     today = date.today()
     if follow_filter == 'today':
         query = query.filter(Customer.follow_up_status != 'paused', Customer.next_follow_up_date == today)
@@ -2688,6 +2822,7 @@ def customer_list():
                            sp_filter=sp_filter, deal_min=deal_min_str, deal_max=deal_max_str,
                            date_from=date_from, date_to=date_to, page=page,
                            customer_type=customer_type, follow_filter=follow_filter, today=today,
+                           customer_type_options=customer_type_options,
                            total_pages=total_pages, total=total,
                            filter_total_deal=filter_total_deal)
 
@@ -2840,24 +2975,32 @@ def customer_add():
                          else current_salesperson_name()),
             image=_save_upload(image_file) if image_file else '',
             notes=request.form.get('notes', '').strip(),
-            priority_level=(request.form.get('priority_level', 'normal').strip()
-                            if request.form.get('priority_level', 'normal').strip() in CUSTOMER_PRIORITY_LEVELS else 'normal'),
             follow_up_status=(request.form.get('follow_up_status', 'needs_followup').strip()
                               if request.form.get('follow_up_status', 'needs_followup').strip() in CUSTOMER_FOLLOW_UP_STATUSES else 'needs_followup'),
         )
+        try:
+            customer.customer_type_option = _customer_type_from_request()
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return _render_customer_form(customer, editing=False)
+        if not customer.customer_type_option:
+            flash('请先在客户类型管理中启用至少一个客户类型。', 'danger')
+            return _render_customer_form(customer, editing=False)
+        _sync_legacy_customer_priority(customer)
         if not customer.name:
             flash('客户名称不能为空。', 'danger')
-            return render_template('customer_form.html', customer=customer, editing=False)
+            return _render_customer_form(customer, editing=False)
         if not customer.salesperson:
             flash('请选择业务员。', 'danger')
-            return render_template('customer_form.html', customer=customer, editing=False)
+            return _render_customer_form(customer, editing=False)
         db.session.add(customer)
         db.session.flush()
-        _audit('create', 'customer', customer.id, f'新增客户：{customer.name}', after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson']))
+        _audit('create', 'customer', customer.id, f'新增客户：{customer.name}',
+               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson', 'customer_type_id', 'priority_level']))
         db.session.commit()
         flash('客户添加成功。', 'success')
         return redirect(url_for('customer_list'))
-    return render_template('customer_form.html', customer=None, editing=False)
+    return _render_customer_form(None, editing=False)
 
 
 @app.route('/customers/<int:id>/edit', methods=['GET', 'POST'])
@@ -2870,7 +3013,7 @@ def customer_edit(id):
             db.session.rollback()
             flash('该客户已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('customer_edit', id=id))
-        before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
+        before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
         image_file = request.files.get('image')
         if image_file and image_file.filename:
             new_img = _save_upload(image_file)
@@ -2890,31 +3033,39 @@ def customer_edit(id):
         if is_admin():
             customer.salesperson = request.form.get('salesperson', '').strip()
         customer.notes = request.form.get('notes', '').strip()
-        priority_level = request.form.get('priority_level', 'normal').strip()
         follow_up_status = request.form.get('follow_up_status', 'needs_followup').strip()
-        customer.priority_level = priority_level if priority_level in CUSTOMER_PRIORITY_LEVELS else 'normal'
+        try:
+            customer.customer_type_option = _customer_type_from_request(customer)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return _render_customer_form(customer, editing=True)
+        if not customer.customer_type_option:
+            flash('请先在客户类型管理中启用至少一个客户类型。', 'danger')
+            return _render_customer_form(customer, editing=True)
+        _sync_legacy_customer_priority(customer)
         customer.follow_up_status = follow_up_status if follow_up_status in CUSTOMER_FOLLOW_UP_STATUSES else 'needs_followup'
         next_date = request.form.get('next_follow_up_date', '').strip()
         try:
             customer.next_follow_up_date = datetime.strptime(next_date, '%Y-%m-%d').date() if next_date else None
         except ValueError:
             flash('下次联系日期格式无效。', 'danger')
-            return render_template('customer_form.html', customer=customer, editing=True)
-        if customer.priority_level == 'invalid' or customer.follow_up_status == 'paused':
+            return _render_customer_form(customer, editing=True)
+        if _customer_type_is_invalid(customer) or customer.follow_up_status == 'paused':
             customer.next_follow_up_date = None
         if not customer.name:
             flash('客户名称不能为空。', 'danger')
-            return render_template('customer_form.html', customer=customer, editing=True)
+            return _render_customer_form(customer, editing=True)
         if not customer.salesperson:
             flash('请选择业务员。', 'danger')
-            return render_template('customer_form.html', customer=customer, editing=True)
+            return _render_customer_form(customer, editing=True)
         customer.version = (customer.version or 1) + 1
+        db.session.flush()
         _audit('update', 'customer', customer.id, f'修改客户：{customer.name}', before=before,
-               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
+               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
         db.session.commit()
         flash('客户更新成功。', 'success')
         return redirect(url_for('customer_list'))
-    return render_template('customer_form.html', customer=customer, editing=True)
+    return _render_customer_form(customer, editing=True)
 
 
 @app.route('/api/customers/add', methods=['POST'])
@@ -2932,6 +3083,9 @@ def api_customer_add():
     if is_admin() and not Salesperson.query.filter_by(name=salesperson).first():
         return jsonify({'success': False, 'error': '请选择有效的业务员。'}), 400
 
+    customer_type = _default_customer_type()
+    if not customer_type:
+        return jsonify({'success': False, 'error': '请先由管理员启用至少一个客户类型。'}), 409
     customer = Customer(
         name=name,
         country=request.form.get('country', '').strip(),
@@ -2941,7 +3095,9 @@ def api_customer_add():
         address=request.form.get('address', '').strip(),
         salesperson=salesperson,
         notes=request.form.get('notes', '').strip(),
+        customer_type_option=customer_type,
     )
+    _sync_legacy_customer_priority(customer)
     db.session.add(customer)
     db.session.flush()
     _audit('create', 'customer', customer.id, f'快速新增客户：{customer.name}', after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson']))
@@ -2969,7 +3125,9 @@ def api_customer_copy(id):
         salesperson=original.salesperson,
         notes=original.notes,
         image=original.image,
+        customer_type_option=_default_customer_type(),
     )
+    _sync_legacy_customer_priority(new_customer)
     db.session.add(new_customer)
     db.session.flush()
     _audit('create', 'customer', new_customer.id, f'复制客户：{original.name}', after=_snapshot(new_customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson']))
@@ -3150,7 +3308,7 @@ def customer_follow_up_add(id):
         flash('联系日期格式无效。', 'danger')
         return redirect(url_for('customer_detail', id=id, _anchor='follow-ups'))
     next_text = request.form.get('next_follow_up_date', '').strip()
-    if status == 'paused' or customer.priority_level == 'invalid':
+    if status == 'paused' or _customer_type_is_invalid(customer):
         next_date = None
     elif next_text:
         try:
@@ -4778,6 +4936,143 @@ def _customer_adjustment_amount(raw_amount, operation=''):
         raise ValueError('请选择费用的加减方式。')
     amount = abs(amount)
     return -amount if operation == 'subtract' else amount
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  ROUTES — Customer type management (administrator only)
+# ═══════════════════════════════════════════════════════════════════════
+
+def _customer_type_name_from_form(customer_type=None):
+    name = request.form.get('name', '').strip()
+    if not name:
+        raise ValueError('客户类型名称不能为空。')
+    if len(name) > 100:
+        raise ValueError('客户类型名称不能超过 100 个字符。')
+    duplicate_query = CustomerType.query.filter(
+        func.lower(CustomerType.name) == name.lower()
+    )
+    if customer_type:
+        duplicate_query = duplicate_query.filter(CustomerType.id != customer_type.id)
+    if duplicate_query.first():
+        raise ValueError('该客户类型已存在。')
+    return name
+
+
+def _customer_type_days_from_form():
+    raw_days = request.form.get('default_follow_up_days', '').strip()
+    if not raw_days:
+        return None
+    try:
+        days = int(raw_days)
+    except ValueError:
+        raise ValueError('默认跟进天数必须是整数，或留空不自动建议日期。')
+    if days < 1 or days > 365:
+        raise ValueError('默认跟进天数必须在 1 到 365 天之间。')
+    return days
+
+
+def _customer_type_sort_order_from_form(fallback):
+    raw_order = request.form.get('sort_order', '').strip()
+    if not raw_order:
+        return fallback
+    try:
+        sort_order = int(raw_order)
+    except ValueError:
+        raise ValueError('排序必须是整数。')
+    if sort_order < 0 or sort_order > 999999:
+        raise ValueError('排序必须在 0 到 999999 之间。')
+    return sort_order
+
+
+@app.route('/customer-types')
+@admin_required
+def customer_type_list():
+    customer_types = _customer_types_query().all()
+    customer_counts = dict(
+        db.session.query(Customer.customer_type_id, func.count(Customer.id))
+        .filter(Customer.deleted_at.is_(None))
+        .group_by(Customer.customer_type_id)
+        .all()
+    )
+    return render_template(
+        'customer_types.html', customer_types=customer_types,
+        customer_counts=customer_counts,
+    )
+
+
+@app.route('/customer-types/add', methods=['POST'])
+@admin_required
+def customer_type_add():
+    try:
+        name = _customer_type_name_from_form()
+        default_follow_up_days = _customer_type_days_from_form()
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('customer_type_list'))
+    max_order = db.session.query(func.max(CustomerType.sort_order)).scalar() or 0
+    customer_type = CustomerType(
+        name=name,
+        sort_order=max_order + 10,
+        active=True,
+        default_follow_up_days=default_follow_up_days,
+    )
+    db.session.add(customer_type)
+    db.session.flush()
+    _audit(
+        'create', 'customer_type', customer_type.id,
+        f'新增客户类型：{customer_type.name}',
+        after=_snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days']),
+    )
+    db.session.commit()
+    flash('客户类型已新增。', 'success')
+    return redirect(url_for('customer_type_list'))
+
+
+@app.route('/customer-types/<int:id>/edit', methods=['POST'])
+@admin_required
+def customer_type_edit(id):
+    customer_type = CustomerType.query.get_or_404(id)
+    try:
+        name = _customer_type_name_from_form(customer_type)
+        default_follow_up_days = _customer_type_days_from_form()
+        if customer_type.code == 'invalid':
+            default_follow_up_days = None
+        sort_order = _customer_type_sort_order_from_form(customer_type.sort_order)
+    except ValueError as exc:
+        flash(str(exc), 'danger')
+        return redirect(url_for('customer_type_list'))
+    before = _snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days'])
+    customer_type.name = name
+    customer_type.default_follow_up_days = default_follow_up_days
+    customer_type.sort_order = sort_order
+    _audit(
+        'update', 'customer_type', customer_type.id,
+        f'修改客户类型：{customer_type.name}', before=before,
+        after=_snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days']),
+    )
+    db.session.commit()
+    flash('客户类型已更新。', 'success')
+    return redirect(url_for('customer_type_list'))
+
+
+@app.route('/customer-types/<int:id>/toggle', methods=['POST'])
+@admin_required
+def customer_type_toggle(id):
+    customer_type = CustomerType.query.get_or_404(id)
+    if customer_type.active and CustomerType.query.filter_by(active=True).count() <= 1:
+        flash('至少需要保留一个启用中的客户类型。', 'danger')
+        return redirect(url_for('customer_type_list'))
+    before = _snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days'])
+    customer_type.active = not customer_type.active
+    action = '启用' if customer_type.active else '停用'
+    _audit(
+        'update', 'customer_type', customer_type.id,
+        f'{action}客户类型：{customer_type.name}', before=before,
+        after=_snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days']),
+    )
+    db.session.commit()
+    flash(f'客户类型已{action}。', 'success')
+    return redirect(url_for('customer_type_list'))
 
 
 @app.route('/accounts')

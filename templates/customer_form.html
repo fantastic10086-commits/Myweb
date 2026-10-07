@@ -80,12 +80,21 @@ document.addEventListener('paste', function(e) {
                     </select>
                 </div>
                 <div class="col-md-4">
-                    <label for="priority_level" class="form-label">客户标记</label>
-                    <select class="form-select" id="priority_level" name="priority_level">
-                        <option value="normal" {% if not customer or customer.priority_level == 'normal' %}selected{% endif %}>普通（系统自动判断潜在/成交）</option>
-                        <option value="key" {% if customer and customer.priority_level == 'key' %}selected{% endif %}>重点客户</option>
-                        <option value="invalid" {% if customer and customer.priority_level == 'invalid' %}selected{% endif %}>无效客户</option>
+                    <label for="customer_type_id" class="form-label">客户类型</label>
+                    {% if is_admin %}
+                    <select class="form-select" id="customer_type_id" name="customer_type_id">
+                        {% set selected_type_id = customer.customer_type_option.id if customer and customer.customer_type_option else default_customer_type_id %}
+                        {% for item in customer_type_options %}
+                            {% if item.active or item.id == selected_type_id %}
+                            <option value="{{ item.id }}" {% if item.id == selected_type_id %}selected{% endif %}>{{ item.name }}{% if not item.active %}（已停用）{% endif %}</option>
+                            {% endif %}
+                        {% endfor %}
                     </select>
+                    <small class="text-muted">类型定义、默认周期和停用状态由管理员维护。</small>
+                    {% else %}
+                    <input class="form-control" value="{{ customer.customer_type_label if customer else default_customer_type_name }}" readonly>
+                    <small class="text-muted">客户类型仅管理员可以修改。</small>
+                    {% endif %}
                 </div>
                 <div class="col-md-4">
                     <label for="follow_up_status" class="form-label">跟进状态</label>

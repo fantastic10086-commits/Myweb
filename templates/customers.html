@@ -8,6 +8,7 @@
     </div>
     <div class="col-md-6 text-md-end">
         {% if is_admin %}<a href="{{ url_for('customer_history_import') }}" class="btn btn-outline-primary">历史成交额导入</a>{% endif %}
+        {% if is_admin %}<a href="{{ url_for('customer_type_list') }}" class="btn btn-outline-secondary"><i class="bi bi-tags"></i> 客户类型管理</a>{% endif %}
         <a href="{{ url_for('customer_add') }}" class="btn btn-primary">
             <i class="bi bi-person-plus"></i> 新增客户
         </a>
@@ -26,10 +27,9 @@
                 <label class="form-label small mb-1">客户类型</label>
                 <select class="form-select form-select-sm" name="customer_type">
                     <option value="">— 全部 —</option>
-                    <option value="potential" {% if customer_type == 'potential' %}selected{% endif %}>潜在客户</option>
-                    <option value="converted" {% if customer_type == 'converted' %}selected{% endif %}>成交客户</option>
-                    <option value="key" {% if customer_type == 'key' %}selected{% endif %}>重点客户</option>
-                    <option value="invalid" {% if customer_type == 'invalid' %}selected{% endif %}>无效客户</option>
+                    {% for item in customer_type_options %}
+                    <option value="{{ item.id }}" {% if customer_type == item.id|string %}selected{% endif %}>{{ item.name }}{% if not item.active %}（已停用）{% endif %}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="col-md-2">
@@ -117,10 +117,12 @@
                         <td>{{ c.salesperson }}</td>
                         <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.cumulative_deal_usd) }}</strong><small class="text-muted d-block">历史 ${{ '%.2f'|format(c.historical_deal_usd or 0) }} / 系统 ${{ '%.2f'|format(c.total_deal_usd or 0) }}</small></td>
                         <td style="min-width:150px;">
-                            {% if c.customer_type == 'key' %}<span class="badge bg-warning text-dark">重点客户</span>
-                            {% elif c.customer_type == 'converted' %}<span class="badge bg-success">成交客户</span>
-                            {% elif c.customer_type == 'invalid' %}<span class="badge bg-secondary">无效客户</span>
-                            {% else %}<span class="badge bg-primary">潜在客户</span>{% endif %}
+                            {% set type_code = c.customer_type_option.code if c.customer_type_option else c.customer_type %}
+                            {% if type_code == 'key' %}<span class="badge bg-warning text-dark">{{ c.customer_type_label }}</span>
+                            {% elif type_code == 'converted' %}<span class="badge bg-success">{{ c.customer_type_label }}</span>
+                            {% elif type_code == 'invalid' %}<span class="badge bg-secondary">{{ c.customer_type_label }}</span>
+                            {% elif type_code == 'potential' %}<span class="badge bg-primary">{{ c.customer_type_label }}</span>
+                            {% else %}<span class="badge bg-info text-dark">{{ c.customer_type_label }}</span>{% endif %}
                             <small class="d-block mt-1">{{ {'needs_followup':'需要跟进','waiting_reply':'等待回复','paused':'暂不跟进'}.get(c.follow_up_status, '需要跟进') }}</small>
                             {% if c.next_follow_up_date %}
                                 {% if c.next_follow_up_date < today %}<small class="text-danger fw-bold">已逾期 {{ (today - c.next_follow_up_date).days }} 天</small>

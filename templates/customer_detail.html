@@ -34,7 +34,8 @@
     <div class="col-md-6">
         <h2><i class="bi bi-person-badge me-2"></i>{{ customer.name }}</h2>
         <div class="d-flex flex-wrap gap-2">
-            <span class="badge {% if customer.customer_type == 'key' %}bg-warning text-dark{% elif customer.customer_type == 'converted' %}bg-success{% elif customer.customer_type == 'invalid' %}bg-secondary{% else %}bg-primary{% endif %}">{{ customer_type_label }}</span>
+            {% set type_code = customer.customer_type_option.code if customer.customer_type_option else customer.customer_type %}
+            <span class="badge {% if type_code == 'key' %}bg-warning text-dark{% elif type_code == 'converted' %}bg-success{% elif type_code == 'invalid' %}bg-secondary{% elif type_code == 'potential' %}bg-primary{% else %}bg-info text-dark{% endif %}">{{ customer_type_label }}</span>
             <span class="badge bg-light text-dark border">{{ {'needs_followup':'需要跟进','waiting_reply':'等待客户回复','paused':'暂不跟进'}.get(customer.follow_up_status, '需要跟进') }}</span>
             {% if customer.next_follow_up_date %}<span class="badge {% if customer.next_follow_up_date < today %}bg-danger{% elif customer.next_follow_up_date == today %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">下次联系：{{ customer.next_follow_up_date.strftime('%Y-%m-%d') }}</span>{% endif %}
         </div>

@@ -4,6 +4,25 @@ from datetime import datetime, date
 db = SQLAlchemy()
 
 
+class CustomerType(db.Model):
+    """Administrator-managed customer category used for filtering and follow-up."""
+    __tablename__ = 'customer_types'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False, unique=True)
+    # Built-in codes preserve the meaning of the categories migrated from the
+    # former priority_level field even when an administrator renames them.
+    code = db.Column(db.String(30), nullable=True, unique=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+    default_follow_up_days = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(
+        db.DateTime, nullable=False, default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
 class Customer(db.Model):
     __tablename__ = 'customers'
 
@@ -21,6 +40,12 @@ class Customer(db.Model):
     historical_deal_note = db.Column(db.Text, default='')
     image = db.Column(db.String(500), default='')
     notes = db.Column(db.Text, default='')
+    customer_type_id = db.Column(
+        db.Integer, db.ForeignKey('customer_types.id'), nullable=True, index=True,
+    )
+    customer_type_option = db.relationship('CustomerType', lazy='joined')
+    # Retained during migration so historical releases and old backups remain
+    # readable.  New category selection uses customer_type_id.
     priority_level = db.Column(db.String(20), nullable=False, default='normal')
     follow_up_status = db.Column(db.String(20), nullable=False, default='needs_followup')
     next_follow_up_date = db.Column(db.Date, nullable=True, index=True)
@@ -55,6 +80,8 @@ class Customer(db.Model):
             'cumulative_deal_usd': self.cumulative_deal_usd,
             'image': self.image,
             'notes': self.notes,
+            'customer_type_id': self.customer_type_id,
+            'customer_type_name': self.customer_type_option.name if self.customer_type_option else self.customer_type_label,
             'priority_level': self.priority_level,
             'follow_up_status': self.follow_up_status,
             'next_follow_up_date': self.next_follow_up_date.isoformat() if self.next_follow_up_date else None,
@@ -65,11 +92,22 @@ class Customer(db.Model):
 
     @property
     def customer_type(self):
+        if self.customer_type_option:
+            return self.customer_type_option.code or 'custom'
         if self.priority_level == 'invalid':
             return 'invalid'
         if self.priority_level == 'key':
             return 'key'
         return 'converted' if self.cumulative_deal_usd > 0 else 'potential'
+
+    @property
+    def customer_type_label(self):
+        if self.customer_type_option:
+            return self.customer_type_option.name
+        return {
+            'potential': '潜在客户', 'converted': '成交客户',
+            'key': '重点客户', 'invalid': '无效客户',
+        }[self.customer_type]
 
 
 class CustomerFollowUp(db.Model):

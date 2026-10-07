@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}客户类型管理{% endblock %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-8">
+        <h2 class="mb-1"><i class="bi bi-tags me-2"></i>客户类型管理 <span class="badge bg-warning text-dark fs-6 align-middle">管理员专属</span></h2>
+        <p class="text-muted mb-0">管理客户分类、显示名称、排序和默认跟进周期。</p>
+    </div>
+    <div class="col-md-4 text-md-end mt-2 mt-md-0">
+        <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary"><i class="bi bi-people me-1"></i>返回客户列表</a>
+    </div>
+</div>
+
+<div class="alert alert-info d-flex gap-2 align-items-start">
+    <i class="bi bi-info-circle mt-1"></i>
+    <div>
+        新增或修改类型后会立即用于客户列表和客户详情。停用类型不会改写已有客户，已关联客户仍会显示原类型，但不能再为新客户或其他客户选择。普通业务员可以查看自己客户的类型，不能修改类型。
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header"><h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>新增客户类型</h5></div>
+    <div class="card-body">
+        <form method="post" action="{{ url_for('customer_type_add') }}" class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label" for="new_customer_type_name">类型名称 <span class="text-danger">*</span></label>
+                <input class="form-control" id="new_customer_type_name" name="name" maxlength="100" required placeholder="例如：经销商、终端客户">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label" for="new_customer_type_days">默认跟进天数</label>
+                <div class="input-group">
+                    <input class="form-control" id="new_customer_type_days" name="default_follow_up_days" type="number" min="1" max="365" placeholder="留空">
+                    <span class="input-group-text">天后</span>
+                </div>
+                <small class="text-muted">留空时，新增跟进不自动建议下次日期。</small>
+            </div>
+            <div class="col-md-2 d-grid">
+                <button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>新增类型</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>现有客户类型</h5>
+        <small class="text-muted">数字越小越靠前</small>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:100px;">排序</th>
+                        <th>类型名称</th>
+                        <th style="min-width:190px;">默认跟进周期</th>
+                        <th class="text-center" style="width:120px;">关联客户</th>
+                        <th class="text-center" style="width:110px;">状态</th>
+                        <th class="text-end" style="min-width:190px;">操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in customer_types %}
+                    <tr class="{% if not item.active %}table-secondary{% endif %}">
+                        <td>
+                            <form id="customer-type-{{ item.id }}" method="post" action="{{ url_for('customer_type_edit', id=item.id) }}">
+                                <input class="form-control form-control-sm" type="number" min="0" max="999999" name="sort_order" value="{{ item.sort_order }}" aria-label="{{ item.name }} 排序">
+                            </form>
+                        </td>
+                        <td>
+                            <input form="customer-type-{{ item.id }}" class="form-control form-control-sm" type="text" name="name" maxlength="100" required value="{{ item.name }}" aria-label="{{ item.name }} 名称">
+                            {% if item.code %}<small class="text-muted">系统内置类型</small>{% else %}<small class="text-muted">自定义类型</small>{% endif %}
+                        </td>
+                        <td>
+                            <div class="input-group input-group-sm">
+                                <input form="customer-type-{{ item.id }}" class="form-control" type="number" min="1" max="365" name="default_follow_up_days" {% if item.code == 'invalid' %}disabled{% endif %} value="{{ item.default_follow_up_days if item.default_follow_up_days is not none else '' }}" placeholder="留空" aria-label="{{ item.name }} 默认跟进天数">
+                                <span class="input-group-text">天后</span>
+                            </div>
+                            {% if item.code == 'invalid' %}<small class="text-muted">无效客户不安排跟进</small>{% elif item.default_follow_up_days is none %}<small class="text-muted">不自动建议日期</small>{% endif %}
+                        </td>
+                        <td class="text-center"><a class="text-decoration-none" href="{{ url_for('customer_list', customer_type=item.id) }}">{{ customer_counts.get(item.id, 0) }} 位</a></td>
+                        <td class="text-center"><span class="badge {% if item.active %}bg-success{% else %}bg-secondary{% endif %}">{{ '启用中' if item.active else '已停用' }}</span></td>
+                        <td class="text-end text-nowrap">
+                            <button form="customer-type-{{ item.id }}" class="btn btn-sm btn-outline-primary">保存</button>
+                            <form method="post" action="{{ url_for('customer_type_toggle', id=item.id) }}" class="d-inline" onsubmit='return confirm({{ (("确认启用" if not item.active else "确认停用") ~ "客户类型：" ~ item.name ~ "？")|tojson }});'>
+                                <button class="btn btn-sm {% if item.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}">{{ '启用' if not item.active else '停用' }}</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted py-5">暂无客户类型。</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
