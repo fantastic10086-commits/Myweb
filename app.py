@@ -2860,7 +2860,7 @@ def customer_history_edit(id):
     require_customer_access(customer)
     values = {
         'historical_deal_usd': customer.historical_deal_usd or 0,
-        'historical_deal_cutoff': customer.historical_deal_cutoff or DEFAULT_CUTOFF,
+        'historical_deal_cutoff': date.today().isoformat(),
         'historical_deal_note': customer.historical_deal_note or '',
     }
     if request.method == 'POST':
