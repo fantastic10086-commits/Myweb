@@ -3916,8 +3916,10 @@ def customer_delete(id):
     customer = Customer.query.get_or_404(id)
     require_customer_access(customer)
     if request.form.get('confirm_value', '').strip() != customer.name:
+        if request.headers.get('Accept') == 'application/json':
+            return jsonify(success=False, error='输入内容与客户名称不一致，未执行删除。'), 400
         flash('输入内容与客户名称不一致，未执行删除。', 'danger')
-        return redirect(url_for('customer_list'))
+        return redirect(_customer_list_return_url())
     now = datetime.utcnow()
     before = _snapshot(customer, ['name', 'salesperson', 'deleted_at'])
     customer.deleted_at = now
@@ -3929,8 +3931,10 @@ def customer_delete(id):
     _audit('soft_delete', 'customer', customer.id, f'将客户 {customer.name} 及 {len(related)} 份 PI 移入回收站', before=before,
            after=_snapshot(customer, ['name', 'salesperson', 'deleted_at']))
     db.session.commit()
+    if request.headers.get('Accept') == 'application/json':
+        return jsonify(success=True)
     flash('客户已移入回收站。', 'success')
-    return redirect(url_for('customer_list'))
+    return redirect(_customer_list_return_url())
 
 
 @app.route('/customers/<int:id>/reassign', methods=['POST'])
