@@ -222,9 +222,9 @@
                                 <button type="button" role="listitem" id="customsBtn-{{ pi.id }}"
                                         class="pi-list-workflow-stage is-{{ customs_state }} is-action"
                                         onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                        title="{{ customs_text }}；点击查看或登记报关要求">
+                                        title="{{ customs_text }}；点击查看或登记报关要求及费用">
                                     <span class="pi-list-workflow-dot"><i class="bi bi-file-earmark-check"></i></span>
-                                    <span class="pi-list-workflow-label">报关</span>
+                                    <span class="pi-list-workflow-label">报关/费用</span>
                                     <span class="pi-list-workflow-status">{{ customs_text }}</span>
                                 </button>
 
@@ -257,14 +257,6 @@
                                                 <i class="bi bi-copy text-primary"></i>复制 PI
                                             </button>
                                         </form>
-                                    </li>
-                                    {% set expense_count = pi.expenses|length %}
-                                    <li>
-                                        <button type="button" id="expenseBtn-{{ pi.id }}" class="dropdown-item"
-                                                onclick='openExpense({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                                title="{{ ('已登记 ' ~ expense_count ~ ' 笔真实成本，点击查看记录') if expense_count else '点击新增订单真实成本' }}">
-                                            {% if expense_count %}<i class="bi bi-check-lg text-danger"></i>已登记（{{ expense_count }}笔）{% else %}<i class="bi bi-cash-stack"></i>新增真实成本{% endif %}
-                                        </button>
                                     </li>
                                     <li>
                                         <a href="{{ url_for('pi_export', id=pi.id) }}" class="dropdown-item">
@@ -351,9 +343,9 @@
     </div></div>
 </div>
 <div class="modal fade" id="customsModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header">
-            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关记录</h5>
+            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关/费用</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
@@ -381,71 +373,18 @@
                 </div>
             </fieldset>
             <small class="text-muted" id="customsRecordMeta">正在读取记录……</small>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
             <a href="#" class="btn btn-outline-success d-none" id="customsDocumentsBtn">
                 <i class="bi bi-file-earmark-spreadsheet me-1"></i>制作报关资料
             </a>
             <button type="button" class="btn btn-primary" id="customsSaveBtn" disabled onclick="saveCustomsRecord()">
                 <i class="bi bi-check-lg"></i> 保存报关记录
             </button>
-        </div>
-    </div></div>
-</div>
-<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title" id="payModalTitle">登记回款</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-        <div class="modal-body">
-            <p>PI：<strong id="payPINumber"></strong>｜总额：<strong id="payPITotal"></strong></p>
-            <div id="payHistory"></div>
+            </div>
             <hr>
-            <form id="paymentForm" method="post" enctype="multipart/form-data" onsubmit="return preparePaymentSubmit(this);">
-                <input type="hidden" name="idempotency_key" value="{{ payment_token }}">
-                <div class="mb-3">
-                    <label class="form-label" for="payAccount">到账账户（确认） <span class="text-danger">*</span></label>
-                    <select class="form-select" name="receiving_account_id" id="payAccount" required>
-                        <option value="">— 请选择并确认实际到账账户 —</option>
-                    </select>
-                    <small class="text-muted" id="payAccountHelp">仅显示与 PI 币种一致的账户。</small>
-                </div>
-                <div class="mb-3"><label class="form-label">回款流水号 <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="订单号 / 银行流水号"><small class="text-muted">阿里巴巴信保订单号、支付宝订单号、微信订单号或银行流水号</small></div>
-                <div class="mb-3">
-                    <label class="form-label" for="payAttachment">回款凭证图片 <span class="text-danger">*</span></label>
-                    <input type="file" class="form-control" name="attachment" id="payAttachment" required
-                           accept="image/jpeg,image/png,image/webp,image/gif"
-                           onchange="previewPaymentAttachment(this)">
-                    <small class="text-muted">选择文件，或在此弹窗按 Ctrl+V / ⌘V 粘贴到账截图、银行回单；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
-                    <div id="payAttachmentPreviewWrap" class="d-none mt-2">
-                        <img id="payAttachmentPreview" class="img-thumbnail" alt="回款凭证预览"
-                             style="max-height:180px;max-width:100%;object-fit:contain;">
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
-                                onclick="clearPaymentAttachment()">重新选择</button>
-                    </div>
-                </div>
-                <div class="mb-3"><label class="form-label">实收金额 (<span id="payCurrency">USD</span>)</label>
-                    <div class="input-group">
-                        <input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()">
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(30)" title="30%">30%</button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(50)" title="50%">50%</button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(70)" title="70%">70%</button>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(100)" title="100%">100%</button>
-                    </div>
-                </div>
-                <div class="mb-3"><label class="form-label">手续费</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
-                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">按业绩固定汇率（1 USD = 7 RMB）折合：<strong id="usdEquiv">$0.00</strong></small></div>
-                <button type="submit" class="btn btn-success w-100">登记回款</button>
-            </form>
-        </div>
-    </div></div>
-</div>
-<div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg"><div class="modal-content">
-        <div class="modal-header">
-            <h5 class="modal-title"><i class="bi bi-cash-stack me-1"></i>订单真实成本记录</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
+            <h5>费用记录</h5>
+
             <div class="alert alert-info py-2 mb-3">
                 真实成本将记入 PI：<strong id="expensePINumber"></strong><br>
                 <small>用于报关费、实际运费等订单后续支出；不改变客户订单总金额，只在利润核算中扣除。</small>
@@ -499,12 +438,55 @@
                             onclick="clearExpenseAttachment()">移除图片</button>
                 </div>
             </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
             <button type="button" class="btn btn-danger" id="expSubmitBtn" onclick="addExpenseFromPIList()">
                 <i class="bi bi-check-lg"></i> 保存真实成本
             </button>
+        </div>
+    </div></div>
+</div>
+<div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="payModalTitle">登记回款</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p>PI：<strong id="payPINumber"></strong>｜总额：<strong id="payPITotal"></strong></p>
+            <div id="payHistory"></div>
+            <hr>
+            <form id="paymentForm" method="post" enctype="multipart/form-data" onsubmit="return preparePaymentSubmit(this);">
+                <input type="hidden" name="idempotency_key" value="{{ payment_token }}">
+                <div class="mb-3">
+                    <label class="form-label" for="payAccount">到账账户（确认） <span class="text-danger">*</span></label>
+                    <select class="form-select" name="receiving_account_id" id="payAccount" required>
+                        <option value="">— 请选择并确认实际到账账户 —</option>
+                    </select>
+                    <small class="text-muted" id="payAccountHelp">仅显示与 PI 币种一致的账户。</small>
+                </div>
+                <div class="mb-3"><label class="form-label">回款流水号 <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="订单号 / 银行流水号"><small class="text-muted">阿里巴巴信保订单号、支付宝订单号、微信订单号或银行流水号</small></div>
+                <div class="mb-3">
+                    <label class="form-label" for="payAttachment">回款凭证图片 <span class="text-danger">*</span></label>
+                    <input type="file" class="form-control" name="attachment" id="payAttachment" required
+                           accept="image/jpeg,image/png,image/webp,image/gif"
+                           onchange="previewPaymentAttachment(this)">
+                    <small class="text-muted">选择文件，或在此弹窗按 Ctrl+V / ⌘V 粘贴到账截图、银行回单；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                    <div id="payAttachmentPreviewWrap" class="d-none mt-2">
+                        <img id="payAttachmentPreview" class="img-thumbnail" alt="回款凭证预览"
+                             style="max-height:180px;max-width:100%;object-fit:contain;">
+                        <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                                onclick="clearPaymentAttachment()">重新选择</button>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label">实收金额 (<span id="payCurrency">USD</span>)</label>
+                    <div class="input-group">
+                        <input type="number" step="0.01" min="0.01" class="form-control" name="received_amount" id="payAmount" required oninput="updateUsdEquiv()">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(30)" title="30%">30%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(50)" title="50%">50%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(70)" title="70%">70%</button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" onclick="setPct(100)" title="100%">100%</button>
+                    </div>
+                </div>
+                <div class="mb-3"><label class="form-label">手续费</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
+                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">按业绩固定汇率（1 USD = 7 RMB）折合：<strong id="usdEquiv">$0.00</strong></small></div>
+                <button type="submit" class="btn btn-success w-100">登记回款</button>
+            </form>
         </div>
     </div></div>
 </div>
@@ -658,6 +640,7 @@ function customsError(message) {
 }
 function openCustomsRecord(piId, piNumber) {
     currentCustomsPiId = piId;
+    openExpense(piId, piNumber);
     document.getElementById('customsPINumber').textContent = piNumber;
     document.getElementById('customsRequiredYes').checked = false;
     document.getElementById('customsRequiredNo').checked = false;
@@ -693,7 +676,7 @@ function updateCustomsButton(piId, required) {
     var button = document.getElementById('customsBtn-' + piId);
     if (!button) return;
     button.className = 'pi-list-workflow-stage is-complete is-action';
-    button.title = (required ? '需要报关' : '无需报关') + '；点击查看或修改报关要求';
+    button.title = (required ? '需要报关' : '无需报关') + '；点击查看或修改报关要求及费用';
     var status = button.querySelector('.pi-list-workflow-status');
     if (status) status.textContent = required ? '需要报关' : '无需报关';
 }
@@ -723,9 +706,7 @@ function saveCustomsRecord() {
             );
             document.getElementById('customsRecordMeta').textContent =
                 '最近登记：' + result.data.recorded_by + ' · ' + result.data.recorded_at;
-            if (result.data.customs_required !== true) {
-                bootstrap.Modal.getInstance(document.getElementById('customsModal')).hide();
-            }
+
         })
         .catch(function(error) { customsError(error.message || '保存报关记录失败。'); })
         .finally(function() {
@@ -773,22 +754,7 @@ function openExpense(piId, piNumber) {
     var button = document.getElementById('expSubmitBtn');
     button.disabled = false;
     button.innerHTML = '<i class="bi bi-check-lg"></i> 保存真实成本';
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('expenseModal')).show();
     loadExpenseHistory(piId);
-    document.getElementById('expenseModal').addEventListener('shown.bs.modal', function focusAmount() {
-        document.getElementById('exp_category').focus();
-    }, {once: true});
-}
-function updateExpenseButton(piId, count) {
-    var button = document.getElementById('expenseBtn-' + piId);
-    if (!button) return;
-    button.replaceChildren();
-    var icon = document.createElement('i');
-    icon.className = count ? 'bi bi-check-lg text-danger' : 'bi bi-cash-stack';
-    button.appendChild(icon);
-    button.appendChild(document.createTextNode(count ? '已登记（' + count + '笔）' : '新增真实成本'));
-    button.className = 'dropdown-item';
-    button.title = count ? '已登记 ' + count + ' 笔真实成本，点击查看记录' : '点击新增订单真实成本';
 }
 function loadExpenseHistory(piId) {
     var history = document.getElementById('expenseHistory');
@@ -806,7 +772,6 @@ function loadExpenseHistory(piId) {
             return response.json();
         })
         .then(function(records) {
-            updateExpenseButton(piId, records.length);
             history.replaceChildren();
             if (!records.length) {
                 history.className = 'border rounded p-3 text-center text-muted';
