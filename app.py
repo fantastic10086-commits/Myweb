@@ -3678,12 +3678,12 @@ def fees_report():
         )
 
         active_payments = [payment for payment in pi.payments if payment.deleted_at is None]
-        received = sum(finite_amount(payment.amount) + finite_amount(payment.fee)
-                       for payment in active_payments)
-        unpaid = max(0.0, order_revenue - received)
+        received = sum(finite_amount(payment.amount) for payment in active_payments)
+        settled = received + sum(finite_amount(payment.fee) for payment in active_payments)
+        unpaid = max(0.0, order_revenue - settled)
         receipt_ratio = min(
             1.0,
-            received / order_revenue if order_revenue > 0 else 0.0,
+            settled / order_revenue if order_revenue > 0 else 0.0,
         )
         received_rmb = to_rmb(received, currency, exchange_rate)
         payment_fee_rmb = sum(
@@ -3717,7 +3717,7 @@ def fees_report():
         # contracted-order view and the cash-received view, so that a partial
         # payment is never presented as the full order revenue.
         net_income_rmb = order_revenue_rmb - payment_fee_rmb
-        received_net_income_rmb = received_rmb - payment_fee_rmb
+        received_net_income_rmb = received_rmb
         actual_expense_rmb = recorded_expense_rmb + supplier_freight_rmb
         total_actual_cost_rmb = procurement_cost_rmb + actual_expense_rmb
         allocated_cost_rmb = total_actual_cost_rmb
@@ -3789,7 +3789,7 @@ def fees_report():
         'received_rmb': round(sum(row['received_rmb'] for row in pi_list), 2),
         'received_net_income_rmb': round(sum(row['received_net_income_rmb'] for row in pi_list), 2),
         'unpaid_rmb': round(sum(
-            max(0.0, row['order_revenue_rmb'] - row['received_rmb'])
+            max(0.0, row['order_revenue_rmb'] - row['received_rmb'] - row['payment_fee_rmb'])
             for row in pi_list
         ), 2),
         'procurement_cost_rmb': round(sum(row['procurement_cost_rmb'] for row in pi_list), 2),

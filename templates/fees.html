@@ -124,7 +124,7 @@ function deleteExpense(id) {
 {% set filtered_count = pi_list|length %}
 {% include '_pi_report_filters.html' %}
 
-<div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 mb-3">
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3 mb-3">
     <div class="col">
         <div class="card border-primary profit-summary-card">
             <div class="card-body text-center py-3">
@@ -137,18 +137,9 @@ function deleteExpense(id) {
     <div class="col">
         <div class="card border-warning profit-summary-card">
             <div class="card-body text-center py-3">
-                <div class="text-muted small">累计回款（含手续费）</div>
+                <div class="text-muted small">累计实收金额</div>
                 <h4 class="text-warning fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.received_rmb) }}</h4>
                 <small class="text-muted">尚未回款 ¥{{ '%.2f'|format(summary.unpaid_rmb) }}</small>
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="card border-danger profit-summary-card">
-            <div class="card-body text-center py-3">
-                <div class="text-muted small">实收净额</div>
-                <h4 class="text-danger fw-bold mb-1 profit-amount">¥{{ '%.2f'|format(summary.received_net_income_rmb) }}</h4>
-                <small class="text-muted">已扣收款手续费 ¥{{ '%.2f'|format(summary.payment_fee_rmb) }}</small>
             </div>
         </div>
     </div>
@@ -177,8 +168,8 @@ function deleteExpense(id) {
                     <tr>
                         <th>PI / 客户</th>
                         <th class="text-end">订单总金额</th>
-                        <th class="text-end">累计回款（含手续费）</th>
-                        <th class="text-end">实收净额</th>
+                        <th class="text-end">累计实收金额</th>
+                        <th class="text-end">实际成本</th>
                         <th class="text-end">回款结余</th>
                         <th class="text-end">状态 / 操作</th>
                     </tr>
@@ -201,10 +192,7 @@ function deleteExpense(id) {
                             <div class="profit-muted">回款进度 {{ '%.1f'|format(p.receipt_ratio) }}% · 未回款 {{ p.sym }}{{ '%.2f'|format(p.unpaid) }}</div>
                             {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.received_rmb) }}</div>{% endif %}
                         </td>
-                        <td class="text-end">
-                            <div class="profit-main-value">¥{{ '%.2f'|format(p.received_net_income_rmb) }}</div>
-                            <div class="profit-muted">已扣手续费 ¥{{ '%.2f'|format(p.payment_fee_rmb) }}</div>
-                        </td>
+                        <td class="text-end"><div class="profit-main-value">¥{{ '%.2f'|format(p.total_actual_cost_rmb) }}</div><div class="profit-muted">整单已登记成本</div></td>
                         <td class="text-end">
                             {% if p.received_profit_rmb is not none %}
                             <div class="profit-main-value {{ 'text-success' if p.received_profit_rmb >= 0 else 'text-danger' }}">¥{{ '%.2f'|format(p.received_profit_rmb) }}</div>
@@ -243,10 +231,10 @@ function deleteExpense(id) {
                                                     <span class="text-nowrap">实收 {{ p.sym }}{{ '%.2f'|format(payment.amount) }}{% if payment.fee %} · 手续费 {{ p.sym }}{{ '%.2f'|format(payment.fee) }}{% endif %}</span>
                                                 </div>
                                                 {% endfor %}
-                                                <div class="profit-line"><span>累计回款（含手续费）</span><strong>{{ p.sym }}{{ '%.2f'|format(p.received) }}</strong></div>
+                                                <div class="profit-line"><span>累计实收金额</span><strong>{{ p.sym }}{{ '%.2f'|format(p.received) }}</strong></div>
                                                 <div class="profit-line"><span>未回款</span><span>{{ p.sym }}{{ '%.2f'|format(p.unpaid) }}</span></div>
-                                                <div class="profit-line"><span>收款手续费</span><span class="text-danger">− ¥{{ '%.2f'|format(p.payment_fee_rmb) }}</span></div>
-                                                <div class="profit-line profit-total-line"><strong>实收净额</strong><strong>¥{{ '%.2f'|format(p.received_net_income_rmb) }}</strong></div>
+                                                <div class="profit-line"><span>收款手续费（单独记录，不再扣除）</span><span>¥{{ '%.2f'|format(p.payment_fee_rmb) }}</span></div>
+                                                <div class="profit-line profit-total-line"><strong>累计实收金额</strong><strong>¥{{ '%.2f'|format(p.received_net_income_rmb) }}</strong></div>
                                                 {% if p.received_profit_rmb is not none %}
                                                 <div class="profit-line"><span>整单已登记实际成本</span><span class="text-danger">− ¥{{ '%.2f'|format(p.allocated_cost_rmb) }}</span></div>
                                                 <div class="profit-line profit-total-line"><strong>回款结余</strong><strong class="{{ 'text-success' if p.received_profit_rmb >= 0 else 'text-danger' }}">¥{{ '%.2f'|format(p.received_profit_rmb) }}</strong></div>
@@ -283,7 +271,7 @@ function deleteExpense(id) {
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap justify-content-between gap-2 mt-2 profit-muted">
-                                        <span>本单汇率：1 USD = ¥{{ '%.4f'|format(p.exchange_rate) }} · 回款结余 = 实收净额 − 整单已登记实际成本</span>
+                                        <span>本单汇率：1 USD = ¥{{ '%.4f'|format(p.exchange_rate) }} · 回款结余 = 累计实收金额 − 整单已登记实际成本</span>
                                         {% if p.potential_duplicate_freight %}<span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>供应商采购运费与运费类真实成本同时存在，请检查是否重复记账。</span>{% endif %}
                                     </div>
                                 </div>
@@ -302,7 +290,7 @@ function deleteExpense(id) {
 
 <details class="alert alert-light border mt-3 mb-0 small text-muted">
     <summary class="fw-semibold">查看计算口径</summary>
-    <div class="mt-2">订单总金额 = 产品收入 + 客户费用/折扣；实收净额 = 累计回款（含手续费）− 已发生收款手续费；订单真实成本 = 采购产品成本 + 供应商采购运费 + 业务员登记的真实成本；回款结余 = 实收净额 − 整单已登记实际成本。订单口径预计利润继续按订单总金额计算。美元按各 PI 保存的本单业务汇率折算成人民币，所有有回款订单均计入回款结余汇总；成本待完善时结余并非最终利润。</div>
+    <div class="mt-2">订单总金额 = 产品收入 + 客户费用/折扣；累计实收金额 = 累计实收金额− 已发生收款手续费；订单真实成本 = 采购产品成本 + 供应商采购运费 + 业务员登记的真实成本；回款结余 = 累计实收金额 − 整单已登记实际成本。订单口径预计利润继续按订单总金额计算。美元按各 PI 保存的本单业务汇率折算成人民币，所有有回款订单均计入回款结余汇总；成本待完善时结余并非最终利润。</div>
 </details>
 
 <div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true">
