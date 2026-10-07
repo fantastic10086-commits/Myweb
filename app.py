@@ -4987,17 +4987,7 @@ def _customer_type_sort_order_from_form(fallback):
 @app.route('/customer-types')
 @admin_required
 def customer_type_list():
-    customer_types = _customer_types_query().all()
-    customer_counts = dict(
-        db.session.query(Customer.customer_type_id, func.count(Customer.id))
-        .filter(Customer.deleted_at.is_(None))
-        .group_by(Customer.customer_type_id)
-        .all()
-    )
-    return render_template(
-        'customer_types.html', customer_types=customer_types,
-        customer_counts=customer_counts,
-    )
+    return redirect(url_for('account_list', _anchor='customer-types'))
 
 
 @app.route('/customer-types/add', methods=['POST'])
@@ -5008,7 +4998,7 @@ def customer_type_add():
         default_follow_up_days = _customer_type_days_from_form()
     except ValueError as exc:
         flash(str(exc), 'danger')
-        return redirect(url_for('customer_type_list'))
+        return redirect(url_for('account_list', _anchor='customer-types'))
     max_order = db.session.query(func.max(CustomerType.sort_order)).scalar() or 0
     customer_type = CustomerType(
         name=name,
@@ -5025,7 +5015,7 @@ def customer_type_add():
     )
     db.session.commit()
     flash('客户类型已新增。', 'success')
-    return redirect(url_for('customer_type_list'))
+    return redirect(url_for('account_list', _anchor='customer-types'))
 
 
 @app.route('/customer-types/<int:id>/edit', methods=['POST'])
@@ -5040,7 +5030,7 @@ def customer_type_edit(id):
         sort_order = _customer_type_sort_order_from_form(customer_type.sort_order)
     except ValueError as exc:
         flash(str(exc), 'danger')
-        return redirect(url_for('customer_type_list'))
+        return redirect(url_for('account_list', _anchor='customer-types'))
     before = _snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days'])
     customer_type.name = name
     customer_type.default_follow_up_days = default_follow_up_days
@@ -5052,7 +5042,7 @@ def customer_type_edit(id):
     )
     db.session.commit()
     flash('客户类型已更新。', 'success')
-    return redirect(url_for('customer_type_list'))
+    return redirect(url_for('account_list', _anchor='customer-types'))
 
 
 @app.route('/customer-types/<int:id>/toggle', methods=['POST'])
@@ -5061,7 +5051,7 @@ def customer_type_toggle(id):
     customer_type = CustomerType.query.get_or_404(id)
     if customer_type.active and CustomerType.query.filter_by(active=True).count() <= 1:
         flash('至少需要保留一个启用中的客户类型。', 'danger')
-        return redirect(url_for('customer_type_list'))
+        return redirect(url_for('account_list', _anchor='customer-types'))
     before = _snapshot(customer_type, ['name', 'code', 'sort_order', 'active', 'default_follow_up_days'])
     customer_type.active = not customer_type.active
     action = '启用' if customer_type.active else '停用'
@@ -5072,7 +5062,7 @@ def customer_type_toggle(id):
     )
     db.session.commit()
     flash(f'客户类型已{action}。', 'success')
-    return redirect(url_for('customer_type_list'))
+    return redirect(url_for('account_list', _anchor='customer-types'))
 
 
 @app.route('/accounts')
@@ -5083,6 +5073,12 @@ def account_list():
     accounts = Account.query.order_by(Account.name).all()
     return render_template(
         'field_management.html',
+        customer_types=_customer_types_query().all(),
+        customer_counts=dict(
+            db.session.query(Customer.customer_type_id, func.count(Customer.id))
+            .filter(Customer.deleted_at.is_(None))
+            .group_by(Customer.customer_type_id).all()
+        ),
         accounts=accounts,
         shipping_note_options=_field_options('shipping_note'),
         expense_category_options=_field_options('expense_category'),

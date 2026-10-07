@@ -93,7 +93,6 @@
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('audit_logs') }}"><i class="bi bi-journal-check"></i> 操作审计</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('recycle_bin') }}"><i class="bi bi-trash3"></i> 回收站</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-ui-checks-grid"></i> 字段管理</a></li>{% endif %}
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('customer_type_list') }}"><i class="bi bi-tags"></i> 客户类型管理</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('document_template_list') }}"><i class="bi bi-file-earmark-spreadsheet"></i> 单据模板</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('supplier_list') }}"><i class="bi bi-truck"></i> 供应商</a></li>{% endif %}
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('salesperson_list') }}"><i class="bi bi-person-badge"></i> 业务员</a></li>{% endif %}
