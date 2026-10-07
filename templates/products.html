@@ -143,7 +143,7 @@
                             </td>
                             <td class="text-end text-nowrap">
                                 <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
-                                <a href="{{ url_for('product_edit', id=p.id) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
+                                <a href="{{ url_for('product_edit', id=p.id, return_to=url_for('product_list', search=search, filter=filter, sort=sort, page=page, _anchor='row-' ~ p.id)) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
                                 {% if is_admin and not p.active %}<button type="button" class="btn btn-sm btn-outline-success" title="重新启用" onclick="enableProduct({{ p.id }})"><i class="bi bi-arrow-counterclockwise"></i></button>{% endif %}
                                 <button type="button" class="btn btn-sm btn-outline-danger" title="删除或停用" onclick="deleteProduct({{ p.id }}, '{{ p.name|e }}')"><i class="bi bi-trash"></i></button>
                             </td>
@@ -167,19 +167,19 @@
     <small class="text-muted">第 {{ page }} 页，共 {{ total_pages }} 页（{{ total }} 个产品）</small>
     <ul class="pagination pagination-sm mb-0">
         <li class="page-item {{ 'disabled' if page <= 1 else '' }}">
-            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page-1) }}">&laquo; 上一页</a>
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, sort=sort, page=page-1) }}">&laquo; 上一页</a>
         </li>
         {% for p in range(1, total_pages + 1) %}
         {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
         <li class="page-item {{ 'active' if p == page else '' }}">
-            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=p) }}">{{ p }}</a>
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, sort=sort, page=p) }}">{{ p }}</a>
         </li>
         {% elif p == page - 3 or p == page + 3 %}
         <li class="page-item disabled"><span class="page-link">…</span></li>
         {% endif %}
         {% endfor %}
         <li class="page-item {{ 'disabled' if page >= total_pages else '' }}">
-            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, page=page+1) }}">下一页 &raquo;</a>
+            <a class="page-link" href="{{ url_for('product_list', search=search, filter=filter, sort=sort, page=page+1) }}">下一页 &raquo;</a>
         </li>
     </ul>
 </nav>

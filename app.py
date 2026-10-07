@@ -4245,15 +4245,32 @@ def product_add():
     return render_template('product_form.html', product=None, editing=False)
 
 
+def _product_list_return_url():
+    """Carry list state through editing, allowing only the local product list."""
+    fallback = url_for('product_list')
+    raw = request.form.get('return_to', request.args.get('return_to', ''))
+    try:
+        target = urllib.parse.urlsplit(raw)
+    except ValueError:
+        return fallback
+    if target.scheme or target.netloc or target.path != fallback:
+        return fallback
+    query = urllib.parse.parse_qs(target.query)
+    values = {key: query[key][-1] for key in ('search', 'filter', 'sort', 'page') if key in query}
+    anchor = target.fragment if re.fullmatch(r'row-[0-9]+', target.fragment) else None
+    return url_for('product_list', _anchor=anchor, **values)
+
+
 @app.route('/products/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def product_edit(id):
     product = Product.query.get_or_404(id)
+    return_to = _product_list_return_url()
     if request.method == 'POST':
         new_name = request.form.get('name', '').strip()
         if not new_name:
             flash('产品名称不能为空。', 'danger')
-            return render_template('product_form.html', product=product, editing=True)
+            return render_template('product_form.html', product=product, editing=True, return_to=return_to)
         before = _snapshot(product, PRODUCT_AUDIT_FIELDS)
         old_image = product.image or ''
         new_image = ''
@@ -4278,7 +4295,7 @@ def product_edit(id):
         if not customs_ok:
             _remove_upload(new_image)
             flash(customs_error, 'danger')
-            return render_template('product_form.html', product=product, editing=True)
+            return render_template('product_form.html', product=product, editing=True, return_to=return_to)
         if new_image:
             product.image = new_image
         try:
@@ -4292,8 +4309,8 @@ def product_edit(id):
         if new_image and old_image != new_image:
             _remove_product_image_if_unused(old_image)
         flash('产品更新成功。', 'success')
-        return redirect(url_for('product_list'))
-    return render_template('product_form.html', product=product, editing=True)
+        return redirect(return_to)
+    return render_template('product_form.html', product=product, editing=True, return_to=return_to)
 
 
 @app.route('/products/<int:id>/delete', methods=['POST'])
