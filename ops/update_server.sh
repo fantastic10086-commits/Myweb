@@ -66,6 +66,8 @@ health_ok=false
 if systemctl restart pi-manager; then
     for attempt in $(seq 1 20); do
         if curl --fail --silent --max-time 5 http://127.0.0.1:8000/login >/dev/null \
+            && curl --fail --silent --max-time 5 http://127.0.0.1:8000/favicon.ico >/dev/null \
+            && curl --fail --silent --max-time 5 http://127.0.0.1:8000/static/favicon.png >/dev/null \
             && curl --fail --silent --max-time 5 http://127.0.0.1:8000/static/style.css >/dev/null \
             && curl --fail --silent --max-time 5 http://127.0.0.1:8000/static/lib/bootstrap.min.css >/dev/null; then
             health_ok=true

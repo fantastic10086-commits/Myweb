@@ -2355,7 +2355,7 @@ def filter_by_user(query, model, salesperson_field='salesperson'):
 @app.route('/favicon.ico')
 def favicon():
     """兼容仍会固定请求 /favicon.ico 的浏览器。"""
-    return send_from_directory(app.static_folder, 'favicon.ico', mimetype='image/x-icon', max_age=3600)
+    return send_file(os.path.join(app.static_folder, 'favicon.ico'), mimetype='image/x-icon', max_age=3600)
 
 
 @app.route('/login', methods=['GET', 'POST'])
