@@ -2837,7 +2837,7 @@ def _apply_customer_history(customer, values, source):
 
 
 @app.route('/customers/<int:id>/history', methods=['GET', 'POST'])
-@admin_required
+@login_required
 def customer_history_edit(id):
     customer = Customer.query.get_or_404(id)
     require_customer_access(customer)
