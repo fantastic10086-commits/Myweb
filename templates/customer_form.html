@@ -33,7 +33,7 @@ document.addEventListener('paste', function(e) {
         <h2><i class="bi bi-{% if editing %}pencil{% else %}person-plus{% endif %} me-2"></i>
             {% if editing %}编辑客户{% else %}新增客户{% endif %}
         </h2>
-        <a href="{{ url_for('customer_list') }}" class="btn btn-sm btn-outline-secondary">
+        <a href="{{ return_to|default(url_for('customer_list'), true) }}" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left"></i> 返回客户列表
         </a>
     </div>
@@ -42,6 +42,7 @@ document.addEventListener('paste', function(e) {
 <div class="card">
     <div class="card-body">
         <form method="post" enctype="multipart/form-data">
+            {% if editing %}<input type="hidden" name="return_to" value="{{ return_to }}">{% endif %}
             {% if editing %}<input type="hidden" name="version" value="{{ customer.version or 1 }}">{% endif %}
             {% if editing %}<div class="alert alert-light border">历史成交额（USD）：${{ '%.2f'|format(customer.historical_deal_usd or 0) }} <a href="{{ url_for('customer_history_edit', id=customer.id) }}">录入 / 修改历史成交额</a></div>{% endif %}
             <div class="row g-3">
@@ -143,7 +144,7 @@ document.addEventListener('paste', function(e) {
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-lg"></i> {% if editing %}更新{% else %}保存{% endif %}客户
                 </button>
-                <a href="{{ url_for('customer_list') }}" class="btn btn-outline-secondary ms-2">取消</a>
+                <a href="{{ return_to|default(url_for('customer_list'), true) }}" class="btn btn-outline-secondary ms-2">取消</a>
             </div>
         </form>
     </div>

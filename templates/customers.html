@@ -109,8 +109,9 @@
                 </thead>
                 <tbody>
                     {% for c in customers %}
-                    <tr>
-                        <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
+                    {% set list_return = url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page, _anchor='customer-row-' ~ c.id) %}
+                    <tr id="customer-row-{{ c.id }}">
+                        <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id, return_to=list_return) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
                         <td>{{ c.country }}</td>
                         <td style="max-width:150px;"><span class="text-truncate d-block">{{ c.contact_person or '-' }}</span><small class="text-muted text-truncate d-block">{{ c.email or c.phone or '' }}</small></td>
                         <td>{{ c.salesperson }}</td>
@@ -130,7 +131,8 @@
                             {% endif %}
                         </td>
                         <td class="text-end text-nowrap">
-                            <a href="{{ url_for('customer_detail', id=c.id) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> 详情</a>
+                            <a href="{{ url_for('customer_edit', id=c.id, return_to=list_return) }}" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil"></i> 编辑</a>
+                            <a href="{{ url_for('customer_detail', id=c.id, return_to=list_return) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i> 详情</a>
                             <a href="{{ url_for('pi_create', customer_id=c.id) }}" class="btn btn-sm btn-outline-info"><i class="bi bi-file-earmark-plus"></i> 新建 PI</a>
                             <div class="dropdown d-inline-block">
                                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">更多</button>

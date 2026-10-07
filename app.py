@@ -2683,10 +2683,27 @@ def _sync_legacy_customer_priority(customer):
     customer.priority_level = code if code in {'key', 'invalid'} else 'normal'
 
 
+def _customer_list_return_url():
+    fallback = url_for('customer_list')
+    raw = request.form.get('return_to', request.args.get('return_to', ''))
+    try:
+        target = urllib.parse.urlsplit(raw)
+    except ValueError:
+        return fallback
+    if target.scheme or target.netloc or target.path != fallback:
+        return fallback
+    query = urllib.parse.parse_qs(target.query)
+    keys = ('search', 'sort', 'sp', 'deal_min', 'deal_max', 'date_from', 'date_to', 'customer_type', 'follow', 'page')
+    values = {key: query[key][-1] for key in keys if key in query}
+    anchor = target.fragment if re.fullmatch(r'customer-row-[0-9]+', target.fragment) else None
+    return url_for('customer_list', _anchor=anchor, **values)
+
+
 def _render_customer_form(customer, editing):
     default_customer_type = _default_customer_type()
     return render_template(
         'customer_form.html', customer=customer, editing=editing,
+        return_to=_customer_list_return_url(),
         customer_type_options=_customer_types_query().all(),
         default_customer_type_id=default_customer_type.id if default_customer_type else None,
         default_customer_type_name=default_customer_type.name if default_customer_type else '未设置',
@@ -3012,7 +3029,7 @@ def customer_edit(id):
         if _submitted_version(customer) != (customer.version or 1):
             db.session.rollback()
             flash('该客户已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
-            return redirect(url_for('customer_edit', id=id))
+            return redirect(url_for('customer_edit', id=id, return_to=_customer_list_return_url()))
         before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
         image_file = request.files.get('image')
         if image_file and image_file.filename:
@@ -3064,7 +3081,7 @@ def customer_edit(id):
                after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
         db.session.commit()
         flash('客户更新成功。', 'success')
-        return redirect(url_for('customer_list'))
+        return redirect(_customer_list_return_url())
     return _render_customer_form(customer, editing=True)
 
 
@@ -3271,6 +3288,7 @@ def customer_detail(id):
         else:
             archived_pi_files.append(customer_file)
     resp = make_response(render_template('customer_detail.html', customer=customer, pis=pis,
+                                          return_to=_customer_list_return_url(),
                                           all_pi_count=len(all_pis),
                                           latest_deal_date=(all_pis[0].issue_date if all_pis else None),
                                           purchased_products=purchased_products,
