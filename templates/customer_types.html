@@ -10,7 +10,7 @@
 <div class="card mb-4">
     <div class="card-header"><h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>新增客户类型</h5></div>
     <div class="card-body">
-        <form method="post" action="{{ url_for('customer_type_add') }}" class="row g-3 align-items-end">
+        <form method="post" action="{{ url_for('customer_type_add') }}" class="row g-3 align-items-start">
             <div class="col-md-6">
                 <label class="form-label" for="new_customer_type_name">类型名称 <span class="text-danger">*</span></label>
                 <input class="form-control" id="new_customer_type_name" name="name" maxlength="100" required placeholder="例如：经销商、终端客户">
@@ -24,6 +24,7 @@
                 <small class="text-muted">留空时，新增跟进不自动建议下次日期。</small>
             </div>
             <div class="col-md-2 d-grid">
+                <span class="form-label d-none d-md-block" aria-hidden="true">&nbsp;</span>
                 <button class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>新增类型</button>
             </div>
         </form>
