@@ -3,6 +3,13 @@
 
 {% block extra_scripts %}
 <script>
+var productImageModal = document.getElementById('productImageModal');
+if (productImageModal) {
+    productImageModal.addEventListener('show.bs.modal', function() {
+        var fullImage = document.getElementById('productFullImage');
+        if (!fullImage.getAttribute('src')) fullImage.src = fullImage.dataset.src;
+    });
+}
 function calcUsdFromRmb() {
     var rmb = parseFloat(document.getElementById('unit_price_rmb').value) || 0;
     var rate = parseFloat(document.getElementById('formRate').value) || {{ exchange_rate|tojson }};
@@ -126,7 +133,12 @@ document.addEventListener('paste', function(e) {
                     <small class="text-muted">点击选择，或使用 <strong>Ctrl+V</strong> 从剪贴板粘贴</small>
                     <img id="img_preview" src="#" style="display:none;max-height:80px;max-width:200px;margin-top:4px;border-radius:4px;border:1px solid #ddd;">
                     {% if editing and product.image %}
-                    <small class="text-muted">当前： <img src="{{ url_for('uploaded_product_thumbnail', filename=product.image) }}" loading="lazy" decoding="async" style="max-height:40px;vertical-align:middle;"></small>
+                    <small class="text-muted">当前：
+                        <button type="button" class="btn p-0 border-0 align-middle" data-bs-toggle="modal" data-bs-target="#productImageModal" title="点击放大图片" aria-label="放大当前产品图片" style="cursor:zoom-in;">
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=product.image) }}" alt="{{ product.name }}" loading="lazy" decoding="async" style="max-height:40px;vertical-align:middle;">
+                        </button>
+                        <span class="ms-1">点击图片放大</span>
+                    </small>
                     {% endif %}
                 </div>
                 <div class="col-12"><hr><h5 class="mb-0"><i class="bi bi-clipboard-check me-1"></i>报关资料</h5><small class="text-muted">系统已为全部产品采用统一默认值；例外产品可在这里调整。</small></div>
@@ -193,6 +205,21 @@ document.addEventListener('paste', function(e) {
         </form>
     </div>
 </div>
+{% if editing and product and product.image %}
+<div class="modal fade" id="productImageModal" tabindex="-1" aria-labelledby="productImageTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="productImageTitle">{{ product.name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭图片预览"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="productFullImage" data-src="{{ url_for('uploaded_file', filename=product.image) }}" alt="{{ product.name }}" style="max-width:100%;max-height:75vh;object-fit:contain;">
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% if editing and product %}
 <script>
 function copyProduct(id) {
