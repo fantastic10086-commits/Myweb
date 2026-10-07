@@ -1137,10 +1137,38 @@ function viewPayments(id) {
                 });
                 var attachmentCell = row.insertCell();
                 if (pmts[i].has_attachment) {
-                    var attachmentLink = document.createElement('a');
-                    attachmentLink.href = '/payments/' + pmts[i].id + '/attachment';
-                    attachmentLink.target = '_blank';
-                    attachmentLink.rel = 'noopener';
+                    var attachmentLink = document.createElement('button');
+                    attachmentLink.type = 'button';
+                    attachmentLink.dataset.imageUrl = '/payments/' + pmts[i].id + '/attachment';
+                    attachmentLink.setAttribute('aria-expanded', 'false');
+                    attachmentLink.onclick = function() {
+                        if (!this.previewRow) {
+                            var previewRow = document.createElement('tr');
+                            var previewCell = previewRow.insertCell();
+                            previewCell.colSpan = 8;
+                            previewCell.className = 'text-center bg-light p-2';
+                            var image = document.createElement('img');
+                            image.alt = '回款凭证';
+                            image.className = 'img-fluid rounded';
+                            image.style.maxHeight = '360px';
+                            image.style.objectFit = 'contain';
+                            image.onerror = function() {
+                                this.hidden = true;
+                                previewCell.appendChild(document.createTextNode('图片加载失败，请关闭后重新查看。'));
+                            };
+                            image.src = this.dataset.imageUrl;
+                            previewCell.appendChild(image);
+                            this.closest('tr').after(previewRow);
+                            this.previewRow = previewRow;
+                            this.textContent = '收起图片';
+                            this.setAttribute('aria-expanded', 'true');
+                        } else {
+                            this.previewRow.remove();
+                            this.previewRow = null;
+                            this.textContent = '查看图片';
+                            this.setAttribute('aria-expanded', 'false');
+                        }
+                    };
                     attachmentLink.className = 'btn btn-sm btn-outline-primary';
                     attachmentLink.textContent = '查看图片';
                     attachmentCell.appendChild(attachmentLink);
