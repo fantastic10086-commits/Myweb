@@ -7,8 +7,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}PI 管理系统{% endblock %} — {{ company.name }}</title>
     {# 版本号用于刷新浏览器长期缓存的站点图标。 #}
-    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg', v='20260902') }}">
-    <link rel="shortcut icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg', v='20260902') }}">
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico', v='20261007') }}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='favicon.png', v='20261007') }}">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='favicon.ico', v='20261007') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap-icons.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">

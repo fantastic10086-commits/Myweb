@@ -15,6 +15,8 @@ PREVIOUS="$(readlink -f "$APP_DIR/current" || true)"
 # list so an incomplete staging upload can never be published as a usable UI.
 REQUIRED_STATIC_ASSETS=(
     static/favicon.svg
+    static/favicon.ico
+    static/favicon.png
     static/style.css
     static/lib/bootstrap.min.css
     static/lib/bootstrap-icons.css
