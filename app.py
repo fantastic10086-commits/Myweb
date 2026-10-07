@@ -6432,10 +6432,10 @@ def packing_list_detail(pi_id):
         return redirect(url_for('packing_list_index'))
     data = _packing_list_payload(
         pi, packing_list, batch,
-        prefill=is_admin() and has_payment and packing_list is None,
+        prefill=has_payment and packing_list is None,
     )
     edit_mode = bool(
-        is_admin() and has_payment and (
+        has_payment and (
             packing_list is None
             or batch is None
             or not batch.is_completed
@@ -6449,9 +6449,10 @@ def packing_list_detail(pi_id):
 
 
 @app.route('/packing-list/<int:pi_id>/batches', methods=['POST'])
-@admin_required
+@login_required
 def packing_batch_create(pi_id):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
+    require_pi_access(pi)
     if (pi.received_amount or 0) <= 0:
         abort(409, description='PI 尚未回款，不能新增发货批次。')
     packing_list = pi.packing_list
@@ -6483,9 +6484,10 @@ def packing_batch_create(pi_id):
 
 
 @app.route('/api/packing-list/<int:pi_id>', methods=['POST'])
-@admin_required
+@login_required
 def packing_list_save(pi_id):
     pi = _packing_pi_query().filter(PI.id == pi_id).first_or_404()
+    require_pi_access(pi)
     if (pi.received_amount or 0) <= 0:
         return jsonify({
             'success': False,
@@ -6506,7 +6508,7 @@ def packing_list_save(pi_id):
     if submitted_version != current_version:
         return jsonify({
             'success': False,
-            'error': '装箱单已被其他管理员更新，请刷新页面后再修改。',
+            'error': '装箱单已被其他用户更新，请刷新页面后再修改。',
         }), 409
     try:
         packing_date_value = str(payload.get('packing_date') or '').strip()
@@ -6661,7 +6663,7 @@ def packing_list_save(pi_id):
         db.session.commit()
     except StaleDataError:
         db.session.rollback()
-        return jsonify({'success': False, 'error': '装箱单已被其他管理员更新，请刷新后重试。'}), 409
+        return jsonify({'success': False, 'error': '装箱单已被其他用户更新，请刷新后重试。'}), 409
     except IntegrityError:
         db.session.rollback()
         return jsonify({'success': False, 'error': '箱号重复或装箱数据冲突，请检查后重试。'}), 409

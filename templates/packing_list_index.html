@@ -6,7 +6,7 @@
     <div>
         <h2 class="mb-1"><i class="bi bi-box-seam me-2"></i>装箱单</h2>
         <div class="text-muted">
-            {% if is_admin %}仅已付清 PI 可创建和编辑装箱单；管理员可管理和导出全部装箱单。{% else %}可查看并导出自己负责、已付清 PI 的装箱单。{% endif %}
+            {% if is_admin %}已有回款的 PI 可创建和编辑装箱单；管理员可管理和导出全部装箱单。{% else %}可创建、编辑和导出自己负责且已有回款的 PI 装箱单。{% endif %}
         </div>
     </div>
 </div>
@@ -96,7 +96,7 @@
                             {% if pi.packing_list and (pi.received_amount or 0) <= 0 %}<span class="badge bg-secondary">历史记录·无回款</span>{% endif %}
                         </td>
                         <td class="text-end text-nowrap">
-                            {% if is_admin and (pi.received_amount or 0) > 0 %}
+                            {% if (pi.received_amount or 0) > 0 %}
                             <a href="{{ url_for('packing_list_detail', pi_id=pi.id) }}" class="btn btn-sm btn-outline-primary">
                                 {% if pi.packing_list and pi.packing_list.is_completed %}
                                 <i class="bi bi-eye"></i> 预览
@@ -111,7 +111,7 @@
                             {% elif (pi.received_amount or 0) <= 0 %}
                             <span class="text-muted small">待回款</span>
                             {% else %}
-                            <span class="text-muted small">等待管理员创建</span>
+                            <span class="text-muted small">尚未回款，暂不能创建</span>
                             {% endif %}
                             {% if pi.packing_list %}
                             <div class="btn-group">

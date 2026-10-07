@@ -204,18 +204,18 @@
 
                                 {% set packing_state = 'complete' if pi.packing_list and pi.packing_list.is_completed else ('partial' if pi.packing_list else 'pending') %}
                                 {% set packing_text = '装箱完成' if packing_state == 'complete' else ('装箱草稿' if packing_state == 'partial' else '未装箱') %}
-                                {% if pi.packing_list or (is_admin and total_received > 0) %}
+                                {% if pi.packing_list or (total_received > 0) %}
                                 <a role="listitem" href="{{ url_for('packing_list_detail', pi_id=pi.id) }}"
                                    class="pi-list-workflow-stage is-{{ packing_state }} is-action"
                                    title="{{ packing_text }}；点击{{ '查看' if pi.packing_list else '创建' }}装箱单">
                                 {% else %}
                                 <span role="listitem" class="pi-list-workflow-stage is-{{ packing_state }}"
-                                      title="{{ packing_text }}{{ '；尚未回款，不能创建装箱单' if total_received <= 0 else '；仅管理员可以创建装箱单' }}">
+                                      title="{{ packing_text }}{{ '；尚未回款，不能创建装箱单' if total_received <= 0 else '' }}">
                                 {% endif %}
                                     <span class="pi-list-workflow-dot"><i class="bi bi-box-seam"></i></span>
                                     <span class="pi-list-workflow-label">装箱</span>
                                     <span class="pi-list-workflow-status">{{ packing_text }}</span>
-                                {% if pi.packing_list or (is_admin and total_received > 0) %}</a>{% else %}</span>{% endif %}
+                                {% if pi.packing_list or (total_received > 0) %}</a>{% else %}</span>{% endif %}
 
                                 {% set customs_state = 'complete' if pi.customs_required is not none else 'pending' %}
                                 {% set customs_text = ('需要报关' if pi.customs_required else '无需报关') if pi.customs_required is not none else '未登记' %}

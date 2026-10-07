@@ -90,7 +90,7 @@
     </div>
     {% if packing_list %}
     <div class="d-flex gap-2 flex-wrap justify-content-end">
-        {% if is_admin and (pi.received_amount or 0) > 0 and packing_batch and packing_batch.is_completed and not can_edit %}
+        {% if (pi.received_amount or 0) > 0 and packing_batch and packing_batch.is_completed and not can_edit %}
         <a href="{{ url_for('packing_list_detail', pi_id=pi.id, batch=packing_batch.id, edit=1) }}"
            class="btn btn-primary"
            {% if pi.shipping_completed %}onclick="return confirm('该订单已经登记发货，确认仍要编辑装箱单吗？')"{% endif %}>
@@ -141,7 +141,7 @@
             {% if batch.status == 'shipped' %}· 已发货{% elif batch.is_completed %}· 已完成{% else %}· 草稿{% endif %}
         </a>
         {% endfor %}
-        {% if is_admin and (pi.received_amount or 0) > 0 %}
+        {% if (pi.received_amount or 0) > 0 %}
         <form method="post" action="{{ url_for('packing_batch_create', pi_id=pi.id) }}" class="ms-auto">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button class="btn btn-sm btn-outline-primary" type="submit"><i class="bi bi-plus-lg"></i> 新增发货批次</button>
@@ -276,7 +276,7 @@
 <script id="packingData" type="application/json">{{ packing_data|tojson }}</script>
 {% else %}
     {% if not packing_list %}
-    <div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>管理员尚未创建这份装箱单。</div>
+    <div class="alert alert-info"><i class="bi bi-info-circle me-1"></i>尚未创建这份装箱单。</div>
     {% else %}
     <div class="alert alert-light border">
         <i class="bi bi-eye me-1"></i>当前为只读查看。第 {{ packing_batch.batch_no }} 批 · 装箱日期：<strong>{{ packing_batch.packing_date.strftime('%Y-%m-%d') if packing_batch and packing_batch.packing_date else '-' }}</strong>
