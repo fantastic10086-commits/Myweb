@@ -2874,11 +2874,11 @@ def customer_history_edit(id):
             _apply_customer_history(customer, parsed, '修改历史成交额（USD）')
             db.session.commit()
             flash('历史成交额已保存，回款、利润和业绩报表保持原口径。', 'success')
-            return redirect(url_for('customer_detail', id=id))
+            return redirect(url_for('customer_edit', id=id, return_to=_customer_list_return_url()))
         except (ValueError, StaleDataError) as exc:
             db.session.rollback()
             flash(str(exc) if isinstance(exc, ValueError) else '客户已被更新，请刷新重试。', 'danger')
-    return render_template('customer_history_edit.html', customer=customer, values=values)
+    return render_template('customer_history_edit.html', customer=customer, values=values, return_to=_customer_list_return_url())
 
 
 @app.route('/customers/history/template.xlsx')
