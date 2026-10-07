@@ -3661,6 +3661,7 @@ def fees_report():
         product_revenue_rmb = to_rmb(pi.product_subtotal, currency, exchange_rate)
         adjustment_rmb = to_rmb(pi.other_charges, currency, exchange_rate)
         order_revenue_rmb = product_revenue_rmb + adjustment_rmb
+        order_revenue = finite_amount(pi.grand_total)
 
         purchased_by_item = {}
         procurement_cost_rmb = 0.0
@@ -3677,10 +3678,24 @@ def fees_report():
         )
 
         active_payments = [payment for payment in pi.payments if payment.deleted_at is None]
+        received = sum(finite_amount(payment.amount) + finite_amount(payment.fee)
+                       for payment in active_payments)
+        unpaid = max(0.0, order_revenue - received)
+        receipt_ratio = min(
+            1.0,
+            received / order_revenue if order_revenue > 0 else 0.0,
+        )
+        received_rmb = to_rmb(received, currency, exchange_rate)
         payment_fee_rmb = sum(
             to_rmb(payment.fee, payment.receiving_account_currency or currency, exchange_rate)
             for payment in active_payments
         )
+        payment_lines = [{
+            'amount': finite_amount(payment.amount),
+            'fee': finite_amount(payment.fee),
+            'order_no': payment.order_no or '',
+            'date': payment.created_at.strftime('%Y-%m-%d') if payment.created_at else '',
+        } for payment in active_payments]
         expense_lines = []
         recorded_expense_rmb = 0.0
         for expense in sorted(pi.expenses, key=lambda item: item.created_at or datetime.min, reverse=True):
@@ -3698,17 +3713,23 @@ def fees_report():
                 'has_attachment': bool(expense.attachment),
             })
         supplier_freight_rmb = finite_amount(pi.supplier_freight_cost)
-        # A receiving fee reduces the cash income from the order. It is kept in
-        # the income structure instead of being counted again as an order cost.
+        # A receiving fee reduces cash income.  The report shows both the
+        # contracted-order view and the cash-received view, so that a partial
+        # payment is never presented as the full order revenue.
         net_income_rmb = order_revenue_rmb - payment_fee_rmb
+        received_net_income_rmb = received_rmb - payment_fee_rmb
         actual_expense_rmb = recorded_expense_rmb + supplier_freight_rmb
         total_actual_cost_rmb = procurement_cost_rmb + actual_expense_rmb
+        allocated_cost_rmb = total_actual_cost_rmb
         potential_duplicate_freight = supplier_freight_rmb > 0 and any(
             '运费' in line['category'].strip() for line in expense_lines
         )
 
         profit_rmb = None
         margin_pct = None
+        received_profit_rmb = received_net_income_rmb - total_actual_cost_rmb
+        received_margin_pct = (received_profit_rmb / received_net_income_rmb * 100
+                               if received_net_income_rmb else None)
         if procurement_data_complete:
             profit_rmb = net_income_rmb - total_actual_cost_rmb
             if net_income_rmb:
@@ -3726,11 +3747,15 @@ def fees_report():
             'adjustment': pi.other_charges,
             'adjustment_abs': abs(finite_amount(pi.other_charges)),
             'order_revenue': pi.grand_total,
-            'received': float(pi.received_amount or 0),
+            'received': received,
+            'unpaid': round(unpaid, 2),
+            'receipt_ratio': round(receipt_ratio * 100, 1),
             'product_revenue_rmb': round(product_revenue_rmb, 2),
             'adjustment_rmb': round(adjustment_rmb, 2),
             'order_revenue_rmb': round(order_revenue_rmb, 2),
             'net_income_rmb': round(net_income_rmb, 2),
+            'received_rmb': round(received_rmb, 2),
+            'received_net_income_rmb': round(received_net_income_rmb, 2),
             'procurement_cost_rmb': round(procurement_cost_rmb, 2),
             'procurement_data_complete': procurement_data_complete,
             'procurement_confirmed': bool(pi.procurement_confirmed),
@@ -3739,10 +3764,14 @@ def fees_report():
             'recorded_expense_rmb': round(recorded_expense_rmb, 2),
             'actual_expense_rmb': round(actual_expense_rmb, 2),
             'total_actual_cost_rmb': round(total_actual_cost_rmb, 2),
+            'allocated_cost_rmb': round(allocated_cost_rmb, 2),
             'expense_lines': expense_lines,
+            'payment_lines': payment_lines,
             'potential_duplicate_freight': potential_duplicate_freight,
             'profit_rmb': round(profit_rmb, 2) if profit_rmb is not None else None,
             'margin_pct': round(margin_pct, 1) if margin_pct is not None else None,
+            'received_profit_rmb': round(received_profit_rmb, 2) if received_profit_rmb is not None else None,
+            'received_margin_pct': round(received_margin_pct, 1) if received_margin_pct is not None else None,
             'date': pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '',
             'paid': pi.paid,
         })
@@ -3751,20 +3780,31 @@ def fees_report():
     summary = {
         'total_count': len(pi_list),
         'calculable_count': len(calculable),
-        'pending_count': len(pi_list) - len(calculable),
-        'product_revenue_rmb': round(sum(row['product_revenue_rmb'] for row in calculable), 2),
-        'adjustment_rmb': round(sum(row['adjustment_rmb'] for row in calculable), 2),
-        'order_revenue_rmb': round(sum(row['order_revenue_rmb'] for row in calculable), 2),
-        'payment_fee_rmb': round(sum(row['payment_fee_rmb'] for row in calculable), 2),
-        'net_income_rmb': round(sum(row['net_income_rmb'] for row in calculable), 2),
-        'procurement_cost_rmb': round(sum(row['procurement_cost_rmb'] for row in calculable), 2),
-        'actual_expense_rmb': round(sum(row['actual_expense_rmb'] for row in calculable), 2),
-        'total_actual_cost_rmb': round(sum(row['total_actual_cost_rmb'] for row in calculable), 2),
+        'pending_count': sum(not row['procurement_data_complete'] or not row['procurement_confirmed'] for row in pi_list),
+        'product_revenue_rmb': round(sum(row['product_revenue_rmb'] for row in pi_list), 2),
+        'adjustment_rmb': round(sum(row['adjustment_rmb'] for row in pi_list), 2),
+        'order_revenue_rmb': round(sum(row['order_revenue_rmb'] for row in pi_list), 2),
+        'payment_fee_rmb': round(sum(row['payment_fee_rmb'] for row in pi_list), 2),
+        'net_income_rmb': round(sum(row['net_income_rmb'] for row in pi_list), 2),
+        'received_rmb': round(sum(row['received_rmb'] for row in pi_list), 2),
+        'received_net_income_rmb': round(sum(row['received_net_income_rmb'] for row in pi_list), 2),
+        'unpaid_rmb': round(sum(
+            max(0.0, row['order_revenue_rmb'] - row['received_rmb'])
+            for row in pi_list
+        ), 2),
+        'procurement_cost_rmb': round(sum(row['procurement_cost_rmb'] for row in pi_list), 2),
+        'actual_expense_rmb': round(sum(row['actual_expense_rmb'] for row in pi_list), 2),
+        'total_actual_cost_rmb': round(sum(row['total_actual_cost_rmb'] for row in pi_list), 2),
+        'allocated_cost_rmb': round(sum(row['allocated_cost_rmb'] for row in pi_list), 2),
         'profit_rmb': round(sum(row['profit_rmb'] for row in calculable), 2),
+        'received_profit_rmb': round(sum(row['received_profit_rmb'] for row in pi_list), 2),
     }
     summary['margin_pct'] = round(
         summary['profit_rmb'] / summary['net_income_rmb'] * 100, 1
     ) if summary['net_income_rmb'] else None
+    summary['received_margin_pct'] = round(
+        summary['received_profit_rmb'] / summary['received_net_income_rmb'] * 100, 1
+    ) if summary['received_net_income_rmb'] else None
 
     resp = make_response(render_template(
         'fees.html',
