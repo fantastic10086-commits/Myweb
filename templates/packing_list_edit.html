@@ -508,6 +508,12 @@
 (() => {
     const data = JSON.parse(document.getElementById('packingData').textContent);
     const products = data.pi_items;
+    // Wheel scrolling must never edit quantities or the number of identical cartons.
+    document.addEventListener('wheel', function(event) {
+        if (event.target instanceof HTMLInputElement && event.target.type === 'number') {
+            if (document.activeElement === event.target) event.target.blur();
+        }
+    }, {capture: true, passive: true});
     let boxes = data.boxes || [];
     let version = data.version || 0;
     let selectedTargetBox = null;
@@ -605,8 +611,8 @@
 
     function renderOverview() {
         const packed = packedQuantities();
-        const totalRequired = products.reduce((total, product) => total + integerValue(product.quantity), 0);
-        const totalPacked = products.reduce((total, product) => total + Math.min(packed[Number(product.id)] || 0, integerValue(product.quantity)), 0);
+        const totalRequired = products.reduce((total, product) => total + integerValue(product.order_quantity), 0);
+        const totalPacked = products.reduce((total, product) => total + integerValue(product.other_batch_quantity) + (packed[Number(product.id)] || 0), 0);
         const hasOverpacked = products.some(product => (packed[Number(product.id)] || 0) > integerValue(product.quantity));
         const progress = totalRequired > 0 ? Math.min(100, totalPacked / totalRequired * 100) : 0;
         document.getElementById('packingProgressText').textContent = `${totalPacked} / ${totalRequired}`;
@@ -735,8 +741,8 @@
         const query = productSearch.value.trim().toLocaleLowerCase();
         const allProducts = products.map(product => ({
             ...product,
-            packed: packed[Number(product.id)] || 0,
-            remaining: integerValue(product.quantity) - (packed[Number(product.id)] || 0)
+            packed: integerValue(product.other_batch_quantity) + (packed[Number(product.id)] || 0),
+            remaining: integerValue(product.order_quantity) - integerValue(product.other_batch_quantity) - (packed[Number(product.id)] || 0)
         }));
         const remainingCount = allProducts.filter(product => product.remaining > 0).length;
         const visibleProducts = allProducts.filter(product => {
@@ -800,7 +806,7 @@
             const content = document.createElement('div'); content.className = 'packing-min-width-0 flex-grow-1';
             const name = document.createElement('div'); name.className = 'fw-bold text-truncate'; name.title = product.name || '未命名产品'; name.textContent = product.name || '未命名产品';
             const code = document.createElement('div'); code.className = 'small text-muted text-truncate'; code.textContent = [product.product_code, product.specification].filter(Boolean).join(' · ') || '无编码和规格';
-            const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : product.remaining === 0 ? `PI ${product.quantity} · 已全部分配` : `PI ${product.quantity} · 已装 ${product.packed} · 剩余 ${product.remaining}`;
+            const state = document.createElement('div'); state.className = `small mt-1 ${product.remaining < 0 ? 'text-danger fw-bold' : ''}`; state.textContent = product.remaining < 0 ? `超装 ${Math.abs(product.remaining)} 件，请先调整箱内数量` : product.remaining === 0 ? `PI ${product.order_quantity} · 各批次已装 ${product.packed} · 未装箱 0` : `PI ${product.order_quantity} · 各批次已装 ${product.packed} · 未装箱 ${product.remaining}`;
             content.append(name, code, state); top.append(check, sequence, thumb, content);
             if (product.remaining > 0) {
                 const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm packing-inline-quantity';
@@ -936,7 +942,7 @@
                 const productMeta = document.createElement('div'); productMeta.className='small text-muted'; productMeta.textContent=product ? [product.product_code, product.specification, `本批最多 ${product.quantity}`, product.other_batch_quantity ? `其他批已装 ${product.other_batch_quantity}` : ''].filter(Boolean).join(' · ') : '';
                 productTd.append(productName, productMeta);
                 const qtyTd=document.createElement('div'); qtyTd.style.width='105px'; const qtyLabel=document.createElement('label'); qtyLabel.className='form-label small mb-1'; qtyLabel.textContent='每箱数量'; const qty=document.createElement('input'); qty.type='number'; qty.min='1'; qty.step='1'; qty.className='form-control form-control-sm'; qty.value=item.quantity || 1;
-                qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview();});
+                qty.addEventListener('input',()=>{item.quantity=qty.value; updateBoxSummary(boxIndex); renderOverview(); renderPendingProducts();});
                 qty.addEventListener('change',renderPendingProducts); qtyTd.append(qtyLabel,qty);
                 const removeItem=document.createElement('button'); removeItem.type='button'; removeItem.className='btn btn-sm btn-outline-danger mt-4'; removeItem.title='移回待分配产品'; removeItem.innerHTML='<i class="bi bi-x-lg"></i>'; removeItem.addEventListener('click',()=>{box.items.splice(itemIndex,1);renderBoxes();});
                 topRow.append(productTd,qtyTd,removeItem);
