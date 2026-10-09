@@ -2,6 +2,7 @@
 PI Excel Generator — matches PDF side-by-side layout, A4 portrait.
 """
 
+from country_names import english_country
 import os
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -94,7 +95,7 @@ def generate_pi_excel(pi, output_dir):
             ws.cell(row=r, column=5, value=customer.contact_person).font = n9; r += 1
         if customer.country:
             ws.cell(row=r, column=4, value='Country:').font = b9
-            ws.cell(row=r, column=5, value=customer.country).font = n9; r += 1
+            ws.cell(row=r, column=5, value=english_country(customer.country)).font = n9; r += 1
         if customer.email:
             ws.cell(row=r, column=4, value='Email:').font = b9
             ws.cell(row=r, column=5, value=customer.email).font = n9; r += 1

@@ -3,6 +3,7 @@ PI (Proforma Invoice) PDF Generator using ReportLab.
 Generates A4-sized professional foreign trade PI documents.
 """
 
+from country_names import english_country
 import os
 import glob
 from datetime import datetime
@@ -263,7 +264,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     customer_info_data = [
         [Paragraph('<b>To / Buyer:</b>', info_style), Paragraph(customer.name or '', info_style)],
         [Paragraph('<b>Contact:</b>', info_style), Paragraph(customer.contact_person or '', info_style)],
-        [Paragraph('<b>Country:</b>', info_style), Paragraph(customer.country or '', info_style)],
+        [Paragraph('<b>Country:</b>', info_style), Paragraph(english_country(customer.country), info_style)],
         [Paragraph('<b>Email:</b>', info_style), Paragraph(customer.email or '', info_style)],
         [Paragraph('<b>Phone:</b>', info_style), Paragraph(customer.phone or '', info_style)],
         [Paragraph('<b>Address:</b>', info_style), Paragraph(customer.address or '', info_style)],

@@ -4,6 +4,7 @@ Foreign Trade Proforma Invoice Generator
 Run with: python app.py
 """
 
+from country_names import normalize_country, english_country
 import os
 import sys
 import uuid
@@ -6077,7 +6078,7 @@ def pi_list():
     elif customs_status == 'unregistered':
         query = query.filter(PI.customs_required.is_(None))
 
-    country_filter = request.args.get('country', '').strip()
+    country_filter = normalize_country(request.args.get('country', ''))
     country_options = sorted({
         row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
         .join(PI.customer).with_entities(Customer.country).distinct().all()
@@ -6457,7 +6458,7 @@ def packing_list_index():
         query = query.filter(PackingList.id.is_(None))
     elif status_filter in ('draft', 'completed'):
         query = query.filter(PackingList.status == status_filter)
-    country_filter = request.args.get('country', '').strip()
+    country_filter = normalize_country(request.args.get('country', ''))
     country_options = sorted({
         row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
         .join(PI.customer).with_entities(Customer.country).distinct().all()
@@ -8166,7 +8167,7 @@ def _pi_export_copy(pi):
     customer_copy = SimpleNamespace(
         name=customer.name if customer else '',
         contact_person=customer.contact_person if customer else '',
-        country=customer.country if customer else '',
+        country=english_country(customer.country) if customer else '',
         email=customer.email if customer else '',
         phone=customer.phone if customer else '',
         address=customer.address if customer else '',
@@ -8269,7 +8270,7 @@ def _apply_export_form(form, export_pi):
             export_pi, account, export_pi.bank_info if not account else '', preserve_existing=not account
         )
         export_pi.customer.name = form.get('cust_name', '').strip() or export_pi.customer.name
-        export_pi.customer.country = form.get('cust_country', '').strip()
+        export_pi.customer.country = english_country(form.get('cust_country', ''))
         company_name = form.get('company_name', '').strip()
         company_address = form.get('company_addr', '').strip()
         if company_name:
@@ -8762,7 +8763,7 @@ def procurement_select():
     pi_query = _apply_report_filters(
         pi_query, salesperson_filter, date_from, date_to
     )
-    country_filter = request.args.get('country', '').strip()
+    country_filter = normalize_country(request.args.get('country', ''))
     country_options = sorted({
         row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
         .join(PI.customer).with_entities(Customer.country).distinct().all()

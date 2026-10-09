@@ -1,5 +1,6 @@
 """Safe Excel-template rendering and PDF conversion for PI exports."""
 
+from country_names import english_country
 import copy
 import os
 import re
@@ -163,7 +164,7 @@ def _fixed_values(pi, salesperson_info):
         'company_address': _company_address(pi),
         'customer_name': getattr(customer, 'name', '') or '',
         'customer_contact': getattr(customer, 'contact_person', '') or '',
-        'customer_country': getattr(customer, 'country', '') or '',
+        'customer_country': english_country(getattr(customer, 'country', '')),
         'customer_email': getattr(customer, 'email', '') or '',
         'customer_phone': getattr(customer, 'phone', '') or '',
         'customer_address': getattr(customer, 'address', '') or '',

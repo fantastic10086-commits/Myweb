@@ -1,4 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm import validates
+from country_names import normalize_country
 from datetime import datetime, date
 
 db = SQLAlchemy()
@@ -29,6 +31,11 @@ class Customer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
     country = db.Column(db.String(100), default='')
+
+    @validates('country')
+    def normalize_country_value(self, key, value):
+        return normalize_country(value)
+
     contact_person = db.Column(db.String(100), default='')
     email = db.Column(db.String(200), default='')
     phone = db.Column(db.String(50), default='')
