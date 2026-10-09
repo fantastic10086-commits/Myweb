@@ -3,6 +3,14 @@
 
 {% block extra_head %}
 <style>
+.pi-edit-info { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem .85rem; align-items:start; }
+.pi-edit-info > .mb-3 { min-width:0; margin-bottom:0 !important; position:relative; }
+.pi-edit-info .form-label { font-size:.875rem; margin-bottom:.25rem; }
+.pi-edit-info .form-control, .pi-edit-info .form-select, .pi-edit-info .input-group-text { font-size:.875rem; padding:.3rem .55rem; }
+.pi-edit-info textarea { height:4.25rem; resize:vertical; }
+.pi-edit-info small, .pi-edit-info .form-text { font-size:.75rem; line-height:1.35; }
+@media(max-width:767px) { .pi-edit-info { grid-template-columns:1fr; } }
+
 .sel-price, .sel-qty { -moz-appearance: textfield; appearance: textfield; }
 .sel-price::-webkit-inner-spin-button, .sel-price::-webkit-outer-spin-button,
 .sel-qty::-webkit-inner-spin-button, .sel-qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -480,8 +488,8 @@
 </div>
 {% endif %}
 <form enctype="multipart/form-data" method="post" id="pi-form"><input type="hidden" name="version" value="{{ pi.version or 1 }}"><input type="hidden" name="product_order" id="product_order" value=""><div class="row g-4">
-    <div class="col-lg-5">
-        <div class="card mb-3"><div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div><div class="card-body">
+    <div class="col-12">
+        <div class="card mb-3"><div class="card-header"><h5 class="mb-0">订单信息</h5></div><div class="card-body pi-edit-info">
             <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input pi-structural-control" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none pi-structural-control" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{{ pi.customer.notes if pi.customer and pi.customer.notes else '—' }}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
             <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
@@ -503,7 +511,7 @@
         </div>
         </div>
     </div>
-    <div class="col-lg-7">
+    <div class="col-12">
         <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
             <div class="input-group mb-2"><input type="text" class="form-control pi-structural-control" id="product_search" placeholder="按名称、中文名称、编码或规格搜索产品……" autocomplete="off"><button type="button" class="btn btn-primary pi-structural-control" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button></div>
             <div class="table-responsive mt-2" id="selected_products_area"><small class="text-muted d-block mb-2">品名、规格、编码和图片仅修改当前 PI，产品库资料不变。</small>
