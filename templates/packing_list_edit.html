@@ -508,12 +508,6 @@
 (() => {
     const data = JSON.parse(document.getElementById('packingData').textContent);
     const products = data.pi_items;
-    // Wheel scrolling must never edit quantities or the number of identical cartons.
-    document.addEventListener('wheel', function(event) {
-        if (event.target instanceof HTMLInputElement && event.target.type === 'number') {
-            if (document.activeElement === event.target) event.target.blur();
-        }
-    }, {capture: true, passive: true});
     let boxes = data.boxes || [];
     let version = data.version || 0;
     let selectedTargetBox = null;

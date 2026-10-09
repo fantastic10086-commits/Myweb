@@ -134,6 +134,14 @@
     <script src="{{ url_for('static', filename='lib/bootstrap.bundle.min.js') }}"></script>
     <script>
     (() => {
+        // Keep wheel scrolling from changing numeric values, including dynamic forms.
+        document.addEventListener('wheel', (event) => {
+            const input = event.target;
+            if (input instanceof HTMLInputElement && input.type === 'number'
+                    && document.activeElement === input) {
+                input.blur();
+            }
+        }, {capture: true, passive: true});
         const token = document.querySelector('meta[name="csrf-token"]').content;
         const addToken = (form) => {
             if (!form.querySelector('input[name="csrf_token"]')) {
