@@ -9,6 +9,8 @@ import os
 import sys
 import uuid
 import zipfile
+import subprocess
+import base64
 import shutil
 import copy
 import time
@@ -8690,6 +8692,24 @@ def pi_export(id):
         output_path, mimetype = _render_pi_export(
             export_pi, template, output_format, work_dir, preview=(mode == 'preview')
         )
+        preview_pages = None
+        if mode == 'preview' and request.form.get('preview_layout') == 'pages':
+            renderer = shutil.which('pdftoppm')
+            if not renderer:
+                raise ValueError('PDF 页面渲染工具尚未安装，请联系管理员。')
+            page_prefix = os.path.join(work_dir, 'preview-page')
+            subprocess.run([renderer, '-jpeg', '-r', '140', '-scale-to', '2200',
+                            output_path, page_prefix], check=True, timeout=90,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            page_files = sorted(
+                (name for name in os.listdir(work_dir) if name.startswith('preview-page-') and name.endswith('.jpg')),
+                key=lambda name: int(name.rsplit('-', 1)[1].split('.')[0]))
+            if not page_files:
+                raise ValueError('未能生成预览页面，请重试。')
+            preview_pages = []
+            for name in page_files:
+                with open(os.path.join(work_dir, name), 'rb') as image_file:
+                    preview_pages.append('data:image/jpeg;base64,' + base64.b64encode(image_file.read()).decode('ascii'))
         actual_format = 'pdf' if mode == 'preview' else output_format
         changed_fields = [
             key for key in export_snapshot if export_snapshot[key] != original_snapshot.get(key)
@@ -8716,6 +8736,12 @@ def pi_export(id):
         shutil.rmtree(work_dir, ignore_errors=True)
         current_app.logger.exception('PI export failed')
         return jsonify({'error': '导出失败，请联系管理员查看日志。'}), 500
+
+    if preview_pages is not None:
+        response = jsonify({'pages': preview_pages})
+        response.headers['Cache-Control'] = 'no-store'
+        shutil.rmtree(work_dir, ignore_errors=True)
+        return response
 
     download_name = f'{secure_filename(pi.pi_number) or "PI"}_{secure_filename(template.name) or "template"}.{actual_format}'
     response = send_file(

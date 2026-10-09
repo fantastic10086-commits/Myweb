@@ -110,7 +110,7 @@
     </div>
     <section id="pdfPreviewPanel" class="pi-export-controls d-none my-3" aria-label="PDF 预览">
         <div id="pdfPreviewMessage" class="alert alert-info" role="status">点击上方“预览”生成当前模板的 PDF。</div>
-        <iframe id="pdfPreviewFrame" title="当前 PI 的 PDF 预览" class="d-none bg-white border rounded w-100" style="height:80vh;min-height:500px;"></iframe>
+        <div id="pdfPreviewPages" class="d-none" aria-label="完整 PDF 页面"></div>
     </section>
     <div class="pi-export-stage" id="exportEditor">
         <article class="pi-export-paper" aria-label="PI 导出单据画布">
@@ -166,7 +166,7 @@ function responseFilename(response, fallback) { const disposition = response.hea
 function setExportBusy(busy, message, error) { document.getElementById('previewButton').disabled = busy; document.getElementById('downloadButton').disabled = busy; const status = document.getElementById('exportStatus'); status.className = 'small mt-3 ' + (error ? 'text-danger' : (busy ? 'text-primary' : 'text-success')); status.textContent = message || ''; }
 const currentAccountBrands = {{ (current_receiving_account.brands if current_receiving_account else [])|tojson }};
 function exportBrandError() { const select = document.getElementById('export_account_select'); let brands = currentAccountBrands; if (select && select.value) brands = (select.options[select.selectedIndex].getAttribute('data-brands') || '').split(','); if (!brands.length || !brands.some(b => b === 'klista' || b === 'qisuo')) return '当前收款账户无法确认或未设置所属品牌，请先完善收款账户。'; if (!brands.includes(document.getElementById('company_header').value)) return '公司抬头与收款账户所属品牌不一致，禁止预览和导出。请更换抬头或收款账户。'; return ''; }
-let previewUrl = null;
+
 let exportRevision = 0;
 let exportBusy = false;
 function showExportView(pdf) {
@@ -178,9 +178,8 @@ function showExportView(pdf) {
     if (!pdf) resizeDocumentTextareas();
 }
 function clearPdfPreview(message, error) {
-    const frame = document.getElementById('pdfPreviewFrame');
-    frame.classList.add('d-none'); frame.removeAttribute('src');
-    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    const pages = document.getElementById('pdfPreviewPages');
+    pages.classList.add('d-none'); pages.replaceChildren();
     const status = document.getElementById('pdfPreviewMessage');
     status.className = 'alert ' + (error ? 'alert-danger' : 'alert-info');
     status.textContent = message;
@@ -192,7 +191,7 @@ function invalidatePreview(event) {
 }
 document.getElementById('exportForm').addEventListener('input', invalidatePreview);
 document.getElementById('exportForm').addEventListener('change', invalidatePreview);
-window.addEventListener('pagehide', function() { if (previewUrl) URL.revokeObjectURL(previewUrl); });
+
 async function exportDocument(mode) {
     if (exportBusy) return;
     const form = document.getElementById('exportForm');
@@ -200,7 +199,7 @@ async function exportDocument(mode) {
     const brandError = exportBrandError();
     if (brandError) { clearPdfPreview(brandError, true); setExportBusy(false, brandError, true); return; }
     const data = new FormData(form); data.set('mode', mode);
-    if (mode === 'preview') data.set('output_format', 'pdf');
+    if (mode === 'preview') { data.set('output_format', 'pdf'); data.set('preview_layout', 'pages'); }
     const revision = exportRevision;
     const templateName = document.getElementById('template_id').selectedOptions[0].textContent;
     exportBusy = true;
@@ -213,17 +212,25 @@ async function exportDocument(mode) {
             try { message = (await response.json()).error || message; } catch (_error) {}
             throw new Error(message);
         }
-        const blob = await response.blob();
         if (mode === 'preview') {
             if (revision !== exportRevision) throw new Error('生成期间内容或模板已更改，请重新点击预览。');
-            if (!blob.type.includes('application/pdf')) throw new Error('未收到 PDF 文件，请重新生成预览。');
-            previewUrl = URL.createObjectURL(blob);
-            const frame = document.getElementById('pdfPreviewFrame');
-            frame.src = previewUrl; frame.classList.remove('d-none');
+            const result = await response.json();
+            if (revision !== exportRevision) throw new Error('内容已更改，请重新点击预览。');
+            if (!Array.isArray(result.pages) || !result.pages.length) throw new Error('未收到预览页面，请重试。');
+            const pages = document.getElementById('pdfPreviewPages');
+            result.pages.forEach(function(source, index) {
+                const image = document.createElement('img');
+                image.src = source; image.alt = 'PDF 第 ' + (index + 1) + ' 页';
+                image.className = 'd-block w-100 bg-white shadow-sm mb-3';
+                image.style.height = 'auto';
+                pages.appendChild(image);
+            });
+            pages.classList.remove('d-none');
             document.getElementById('pdfPreviewMessage').className = 'alert alert-success';
             document.getElementById('pdfPreviewMessage').textContent = '当前模板：' + templateName + '。以下为实际生成的 PDF。';
             setExportBusy(false, '预览已更新；可切换回“编辑内容”继续修改。', false);
         } else {
+            const blob = await response.blob();
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a'); link.href = url;
             link.download = responseFilename(response, {{ pi.pi_number|tojson }} + '.' + data.get('output_format'));
