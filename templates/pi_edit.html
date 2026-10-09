@@ -334,6 +334,24 @@
     var preloadProducts = {{ preload_products|tojson }};
 
     document.addEventListener('DOMContentLoaded', function() {
+        var orderDetails = document.getElementById('editOrderInformation');
+        var summaryCustomer = document.getElementById('customer_id');
+        var summaryTerms = document.getElementById('price_terms');
+        function updateOrderSummary() {
+            var option = summaryCustomer.options[summaryCustomer.selectedIndex];
+            var parts = [];
+            if (summaryCustomer.value && option) parts.push(option.dataset.name || option.textContent.trim());
+            if (summaryTerms.value.trim()) parts.push(summaryTerms.value.trim());
+            document.getElementById('editOrderSummary').textContent = parts.join(' · ');
+        }
+        summaryCustomer.addEventListener('change', updateOrderSummary);
+        summaryTerms.addEventListener('input', updateOrderSummary);
+        summaryTerms.addEventListener('change', updateOrderSummary);
+        updateOrderSummary();
+        document.getElementById('pi-form').addEventListener('invalid', function(event) {
+            if (orderDetails.contains(event.target)) orderDetails.open = true;
+        }, true);
+
         productSearch = document.getElementById('product_search');
         selectedTableBody = document.querySelector('#selected_products_table tbody');
         noProductMsg = document.getElementById('no_product_msg');
@@ -455,7 +473,7 @@
         input.addEventListener('focus', function() { render(input.value); });
         input.addEventListener('input', function() { render(input.value); });
         input.addEventListener('blur', function() { setTimeout(function() { dropdown.classList.remove('show'); }, 200); });
-        dropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.val) { select.value = item.dataset.val; input.value = item.dataset.label; dropdown.classList.remove('show'); var opt = select.querySelector('option[value=\"' + item.dataset.val + '\"]'); if (opt) { var sp = opt.getAttribute('data-sp') || ''; var spInput = document.getElementById('sp_search'); var spSelect = document.getElementById('pi_salesperson'); if (spInput) { spInput.value = sp; } if (spSelect) { spSelect.value = sp; } {% if not is_admin %} if (spInput && sp) { spInput.readOnly = true; spInput.style.background = '#e9ecef'; } {% endif %} var addr = opt.getAttribute('data-address') || ''; var addrEl = document.getElementById('shipping_address'); if (addrEl) { addrEl.value = addr; } var noteEl = document.getElementById('customer_notes_display'); if (noteEl) { noteEl.textContent = opt.getAttribute('data-notes') || '—'; } } } });
+        dropdown.addEventListener('mousedown', function(e) { var item = e.target.closest('.dropdown-item'); if (item && item.dataset.val) { select.value = item.dataset.val; input.value = item.dataset.label; select.dispatchEvent(new Event('change', {bubbles:true})); dropdown.classList.remove('show'); var opt = select.querySelector('option[value=\"' + item.dataset.val + '\"]'); if (opt) { var sp = opt.getAttribute('data-sp') || ''; var spInput = document.getElementById('sp_search'); var spSelect = document.getElementById('pi_salesperson'); if (spInput) { spInput.value = sp; } if (spSelect) { spSelect.value = sp; } {% if not is_admin %} if (spInput && sp) { spInput.readOnly = true; spInput.style.background = '#e9ecef'; } {% endif %} var addr = opt.getAttribute('data-address') || ''; var addrEl = document.getElementById('shipping_address'); if (addrEl) { addrEl.value = addr; } var noteEl = document.getElementById('customer_notes_display'); if (noteEl) { noteEl.textContent = opt.getAttribute('data-notes') || '—'; } } } });
     }
 </script>
 {% endblock %}
@@ -489,8 +507,8 @@
 {% endif %}
 <form enctype="multipart/form-data" method="post" id="pi-form"><input type="hidden" name="version" value="{{ pi.version or 1 }}"><input type="hidden" name="product_order" id="product_order" value=""><div class="row g-4">
     <div class="col-12">
-        <div class="card mb-3"><div class="card-header"><h5 class="mb-0">订单信息</h5></div><div class="card-body pi-edit-info">
-            <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input pi-structural-control" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none pi-structural-control" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
+        <details class="card mb-3" id="editOrderInformation" open><summary class="card-header fw-bold">订单信息（点击收起 / 展开）<span id="editOrderSummary" class="ms-3 text-primary"></span></summary><div class="card-body pi-edit-info">
+            <div class="mb-3"><label class="form-label">客户 <span class="text-danger">*</span></label><div class="input-group"><input type="text" class="form-control searchable-input pi-structural-control" id="cust_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.customer.name if pi.customer else '' }}"><select class="form-select d-none pi-structural-control" id="customer_id" name="customer_id" required><option value="">— 请选择客户 —</option>{% for c in customers %}<option value="{{ c.id }}" data-name="{{ c.name }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if pi.customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>{% endfor %}</select><button type="button" class="btn btn-outline-primary pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button></div><div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{{ pi.customer.notes if pi.customer and pi.customer.notes else '—' }}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
             <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
@@ -509,7 +527,7 @@
             <div class="mb-3"><label class="form-label">收货地址</label><textarea class="form-control" id="shipping_address" name="shipping_address" rows="3" placeholder="根据客户资料自动填写……">{{ pi.shipping_address or '' }}</textarea></div>
             <input type="hidden" name="company" id="company_hidden" value="{{ pi.company or 'klista' }}">
         </div>
-        </div>
+        </details>
     </div>
     <div class="col-12">
         <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">产品</h5><button type="button" class="btn btn-sm btn-success pi-structural-control" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button></div><div class="card-body">
