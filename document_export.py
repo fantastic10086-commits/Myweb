@@ -13,8 +13,7 @@ from datetime import date, datetime
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.drawing.image import Image as ExcelImage
-from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, OneCellAnchor
-from openpyxl.drawing.xdr import XDRPositiveSize2D
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.units import pixels_to_EMU, points_to_pixels
@@ -573,11 +572,16 @@ def _put_image(sheet, cell, image_name, upload_dir):
             row=anchor_row - 1,
             rowOff=pixels_to_EMU(offset_y),
         )
-        image.anchor = OneCellAnchor(
+        # Bind both corners to the product cell. LibreOffice can shift
+        # one-cell drawings when preceding template rows are hidden/resized.
+        image.anchor = TwoCellAnchor(
+            editAs='twoCell',
             _from=marker,
-            ext=XDRPositiveSize2D(
-                cx=pixels_to_EMU(image.width),
-                cy=pixels_to_EMU(image.height),
+            to=AnchorMarker(
+                col=anchor_col - 1,
+                colOff=pixels_to_EMU(offset_x + image.width),
+                row=anchor_row - 1,
+                rowOff=pixels_to_EMU(offset_y + image.height),
             ),
         )
         sheet.add_image(image)
