@@ -653,6 +653,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             var item = e.target.closest('.dropdown-item');
             if (item && item.dataset.val) {
                 select.value = item.dataset.val; input.value = item.dataset.label; dropdown.classList.remove('show');
+                select.dispatchEvent(new Event('change', {bubbles: true}));
                 // Auto-fill salesperson and address from customer
                 var opt = select.querySelector('option[value=\"' + item.dataset.val + '\"]');
                 if (opt) {
@@ -684,6 +685,22 @@ document.addEventListener('DOMContentLoaded', function() {
     var header = card.querySelector('.card-header');
     var details = document.createElement('details'); details.open = true;
     var summary = document.createElement('summary'); summary.className = 'card-header fw-bold'; summary.textContent = '订单信息（点击收起 / 展开）';
+    var headerInfo = document.createElement('span');
+    headerInfo.className = 'ms-3 text-primary';
+    summary.appendChild(headerInfo);
+    var customerSelect = document.getElementById('customer_id');
+    var tradeTerms = document.getElementById('price_terms');
+    function updateHeaderInfo() {
+        var option = customerSelect.options[customerSelect.selectedIndex];
+        var parts = [];
+        if (customerSelect.value && option) parts.push(option.dataset.name || option.textContent.trim());
+        if (tradeTerms.value.trim()) parts.push(tradeTerms.value.trim());
+        headerInfo.textContent = parts.join(' · ');
+    }
+    customerSelect.addEventListener('change', updateHeaderInfo);
+    tradeTerms.addEventListener('input', updateHeaderInfo);
+    tradeTerms.addEventListener('change', updateHeaderInfo);
+    updateHeaderInfo();
     var required = document.createElement('div'); required.className = 'order-required-grid';
     Array.from(body.children).forEach(function(field) {
         if (field.classList.contains('mb-3')) required.appendChild(field);
@@ -730,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             <select class="form-select d-none" id="customer_id" name="customer_id" required>
                                 <option value="">— 请选择客户 —</option>
                                 {% for c in customers %}
-                                <option value="{{ c.id }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
+                                <option value="{{ c.id }}" data-name="{{ c.name }}" data-label="{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}" data-sp="{{ c.salesperson or '' }}" data-address="{{ c.address or '' }}" data-notes="{{ c.notes or '' }}" {% if selected_customer_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.contact_person %} - {{ c.contact_person }}{% endif %}{% if c.country %} ({{ c.country }}){% endif %}</option>
                                 {% endfor %}
                             </select>
                             <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#quickAddCustomerModal" title="快速新增客户"><i class="bi bi-plus-lg"></i></button>
@@ -758,8 +775,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         <small class="text-muted">默认使用系统业务汇率，可单独调整；保存后用于本单报价、采购成本和利润核算，不随以后系统汇率变化。</small>
                     </div>
                     <div class="mb-3"><label for="issue_date" class="form-label">开单日期</label><input type="date" class="form-control" id="issue_date" name="issue_date" value="{{ today }}"></div>
-                    <div class="mb-3"><label for="payment_terms" class="form-label">付款条款</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
                     <div class="mb-3"><label for="price_terms" class="form-label">贸易条款 <span class="text-danger">*</span></label><input type="text" class="form-control" id="price_terms" name="price_terms" list="price_terms_options" placeholder="请选择或临时输入……" required><datalist id="price_terms_options">{% for option in price_terms_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist><div class="form-text">管理员可在“字段管理”维护常用选项。</div></div>
+                    <div class="mb-3"><label for="payment_terms" class="form-label">付款条款</label><input type="text" class="form-control" id="payment_terms" name="payment_terms" value="100% TT before shipment"></div>
                     <div class="mb-3"><label for="delivery_time" class="form-label">交货期</label><input type="text" class="form-control" id="delivery_time" name="delivery_time" list="delivery_time_options" placeholder="请选择或临时输入……"><datalist id="delivery_time_options">{% for option in delivery_time_options %}<option value="{{ option.value }}"></option>{% endfor %}</datalist></div>
                     <input type="hidden" id="bank_info" name="bank_info" value="">
                     <div class="mb-3"><label class="form-label">收货地址</label><textarea class="form-control" id="shipping_address" name="shipping_address" rows="3" placeholder="从客户资料自动填写……">{{ pi.shipping_address if pi else '' }}</textarea></div>
