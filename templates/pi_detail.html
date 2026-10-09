@@ -1,6 +1,16 @@
 {% extends "base.html" %}
 {% block title %}预览 PI {{ pi.pi_number }}{% endblock %}
 
+{% block extra_head %}
+<style>
+.pi-view-info { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem .85rem; }
+.pi-view-info > div { min-width:0; margin-bottom:0 !important; }
+.pi-view-info .form-label { font-size:.875rem; margin-bottom:.25rem; }
+.pi-view-info .form-control { font-size:.875rem; padding:.3rem .55rem; }
+.pi-view-info textarea { height:4.25rem; resize:vertical; }
+@media(max-width:767px) { .pi-view-info { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
 {% block content %}
 {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
 <div class="row mb-3 align-items-center">
@@ -26,10 +36,10 @@
 </div>
 
 <div class="row g-4">
-    <div class="col-lg-5">
-        <div class="card mb-3">
-            <div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div>
-            <div class="card-body">
+    <div class="col-12">
+        <details class="card mb-0" open>
+            <summary class="card-header fw-bold">订单信息（点击收起 / 展开）<span class="ms-3 text-primary">{{ pi.customer.name if pi.customer else '' }}{% if pi.price_terms %} · {{ pi.price_terms }}{% endif %}</span></summary>
+            <div class="card-body pi-view-info">
                 <div class="mb-3">
                     <label class="form-label">客户</label>
                     <input type="text" class="form-control" value="{{ pi.customer.name if pi.customer else '-' }}" readonly>
@@ -76,10 +86,10 @@
                     <textarea class="form-control" rows="2" readonly>{{ pi.notes or '-' }}</textarea>
                 </div>
             </div>
-        </div>
+        </details>
     </div>
 
-    <div class="col-lg-7">
+    <div class="col-12">
         <div class="card mb-3">
             <div class="card-header"><h5 class="mb-0">产品</h5></div>
             <div class="card-body">
