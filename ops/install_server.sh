@@ -11,7 +11,7 @@ APP_DIR=/opt/pi-manager
 DATA_DIR=/var/lib/pi-manager
 
 apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv nginx sqlite3 rsync curl unzip fonts-noto-cjk fonts-wqy-zenhei
+DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv nginx sqlite3 rsync curl unzip poppler-utils fonts-noto-cjk fonts-wqy-zenhei
 
 OSSUTIL_VERSION=2.4.0
 OSSUTIL_SHA256=85edf66b2fb7238f5c7e25cab820cf29312319fe4935b7c86a6b8485eb434f3c
