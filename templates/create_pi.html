@@ -9,7 +9,18 @@ body > .container { max-width: 1320px; }
 .sel-qty::-webkit-inner-spin-button, .sel-qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #selected_products_area { overflow-x: auto; }
 #selected_products_table { min-width: 1050px; }
-.order-required-grid, .order-optional-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+.order-required-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem .85rem; align-items:start; }
+#orderInformation .card-body { padding:.85rem; }
+#orderInformation .order-required-grid > .mb-3 { margin-bottom:0 !important; min-width:0; position:relative; }
+#orderInformation .form-label { margin-bottom:.25rem; font-size:.875rem; }
+#orderInformation .form-control, #orderInformation .form-select,
+#orderInformation .input-group-text { font-size:.875rem; padding:.3rem .55rem; }
+#orderInformation .form-text, #orderInformation small { font-size:.75rem; line-height:1.35; margin-top:.2rem; }
+#orderInformation textarea { height:4.25rem; min-height:2rem; resize:vertical; }
+#orderInformation #bank_info { height:6rem; }
+#orderInformation #customer_notes_display { min-height:2rem !important; max-height:4.25rem; overflow-y:auto; }
+#orderInformation .card-header { padding:.6rem .85rem; }
+#selected_products_table th, #selected_products_table td { padding-top:.35rem; padding-bottom:.35rem; }
 @media(max-width:767px) { .order-required-grid, .order-optional-grid { grid-template-columns:1fr; } }
 #selected_products_table { width: 100%; table-layout: fixed; }
 #selected_products_table th,
@@ -675,17 +686,13 @@ document.addEventListener('DOMContentLoaded', function() {
     var details = document.createElement('details'); details.open = true;
     var summary = document.createElement('summary'); summary.className = 'card-header fw-bold'; summary.textContent = '订单信息（点击收起 / 展开）';
     var required = document.createElement('div'); required.className = 'order-required-grid';
-    var optional = document.createElement('details'); optional.className = 'mt-2';
-    var optionalTitle = document.createElement('summary'); optionalTitle.textContent = '更多订单信息（选填）';
-    var optionalGrid = document.createElement('div'); optionalGrid.className = 'order-optional-grid mt-3';
     Array.from(body.children).forEach(function(field) {
-        if (!field.classList.contains('mb-3')) return;
-        (field.querySelector('[required]') ? required : optionalGrid).appendChild(field);
+        if (field.classList.contains('mb-3')) required.appendChild(field);
     });
-    optional.append(optionalTitle, optionalGrid); body.prepend(required); body.append(optional);
+    body.prepend(required);
     if (header) header.remove(); details.append(summary, body); card.append(details);
     document.getElementById('pi-form').addEventListener('invalid', function(event) {
-        if (body.contains(event.target)) { details.open = true; if (optional.contains(event.target)) optional.open = true; }
+        if (body.contains(event.target)) { details.open = true; }
     }, true);
 });
 </script>
