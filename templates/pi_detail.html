@@ -88,7 +88,7 @@
                         <thead class="table-light">
                             <tr>
                                 <th>#</th><th>产品</th><th>编码</th>
-                                <th class="text-end">单价</th><th>数量</th><th class="text-end">金额</th>
+                                <th class="text-end">单价</th><th>数量</th><th>单重（kg）</th><th>单项总重（kg）</th><th class="text-end">金额</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -104,12 +104,15 @@
                                 </td>
                                 <td>{{ item.display_code or '-' }}</td>
                                 <td class="text-end">{{ sym }}{{ '%.3f'|format(item.unit_price) }}</td>
-                                <td>{{ item.quantity }}</td>
+                                <td>{{ item.quantity }}</td><td>{{ "%.4f"|format(item.unit_weight_kg) if item.unit_weight_kg is not none else "待补全" }}</td><td>{{ "%.4f"|format(item.unit_weight_kg * item.quantity) if item.unit_weight_kg is not none else "待补全" }}</td>
                                 <td class="text-end fw-bold">{{ sym }}{{ '%.2f'|format(item.amount) }}</td>
                             </tr>
                             {% else %}
                             <tr><td colspan="6" class="text-center py-4 text-muted">暂无产品明细。</td></tr>
                             {% endfor %}
+                            {% set weights = namespace(total=0, missing=0) %}
+                            {% for item in pi.items %}{% if item.unit_weight_kg is none %}{% set weights.missing = weights.missing + 1 %}{% else %}{% set weights.total = weights.total + item.unit_weight_kg * item.quantity %}{% endif %}{% endfor %}
+                            <tr><td colspan="8" class="text-end fw-bold">{{ '已知重量小计' if weights.missing else '订单总净重' }}：{{ '%.4f'|format(weights.total) }} kg{% if weights.missing %}（{{ weights.missing }} 项重量待补全）{% endif %}</td></tr>
                         </tbody>
                     </table>
                 </div>

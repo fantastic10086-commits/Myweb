@@ -7,7 +7,10 @@ body > .container { max-width: 1320px; }
 .sel-price, .sel-qty { -moz-appearance: textfield; appearance: textfield; }
 .sel-price::-webkit-inner-spin-button, .sel-price::-webkit-outer-spin-button,
 .sel-qty::-webkit-inner-spin-button, .sel-qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-#selected_products_area { overflow-x: visible; }
+#selected_products_area { overflow-x: auto; }
+#selected_products_table { min-width: 1050px; }
+.order-required-grid, .order-optional-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+@media(max-width:767px) { .order-required-grid, .order-optional-grid { grid-template-columns:1fr; } }
 #selected_products_table { width: 100%; table-layout: fixed; }
 #selected_products_table th,
 #selected_products_table td { padding-left: .4rem; padding-right: .4rem; }
@@ -23,6 +26,7 @@ body > .container { max-width: 1320px; }
     body > .container { max-width: 1140px; }
 }
 @media (max-width: 767.98px) {
+    #selected_products_table { min-width:0; }
     #selected_products_table thead { display: none; }
     #selected_products_table,
     #selected_products_table tbody { display: block; }
@@ -36,8 +40,8 @@ body > .container { max-width: 1320px; }
     #selected_products_table tbody td { display: block; border: 0; padding: 0; min-width: 0; }
     #selected_products_table tbody td:nth-child(1),
     #selected_products_table tbody td:nth-child(2),
-    #selected_products_table tbody td:nth-child(7) { grid-column: 1 / -1; }
-    #selected_products_table tbody td:nth-child(n+3):nth-child(-n+6)::before {
+    #selected_products_table tbody td:nth-child(9) { grid-column: 1 / -1; }
+    #selected_products_table tbody td:nth-child(n+3):nth-child(-n+8)::before {
         display: block;
         margin-bottom: .25rem;
         color: var(--bs-secondary-color);
@@ -47,7 +51,9 @@ body > .container { max-width: 1320px; }
     #selected_products_table tbody td:nth-child(3)::before { content: "编码"; }
     #selected_products_table tbody td:nth-child(4)::before { content: "单价"; }
     #selected_products_table tbody td:nth-child(5)::before { content: "数量"; }
-    #selected_products_table tbody td:nth-child(6)::before { content: "金额"; }
+    #selected_products_table tbody td:nth-child(6)::before { content: "单重（kg）"; }
+    #selected_products_table tbody td:nth-child(7)::before { content: "单项总重（kg）"; }
+    #selected_products_table tbody td:nth-child(8)::before { content: "金额"; }
     #selected_products_table .pi-row-actions { justify-content: flex-end; }
 }
 </style>
@@ -124,12 +130,20 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     }
     function updateTotal() {
         if (!totalDisplay || !totalInput) return;
-        var total = 0, sym = getSymbol();
+        var total = 0, weightTotal = 0, missingWeights = 0, sym = getSymbol();
         var keys = selectedProductOrder;
         for (var i = 0; i < keys.length; i++) {
             var p = selectedProducts[keys[i]];
             total += PIPrices.amount(p.price || 0, p.qty || 0);
+            var knownWeight = p.unitWeight !== null && p.unitWeight !== undefined && p.unitWeight !== '' && Number.isFinite(Number(p.unitWeight)) && Number(p.unitWeight) >= 0;
+            var rowWeight = knownWeight ? Number(p.unitWeight) * p.qty : null;
+            if (rowWeight === null) missingWeights++; else weightTotal += rowWeight;
+            var weightCell = document.querySelector('#product_row_' + keys[i] + ' .sel-total-weight');
+            if (weightCell) weightCell.textContent = rowWeight === null ? '待补全' : rowWeight.toFixed(4);
+
         }
+        var weightDisplay = document.getElementById('orderWeight');
+        if (weightDisplay) weightDisplay.textContent = (missingWeights ? '已知重量小计：' : '订单总净重：') + weightTotal.toFixed(4) + ' kg' + (missingWeights ? '（' + missingWeights + ' 项重量待补全）' : '');
         var subtotalDisplay = document.getElementById('subtotal_display');
         if (subtotalDisplay) subtotalDisplay.textContent = sym + total.toFixed(2);
         var shipping = signedAdjustment();
@@ -163,6 +177,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             chinese_name: String(p.chinese_name || ''),
             code: String(p.code || p.product_code || ''),
             originalCode: String(p.originalCode != null ? p.originalCode : p.code || p.product_code || ''), originalName: String(p.originalName != null ? p.originalName : p.name || ''), originalSpec: String(p.originalSpec != null ? p.originalSpec : p.spec || ''), spec: String(p.spec || ''),
+            unitWeight: p.unitWeight !== undefined ? p.unitWeight : (p.unit_weight_kg != null ? p.unit_weight_kg : null),
             priceUsd: usdPrice,
             price: PIPrices.price(fromUsd(usdPrice)),
             qty: Math.max(1, Number(p.qty) || 1),
@@ -173,6 +188,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         p = normalizeProduct(p);
         var tr = document.createElement('tr');
         tr.id = 'product_row_' + p.id;
+        selectedProducts[p.id].unitWeight = p.unitWeight;
         selectedProducts[p.id].price = p.price;
         selectedProducts[p.id].productId = p.productId;
         selectedProducts[p.id].itemId = p.itemId;
@@ -186,6 +202,8 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             '<td><input aria-label="本单产品编码" placeholder="本单编码（可留空）" type="text" maxlength="200" class="form-control form-control-sm sel-code" name="item_code_' + p.id + '" value="' + escHtml(p.code) + '"></td>' +
             '<td class="text-end"><div class="input-group input-group-sm flex-nowrap pi-price-group"><span class="input-group-text sel-price-symbol">' + sym + '</span><input type="number" step="0.001" min="0" class="form-control form-control-sm sel-price" value="' + p.price.toFixed(3) + '"></div></td>' +
             '<td><input type="number" class="form-control form-control-sm sel-qty" value="' + p.qty + '" min="1" style="width:70px;"></td>' +
+            '<td><input aria-label="单重 kg" type="number" step="any" min="0" class="form-control form-control-sm sel-weight" name="unit_weight_kg_' + p.id + '" value="' + escHtml(p.unitWeight == null ? '' : p.unitWeight) + '" placeholder="待补全"></td>' +
+            '<td class="text-end sel-total-weight"></td>' +
             '<td class="text-end fw-bold sel-amt">' + sym + PIPrices.amount(p.price, p.qty).toFixed(2) + '</td>' +
             '<td><div class="d-flex gap-1 pi-row-actions"><button type="button" title="复制此产品行" aria-label="复制此产品行" class="btn btn-sm btn-outline-primary sel-copy"><i class="bi bi-copy"></i></button><button type="button" title="移除产品" aria-label="移除产品" class="btn btn-sm btn-outline-danger">&times;</button></div></td>' +
             '<input type="hidden" name="row_product_' + p.id + '" value="' + p.productId + '">' +
@@ -194,6 +212,10 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             '<input type="hidden" name="qty_' + p.id + '" value="' + p.qty + '">' +
             '<input type="hidden" name="unit_price_' + p.id + '" value="' + p.price.toFixed(3) + '">';
 
+        tr.querySelector('.sel-weight').addEventListener('input', function() {
+            selectedProducts[p.id].unitWeight = this.value === '' ? null : this.value;
+            updateTotal();
+        });
         tr.querySelector('.sel-qty').addEventListener('input', function() {
             var qty = parseInt(this.value) || 1; if (qty < 1) qty = 1;
             var price = parseFloat(tr.querySelector('.sel-price').value) || 0;
@@ -259,7 +281,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     function addProductObj(p) {
         p = normalizeProduct(p);
         if (productAlreadySelected(p.productId)) return;
-        selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
+        selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', unitWeight: p.unitWeight, priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
         selectedProductOrder.push(p.id);
         selectedTableBody.appendChild(makeRow(p));
         renumberRows(); showHideEmpty(); updateTotal();
@@ -267,7 +289,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
 
     function addQuickProduct(product) {
         addProductObj({id: product.id, name: product.name, code: product.product_code,
-                       spec: product.specification, priceUsd: product.unit_price, img: product.image});
+                       spec: product.specification, unitWeight: product.unit_weight_kg, priceUsd: product.unit_price, img: product.image});
     }
     function repriceForCurrency() {
         var keys = selectedProductOrder;
@@ -643,6 +665,31 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         });
     }
 </script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var card = document.querySelector('#orderInformation .card');
+    if (!card) return;
+    var body = card.querySelector('.card-body');
+    var header = card.querySelector('.card-header');
+    var details = document.createElement('details'); details.open = true;
+    var summary = document.createElement('summary'); summary.className = 'card-header fw-bold'; summary.textContent = '订单信息（点击收起 / 展开）';
+    var required = document.createElement('div'); required.className = 'order-required-grid';
+    var optional = document.createElement('details'); optional.className = 'mt-2';
+    var optionalTitle = document.createElement('summary'); optionalTitle.textContent = '更多订单信息（选填）';
+    var optionalGrid = document.createElement('div'); optionalGrid.className = 'order-optional-grid mt-3';
+    Array.from(body.children).forEach(function(field) {
+        if (!field.classList.contains('mb-3')) return;
+        (field.querySelector('[required]') ? required : optionalGrid).appendChild(field);
+    });
+    optional.append(optionalTitle, optionalGrid); body.prepend(required); body.append(optional);
+    if (header) header.remove(); details.append(summary, body); card.append(details);
+    document.getElementById('pi-form').addEventListener('invalid', function(event) {
+        if (body.contains(event.target)) { details.open = true; if (optional.contains(event.target)) optional.open = true; }
+    }, true);
+});
+</script>
+
 {% endblock %}
 
 {% block content %}
@@ -665,7 +712,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     <input type="hidden" id="draft_version" name="draft_version" value="{{ draft_version or '' }}">
     <input type="hidden" name="product_order" id="product_order" value="">
     <div class="row g-4">
-        <div class="col-xl-4">
+        <div class="col-12" id="orderInformation">
             <div class="card mb-3">
                 <div class="card-header"><h5 class="mb-0">客户与 PI 信息</h5></div>
                 <div class="card-body">
@@ -715,7 +762,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             </div>
         </div>
 
-        <div class="col-xl-8">
+        <div class="col-12">
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">产品</h5>
@@ -727,12 +774,13 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
                         <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button>
                     </div>
                     <div class="table-responsive mt-2" id="selected_products_area">
-                        <small class="text-muted d-block mb-2">品名、规格、编码和图片仅修改当前 PI，产品库资料不变。</small>
+                        <small class="text-muted d-block mb-2">品名、规格、编码、单重和图片仅修改当前 PI，产品库资料不变。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table">
-                            <colgroup><col style="width:5%"><col style="width:37%"><col style="width:15%"><col style="width:14%"><col style="width:9%"><col style="width:12%"><col style="width:8%"></colgroup>
-                            <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
+                            <colgroup><col style="width:4%"><col style="width:25%"><col style="width:12%"><col style="width:12%"><col style="width:8%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:6%"></colgroup>
+                            <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th>单重（kg）</th><th class="text-end">单项总重（kg）</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
                             <tbody></tbody>
                         </table>
+                        <div id="orderWeight" class="text-end fw-bold py-3">订单总净重：0.0000 kg</div>
                         <div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div>
                     </div>
                 </div>

@@ -109,7 +109,7 @@ PRODUCT_CUSTOMS_DEFAULTS = {
 PRODUCT_CUSTOMS_FIELDS = tuple(PRODUCT_CUSTOMS_DEFAULTS)
 PRODUCT_AUDIT_FIELDS = (
     'name', 'chinese_name', 'product_code', 'specification',
-    'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+    'unit_price', 'unit_price_rmb', 'unit_weight_kg', 'notes', 'image', 'active',
 ) + PRODUCT_CUSTOMS_FIELDS
 
 _TRANSLATION_UPSTREAM_LOCK = threading.Lock()
@@ -230,6 +230,12 @@ CUSTOMS_DOCUMENT_LABELS = {
 
 def _apply_product_customs_form(product, form):
     """Apply a complete customs profile from a product form."""
+    if 'unit_weight_kg' in form:
+        try:
+            raw_weight = str(form.get('unit_weight_kg') or '').strip()
+            product.unit_weight_kg = _nonnegative_float(raw_weight, '单重（kg）') if raw_weight else None
+        except ValueError as exc:
+            return False, str(exc)
     values = {}
     for field, default_value in PRODUCT_CUSTOMS_DEFAULTS.items():
         submitted = form.get(field)
@@ -382,6 +388,7 @@ def _migrate_db():
             'image': 'VARCHAR(500)',
             'chinese_name': 'VARCHAR(200)',
             'unit_price_rmb': 'FLOAT',
+            'unit_weight_kg': ('FLOAT', 'NULL'),
             'active': ('BOOLEAN', '1'),
             'customs_hs_code': ('VARCHAR(20)', "'8515900090'"),
             'customs_name_cn': ('VARCHAR(200)', "'焊割设备配件'"),
@@ -417,7 +424,7 @@ def _migrate_db():
             'branch_code': 'VARCHAR(50)',
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
-        'pi_items': {'image_override': ('VARCHAR(500)', 'NULL'), 'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
+        'pi_items': {'unit_weight_kg': ('FLOAT', 'NULL'), 'image_override': ('VARCHAR(500)', 'NULL'), 'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
         'suppliers': {},  # table auto-created by create_all
         'procurements': {
             'product_name_snapshot': ('VARCHAR(200)', 'NULL'),
@@ -1752,6 +1759,12 @@ def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=Non
             quantity = int(form.get(f'qty_{row_id}', '1').strip() or '1')
         except (AttributeError, TypeError, ValueError):
             quantity = 1
+        weight_key = f'unit_weight_kg_{row_id}'
+        try:
+            raw_weight = str(form.get(weight_key) or '').strip()
+            unit_weight_kg = (_nonnegative_float(raw_weight, '单重（kg）') if raw_weight else None) if weight_key in form else product.unit_weight_kg
+        except ValueError as exc:
+            abort(400, description=str(exc))
         unit_price_raw = form.get(f'unit_price_{row_id}', '')
         try:
             unit_price = _nonnegative_float(
@@ -1800,6 +1813,8 @@ def _submitted_pi_items(form, allow_inactive_ids=None, allowed_image_sources=Non
             'name_override': name,
             'spec_override': spec,
             'code_override': code,
+            'unit_weight_kg': unit_weight_kg,
+            'weight_submitted': weight_key in form,
             'quantity': quantity,
             'unit_price': unit_price,
             'amount': amount,
@@ -4490,6 +4505,7 @@ def api_product_search():
             'product_code': code,
             'spec': product.specification or '',
             'price': product.unit_price or 0,
+            'unit_weight_kg': product.unit_weight_kg,
             'price_usd': product.unit_price or 0,
             'price_rmb': product.unit_price_rmb or 0,
             'img': product.image or '',
@@ -5686,6 +5702,7 @@ def _pi_create_postback_data(form, draft=None):
             'originalSpec': product.specification or '',
             'price': item['unit_price'],
             'priceRaw': form.get(f"unit_price_{item['row_id']}", item['unit_price']),
+            'unitWeight': item['unit_weight_kg'],
             'qty': item['quantity'],
             'qtyRaw': form.get(f"qty_{item['row_id']}", item['quantity']),
             'img': image_source or (product.image if image_mode != 'clear' else '') or '',
@@ -5945,6 +5962,7 @@ def pi_create():
                 spec_override=item['spec_override'],
                 code_override=item['code_override'],
                 sort_order=item['sort_order'],
+                unit_weight_kg=item['unit_weight_kg'],
                 quantity=item['quantity'],
                 unit_price=item['unit_price'],
                 amount=item['amount'],
@@ -7591,6 +7609,7 @@ def pi_copy(id):
             code_override=item.code_override,
             image_override=item.image_override,
             sort_order=item.sort_order,
+            unit_weight_kg=item.unit_weight_kg,
             quantity=item.quantity,
             unit_price=item.unit_price,
             amount=item.amount,
@@ -7627,7 +7646,7 @@ def _preload_products(pi):
                             'originalCode': prod.product_code or '',
                             'originalName': prod.name, 'originalSpec': prod.specification or '',
                             'spec': item.display_specification, 'price': item.unit_price,
-                            'price_usd': price_usd,
+                            'price_usd': price_usd, 'unitWeight': item.unit_weight_kg,
                             'img': item.display_image or '', 'originalImage': prod.image or '',
                             'imageSource': item.image_override or '', 'imageMode': 'clear' if item.image_override == '' else 'keep', 'qty': item.quantity})
     return preload
@@ -7813,7 +7832,7 @@ def _reconcile_pi_items(pi, selected_items):
     pairs, removed = _match_pi_rows(pi, selected_items)
     for position, (submitted, item) in enumerate(pairs):
         if item is None:
-            item = PIItem(product_id=submitted['product'].id)
+            item = PIItem(product_id=submitted['product'].id, unit_weight_kg=submitted['unit_weight_kg'])
             pi.items.append(item)
         item.sort_order = position
         if submitted.get('name_override') is not None:
@@ -7823,6 +7842,8 @@ def _reconcile_pi_items(pi, selected_items):
         if submitted.get('code_override') is not None:
             item.code_override = submitted['code_override']
         _apply_pi_item_image(item, submitted)
+        if submitted.get('weight_submitted'):
+            item.unit_weight_kg = submitted['unit_weight_kg']
         item.quantity = submitted['quantity']
         item.unit_price = submitted['unit_price']
         item.amount = submitted['amount']

@@ -391,6 +391,7 @@ class Product(db.Model):
     product_code = db.Column(db.String(100), default='')
     specification = db.Column(db.String(200), default='')
     chinese_name = db.Column(db.String(200), default='')
+    unit_weight_kg = db.Column(db.Float, nullable=True)
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
     unit_price_rmb = db.Column(db.Float, nullable=False, default=0.0)
     # Customs master data. Existing products are backfilled with the company's
@@ -423,6 +424,7 @@ class Product(db.Model):
             'product_code': self.product_code,
             'specification': self.specification,
             'chinese_name': self.chinese_name,
+            'unit_weight_kg': self.unit_weight_kg,
             'unit_price': self.unit_price,
             'unit_price_rmb': self.unit_price_rmb,
             'customs_hs_code': self.customs_hs_code,
@@ -643,6 +645,7 @@ class PIItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    unit_weight_kg = db.Column(db.Float, nullable=True)
     quantity = db.Column(db.Integer, nullable=False, default=1)
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
     amount = db.Column(db.Float, nullable=False, default=0.0)
@@ -681,6 +684,7 @@ class PIItem(db.Model):
             'specification': self.display_specification,
             'image': self.display_image,
             'quantity': self.quantity,
+            'unit_weight_kg': self.unit_weight_kg,
             'unit_price': self.unit_price,
             'amount': self.amount,
         }

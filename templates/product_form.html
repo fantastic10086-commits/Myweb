@@ -97,6 +97,8 @@ document.addEventListener('paste', function(e) {
         <form method="post" enctype="multipart/form-data">
             {% if editing %}<input type="hidden" name="return_to" value="{{ return_to|default(url_for('product_list'), true) }}">{% endif %}
             <div class="row g-3">
+                <div class="col-md-6"><label for="unit_weight_kg" class="form-label">每件净重（kg）</label><input id="unit_weight_kg" name="unit_weight_kg" type="number" min="0" step="any" class="form-control" placeholder="未填写" value="{{ request.form.get('unit_weight_kg', product.unit_weight_kg if product and product.unit_weight_kg is not none else '') }}"><div class="form-text">可留空；用于新建 PI 的单重默认值。</div></div>
+
                 <div class="col-md-6">
                     <label for="name" class="form-label">产品英文名称 <span class="text-danger">*</span></label>
                     <input type="text" class="form-control" id="name" name="name" required value="{{ product.name if product else '' }}" placeholder="产品英文描述 / 名称">
