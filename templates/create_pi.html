@@ -289,6 +289,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         return selectedProductOrder.some(function(key) { return Number(selectedProducts[key].productId || key) === Number(productId); });
     }
     function addProductObj(p) {
+        if (!productEntryReady()) return;
         p = normalizeProduct(p);
         if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', unitWeight: p.unitWeight, priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
@@ -318,7 +319,21 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         updateTotal();
     }
 
+    function productEntryReady() {
+        var account = document.getElementById('account_select');
+        var currency = document.getElementById('currency_select');
+        return !!(account && account.value && currency && ['USD', 'RMB'].includes(currency.value));
+    }
+    function updateProductEntryGate() {
+        var ready = productEntryReady();
+        var fields = document.getElementById('productEntryFields');
+        var hint = document.getElementById('productEntryHint');
+        if (fields) fields.disabled = !ready;
+        if (hint) hint.classList.toggle('d-none', ready);
+    }
+
     function applyCurrency() {
+        updateProductEntryGate();
         var selectedCurrency = document.getElementById('currency_select').value;
         var currency = getCurrency();
         document.getElementById('currency_hidden').value = selectedCurrency;
@@ -415,6 +430,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     }
 
     function openProductPicker() {
+        if (!productEntryReady()) return;
         pickerSelections = {};
         pickerSelectionOrder = [];
         document.getElementById('picker_search').value = productSearch.value.trim();
@@ -786,6 +802,8 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
 
         <div class="col-12">
+            <div id="productEntryHint" class="alert alert-info py-2">请先选择收款账户和币种，再录入产品。账户自带币种时会自动填入。</div>
+            <fieldset id="productEntryFields" disabled>
             <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">产品</h5>
@@ -808,6 +826,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
             </div>
+            </fieldset>
             <div class="card mb-3">
                 <div class="card-body">
                     <div class="row g-3 align-items-start pi-adjustment-row">
@@ -967,7 +986,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(function(){errorEl.textContent='网络错误。';errorEl.classList.remove('d-none');})
         .finally(function(){btn.disabled=false;translateBtn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加产品';});
     });
-    modalEl.addEventListener('show.bs.modal', function() { clear(); document.addEventListener('paste', handlePaste); });
+    modalEl.addEventListener('show.bs.modal', function(event) { if (!productEntryReady()) { event.preventDefault(); return; } clear(); document.addEventListener('paste', handlePaste); });
     modalEl.addEventListener('hidden.bs.modal', function() { document.removeEventListener('paste', handlePaste); });
 })();
 </script>
