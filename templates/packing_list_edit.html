@@ -758,8 +758,8 @@
             if (maxPerCarton <= 0) {
                 selectedProductIds.delete(id);
                 selectedProductQuantities.delete(id);
-            } else if (rememberedQuantity <= 0 || rememberedQuantity > maxPerCarton) {
-                selectedProductQuantities.set(id, maxPerCarton);
+            } else if (rememberedQuantity <= 0 || rememberedQuantity > product.remaining) {
+                selectedProductQuantities.set(id, product.remaining);
             }
         });
         updateSelectionSummary();
@@ -785,7 +785,7 @@
                 const id = Number(product.id);
                 if (check.checked) {
                     selectedProductIds.add(id);
-                    if (!selectedProductQuantities.has(id)) selectedProductQuantities.set(id, Math.floor(product.remaining / targetCopies));
+                    if (!selectedProductQuantities.has(id)) selectedProductQuantities.set(id, product.remaining);
                 } else {
                     selectedProductIds.delete(id);
                     selectedProductQuantities.delete(id);
@@ -806,7 +806,7 @@
                 const qtyWrap = document.createElement('div'); qtyWrap.className = 'input-group input-group-sm packing-inline-quantity';
                 const maxPerCarton = Math.floor(product.remaining / targetCopies);
                 const label = document.createElement('span'); label.className = 'input-group-text'; label.textContent = targetCopies > 1 ? '每箱' : '数量';
-                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(Math.max(maxPerCarton, 1)); qty.step = '1'; qty.value = String(selectedProductQuantities.get(Number(product.id)) || Math.max(maxPerCarton, 1)); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id); qty.disabled = maxPerCarton <= 0;
+                const qty = document.createElement('input'); qty.type = 'number'; qty.min = '1'; qty.max = String(Math.max(maxPerCarton, 1)); qty.step = '1'; qty.value = String(selectedProductQuantities.get(Number(product.id)) ?? product.remaining); qty.className = 'form-control pending-product-qty'; qty.dataset.productId = String(product.id); qty.disabled = maxPerCarton <= 0;
                 qty.addEventListener('input', () => {
                     const id = Number(product.id);
                     selectedProductQuantities.set(id, qty.value);
@@ -1044,7 +1044,7 @@
                     const product = products.find(row => Number(row.id) === id);
                     const packed = packedQuantities();
                     const copies = selectedTargetBox !== null && boxes[selectedTargetBox] ? cartonCount(boxes[selectedTargetBox]) : 1;
-                    selectedProductQuantities.set(id, Math.floor((integerValue(product.quantity) - (packed[id] || 0)) / copies));
+                    selectedProductQuantities.set(id, integerValue(product.quantity) - (packed[id] || 0));
                 }
             } else {
                 selectedProductIds.delete(id);
@@ -1067,7 +1067,7 @@
             const product = products.find(row => Number(row.id) === id);
             if (!product) continue;
             const remaining = integerValue(product.quantity) - (packed[id] || 0);
-            const quantity = integerValue(selectedProductQuantities.get(id) || Math.floor(remaining / copies));
+            const quantity = integerValue(selectedProductQuantities.get(id) ?? remaining);
             const maxPerCarton = Math.floor(remaining / copies);
             if (quantity <= 0 || quantity > maxPerCarton) return showAlert(`产品“${product.name}”的每箱加入数量应为 1 至 ${maxPerCarton}。`, 'warning');
             additions.push({id, quantity});
