@@ -4,11 +4,21 @@
 {% block extra_head %}
 <style>
     .pi-list-table-wrap { overflow: visible; }
-    .pi-list-table { min-width: 1380px; }
+    .pi-list-table { width: 100%; min-width: 1280px; table-layout: fixed; }
+    .pi-list-table > :not(caption) > * > * { padding: .8rem .65rem; }
+    .pi-list-table th { white-space: nowrap; font-size: .85rem; }
+    .pi-list-table td:nth-child(1),
+    .pi-list-table td:nth-child(3),
+    .pi-list-table td:nth-child(4),
+    .pi-list-table td:nth-child(5),
+    .pi-list-table td:nth-child(6) { white-space: nowrap; font-size: .9rem; }
+    .pi-list-table td:nth-child(2) a { display: block; overflow-wrap: anywhere; line-height: 1.4; font-size: .9rem; }
+    .pi-list-table td:nth-child(3) { overflow: hidden; text-overflow: ellipsis; }
+    .pi-list-table td:nth-child(6) { font-variant-numeric: tabular-nums; }
     .pi-list-actions { white-space: nowrap; }
     .pi-list-actions .dropdown-menu { min-width: 13rem; }
     .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
-    .pi-list-workflow { display: grid; grid-template-columns: repeat(5, minmax(64px, 1fr)); min-width: 380px; }
+    .pi-list-workflow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
     .pi-list-workflow-stage {
         position: relative; display: flex; flex-direction: column; align-items: center;
         min-width: 0; color: #6c757d; text-decoration: none;
@@ -38,7 +48,7 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
-    @media (max-width: 991.98px) {
+    @media (max-width: 1399.98px) {
         .pi-list-table-wrap { overflow-x: auto; overflow-y: visible; }
     }
 </style>
@@ -156,6 +166,16 @@
         {% if pis %}
         <div class="table-responsive pi-list-table-wrap">
             <table class="table table-hover mb-0 align-middle pi-list-table">
+                <colgroup>
+                    <col style="width:165px;">
+                    <col>
+                    <col style="width:100px;">
+                    <col style="width:85px;">
+                    <col style="width:105px;">
+                    <col style="width:120px;">
+                    <col style="width:340px;">
+                    <col style="width:150px;">
+                </colgroup>
                 <thead class="table-light">
                     <tr>
                         <th>PI 编号</th>
@@ -164,7 +184,7 @@
                         <th>业务员</th>
                         <th>日期</th>
                         <th class="text-end">订单总金额</th>
-                        <th class="text-center" style="min-width:420px;">订单流程</th>
+                        <th class="text-center">订单流程</th>
                         <th class="text-end">操作</th>
                     </tr>
                 </thead>
@@ -182,7 +202,7 @@
                             -
                             {% endif %}
                         </td>
-                        <td>{{ pi.customer.country if pi.customer and pi.customer.country else '-' }}</td>
+                        <td title="{{ pi.customer.country if pi.customer else '' }}">{{ pi.customer.country if pi.customer and pi.customer.country else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                         <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</td>
