@@ -119,6 +119,7 @@
                             <th class="text-end" style="width:80px;">
                                 Rate
                             </th>
+                            <th class="text-end text-nowrap">每件净重（kg）</th>
                             <th class="text-end">操作</th>
                         </tr>
                     </thead>
@@ -141,6 +142,7 @@
                                 <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
+                            <td class="text-end text-nowrap">{{ "%.4f"|format(p.unit_weight_kg) if p.unit_weight_kg is not none else "待补全" }}</td>
                             <td class="text-end text-nowrap">
                                 <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
                                 <a href="{{ url_for('product_edit', id=p.id, return_to=url_for('product_list', search=search, filter=filter, sort=sort, page=page, _anchor='row-' ~ p.id)) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>

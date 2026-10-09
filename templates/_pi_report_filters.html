@@ -8,13 +8,10 @@
             </div>
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1" for="countryFilter">国家</label>
-                <select id="countryFilter" name="country" class="form-select form-select-sm">
-                    <option value="">— 全部 —</option>
-                    {% for country in country_options %}
-                    <option value="{{ country }}" {% if country_filter == country %}selected{% endif %}>{{ country }}</option>
-                    {% endfor %}
-                    {% if country_filter and country_filter not in country_options %}<option value="{{ country_filter }}" selected>{{ country_filter }}</option>{% endif %}
-                </select>
+                <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家；留空为全部">
+                <datalist id="countryFilterOptions">
+                    {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
+                </datalist>
             </div>
 {% endif %}
             <div class="col-md-3 col-xl-2">
