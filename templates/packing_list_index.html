@@ -14,6 +14,10 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
+                <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
+            </div>
             {% if is_admin %}
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1">业务员</label>
@@ -52,7 +56,7 @@
                     <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
                 </div>
             </div>
-            {% if salesperson_filter or date_from or date_to or preset or status_filter %}
+            {% if pi_number_filter or salesperson_filter or date_from or date_to or preset or status_filter %}
             <div class="col-md-auto"><a href="{{ url_for('packing_list_index') }}" class="btn btn-sm btn-outline-danger">清除</a></div>
             {% endif %}
         </form>

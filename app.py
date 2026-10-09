@@ -6077,6 +6077,9 @@ def pi_list():
     elif customs_status == 'unregistered':
         query = query.filter(PI.customs_required.is_(None))
 
+    pi_number_filter = request.args.get('pi_number', '').strip()
+    if pi_number_filter:
+        query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
     pis = query.order_by(PI.created_at.desc()).all()
     if order_status:
         expected_order_status = order_labels[order_status]
@@ -6095,7 +6098,7 @@ def pi_list():
         'RMB': round(sum(pi.grand_total for pi in pis if pi.currency == 'RMB'), 2),
     }
 
-    resp = make_response(render_template('pi_list.html', pis=pis,
+    resp = make_response(render_template('pi_list.html', pi_number_filter=pi_number_filter, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
                            payment_status=payment_status,
@@ -6446,6 +6449,9 @@ def packing_list_index():
         query = query.filter(PackingList.id.is_(None))
     elif status_filter in ('draft', 'completed'):
         query = query.filter(PackingList.status == status_filter)
+    pi_number_filter = request.args.get('pi_number', '').strip()
+    if pi_number_filter:
+        query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
     pis = query.order_by(PI.issue_date.desc(), PI.id.desc()).all()
     salespeople = []
     if is_admin():
@@ -6453,7 +6459,7 @@ def packing_list_index():
             PI.deleted_at.is_(None), PI.salesperson.isnot(None), PI.salesperson != ''
         ).distinct().order_by(PI.salesperson).all()]
     return render_template(
-        'packing_list_index.html', pis=pis, salespeople=salespeople,
+        'packing_list_index.html', pi_number_filter=pi_number_filter, pis=pis, salespeople=salespeople,
         salesperson_filter=salesperson_filter, date_from=date_from,
         date_to=date_to, preset=preset, status_filter=status_filter,
     )
@@ -8739,10 +8745,13 @@ def procurement_select():
     pi_query = _apply_report_filters(
         pi_query, salesperson_filter, date_from, date_to
     )
+    pi_number_filter = request.args.get('pi_number', '').strip()
+    if pi_number_filter:
+        pi_query = pi_query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
     pis = pi_query.order_by(PI.id.desc()).all()
     pi_complete = {pi.id for pi in pis if pi.procurement_is_complete}
     resp = make_response(render_template(
-        'procurement_select.html',
+        'procurement_select.html', pi_number_filter=pi_number_filter,
         pis=pis,
         pi_complete=pi_complete,
         salesperson_filter=salesperson_filter,

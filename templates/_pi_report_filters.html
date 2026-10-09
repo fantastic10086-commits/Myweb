@@ -1,6 +1,12 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" action="{{ url_for(filter_endpoint) }}" class="row g-2 align-items-end">
+{% if pi_number_filter is defined %}
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
+                <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
+            </div>
+{% endif %}
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1">业务员</label>
                 <select class="form-select form-select-sm" name="salesperson">
@@ -30,13 +36,13 @@
                     <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
                 </div>
             </div>
-            {% if salesperson_filter or date_from or date_to or preset %}
+            {% if pi_number_filter or salesperson_filter or date_from or date_to or preset %}
             <div class="col-md-3 col-xl-auto">
                 <a href="{{ url_for(filter_endpoint) }}" class="btn btn-sm btn-outline-danger">清除</a>
             </div>
             {% endif %}
         </form>
-        {% if salesperson_filter or date_from or date_to or preset %}
+        {% if pi_number_filter or salesperson_filter or date_from or date_to or preset %}
         <div class="border-top mt-2 pt-2 small text-muted">
             当前结果：<strong>{{ filtered_count }}</strong> 份 PI
             {% if salesperson_filter %} · 业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
