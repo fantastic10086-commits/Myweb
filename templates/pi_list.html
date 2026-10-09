@@ -69,6 +69,16 @@
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
                 <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
             </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1" for="countryFilter">国家</label>
+                <select id="countryFilter" name="country" class="form-select form-select-sm">
+                    <option value="">— 全部 —</option>
+                    {% for country in country_options %}
+                    <option value="{{ country }}" {% if country_filter == country %}selected{% endif %}>{{ country }}</option>
+                    {% endfor %}
+                    {% if country_filter and country_filter not in country_options %}<option value="{{ country_filter }}" selected>{{ country_filter }}</option>{% endif %}
+                </select>
+            </div>
             <div class="col-md-4 col-xl-2">
                 <label class="form-label small mb-1">业务员</label>
                 <select class="form-select form-select-sm" name="salesperson">
@@ -116,7 +126,7 @@
                 </select>
             </div>
             <div class="col-12 d-flex justify-content-end gap-2">
-                {% if pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+                {% if country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
                 <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">清除筛选</a>
                 {% endif %}
                 <button type="submit" class="btn btn-sm btn-primary px-4"><i class="bi bi-funnel"></i> 筛选</button>
@@ -125,7 +135,7 @@
     </div>
 </div>
 
-{% if pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+{% if country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
 <div class="alert alert-info py-2 small">
     共找到 <strong>{{ pis|length }}</strong> 份 PI
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}

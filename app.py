@@ -6077,6 +6077,14 @@ def pi_list():
     elif customs_status == 'unregistered':
         query = query.filter(PI.customs_required.is_(None))
 
+    country_filter = request.args.get('country', '').strip()
+    country_options = sorted({
+        row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
+        .join(PI.customer).with_entities(Customer.country).distinct().all()
+        if row[0] and row[0].strip()
+    })
+    if country_filter:
+        query = query.filter(PI.customer.has(Customer.country == country_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
@@ -6098,7 +6106,7 @@ def pi_list():
         'RMB': round(sum(pi.grand_total for pi in pis if pi.currency == 'RMB'), 2),
     }
 
-    resp = make_response(render_template('pi_list.html', pi_number_filter=pi_number_filter, pis=pis,
+    resp = make_response(render_template('pi_list.html', pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
                            payment_status=payment_status,
@@ -6449,6 +6457,14 @@ def packing_list_index():
         query = query.filter(PackingList.id.is_(None))
     elif status_filter in ('draft', 'completed'):
         query = query.filter(PackingList.status == status_filter)
+    country_filter = request.args.get('country', '').strip()
+    country_options = sorted({
+        row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
+        .join(PI.customer).with_entities(Customer.country).distinct().all()
+        if row[0] and row[0].strip()
+    })
+    if country_filter:
+        query = query.filter(PI.customer.has(Customer.country == country_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
@@ -6459,7 +6475,7 @@ def packing_list_index():
             PI.deleted_at.is_(None), PI.salesperson.isnot(None), PI.salesperson != ''
         ).distinct().order_by(PI.salesperson).all()]
     return render_template(
-        'packing_list_index.html', pi_number_filter=pi_number_filter, pis=pis, salespeople=salespeople,
+        'packing_list_index.html', pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis, salespeople=salespeople,
         salesperson_filter=salesperson_filter, date_from=date_from,
         date_to=date_to, preset=preset, status_filter=status_filter,
     )
@@ -8745,13 +8761,21 @@ def procurement_select():
     pi_query = _apply_report_filters(
         pi_query, salesperson_filter, date_from, date_to
     )
+    country_filter = request.args.get('country', '').strip()
+    country_options = sorted({
+        row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
+        .join(PI.customer).with_entities(Customer.country).distinct().all()
+        if row[0] and row[0].strip()
+    })
+    if country_filter:
+        pi_query = pi_query.filter(PI.customer.has(Customer.country == country_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         pi_query = pi_query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
     pis = pi_query.order_by(PI.id.desc()).all()
     pi_complete = {pi.id for pi in pis if pi.procurement_is_complete}
     resp = make_response(render_template(
-        'procurement_select.html', pi_number_filter=pi_number_filter,
+        'procurement_select.html', pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options,
         pis=pis,
         pi_complete=pi_complete,
         salesperson_filter=salesperson_filter,

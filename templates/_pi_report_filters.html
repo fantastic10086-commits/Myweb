@@ -6,6 +6,16 @@
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
                 <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
             </div>
+            <div class="col-md-3 col-xl-2">
+                <label class="form-label small mb-1" for="countryFilter">国家</label>
+                <select id="countryFilter" name="country" class="form-select form-select-sm">
+                    <option value="">— 全部 —</option>
+                    {% for country in country_options %}
+                    <option value="{{ country }}" {% if country_filter == country %}selected{% endif %}>{{ country }}</option>
+                    {% endfor %}
+                    {% if country_filter and country_filter not in country_options %}<option value="{{ country_filter }}" selected>{{ country_filter }}</option>{% endif %}
+                </select>
+            </div>
 {% endif %}
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1">业务员</label>
@@ -36,13 +46,13 @@
                     <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
                 </div>
             </div>
-            {% if pi_number_filter or salesperson_filter or date_from or date_to or preset %}
+            {% if country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset %}
             <div class="col-md-3 col-xl-auto">
                 <a href="{{ url_for(filter_endpoint) }}" class="btn btn-sm btn-outline-danger">清除</a>
             </div>
             {% endif %}
         </form>
-        {% if pi_number_filter or salesperson_filter or date_from or date_to or preset %}
+        {% if country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset %}
         <div class="border-top mt-2 pt-2 small text-muted">
             当前结果：<strong>{{ filtered_count }}</strong> 份 PI
             {% if salesperson_filter %} · 业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
