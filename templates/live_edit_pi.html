@@ -80,7 +80,7 @@
 <div class="pi-export-heading d-flex justify-content-between align-items-start gap-3">
     <div>
         <h2 class="mb-1"><i class="bi bi-box-arrow-up-right me-2"></i>PI 导出工作台</h2>
-        <p class="text-muted mb-0">直接在 A4 单据画布上修改本次导出内容，画布与系统默认 PDF 使用相同版式。</p>
+        <p class="text-muted mb-0">直接在 A4 单据画布上修改本次导出内容，切换到 PDF 预览可查看当前模板的实际导出效果。</p>
     </div>
     <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary flex-shrink-0"><i class="bi bi-arrow-left"></i> 返回 PI 列表</a>
 </div>
@@ -104,7 +104,15 @@
     {% set salesperson_matches = all_salespersons | selectattr('name', 'equalto', pi.salesperson) | list %}
     {% set pi_salesperson = salesperson_matches[0] if salesperson_matches else none %}
     {% set company_key = 'qisuo' if pi.company == 'qisuo' else 'klista' %}
-    <div class="pi-export-stage">
+    <div class="pi-export-controls d-flex gap-2 my-3" role="group" aria-label="导出视图">
+        <button type="button" id="editViewButton" class="btn btn-primary btn-sm" onclick="showExportView(false)">编辑内容</button>
+        <button type="button" id="pdfViewButton" class="btn btn-outline-primary btn-sm" onclick="showExportView(true)">PDF 预览</button>
+    </div>
+    <section id="pdfPreviewPanel" class="pi-export-controls d-none my-3" aria-label="PDF 预览">
+        <div id="pdfPreviewMessage" class="alert alert-info" role="status">点击上方“预览”生成当前模板的 PDF。</div>
+        <iframe id="pdfPreviewFrame" title="当前 PI 的 PDF 预览" class="d-none bg-white border rounded w-100" style="height:80vh;min-height:500px;"></iframe>
+    </section>
+    <div class="pi-export-stage" id="exportEditor">
         <article class="pi-export-paper" aria-label="PI 导出单据画布">
             <header class="pi-paper-company"><input class="pi-paper-company-name" type="text" name="company_name" value="{{ company_headers[company_key].name }}" {% if not is_admin %}readonly{% endif %}><input class="pi-paper-company-address" type="text" name="company_addr" value="{{ company_headers[company_key].address }}" {% if not is_admin %}readonly{% endif %}></header>
             <h1 class="pi-paper-title">PROFORMA INVOICE</h1><div class="pi-paper-rule"></div>
@@ -158,7 +166,76 @@ function responseFilename(response, fallback) { const disposition = response.hea
 function setExportBusy(busy, message, error) { document.getElementById('previewButton').disabled = busy; document.getElementById('downloadButton').disabled = busy; const status = document.getElementById('exportStatus'); status.className = 'small mt-3 ' + (error ? 'text-danger' : (busy ? 'text-primary' : 'text-success')); status.textContent = message || ''; }
 const currentAccountBrands = {{ (current_receiving_account.brands if current_receiving_account else [])|tojson }};
 function exportBrandError() { const select = document.getElementById('export_account_select'); let brands = currentAccountBrands; if (select && select.value) brands = (select.options[select.selectedIndex].getAttribute('data-brands') || '').split(','); if (!brands.length || !brands.some(b => b === 'klista' || b === 'qisuo')) return '当前收款账户无法确认或未设置所属品牌，请先完善收款账户。'; if (!brands.includes(document.getElementById('company_header').value)) return '公司抬头与收款账户所属品牌不一致，禁止预览和导出。请更换抬头或收款账户。'; return ''; }
-async function exportDocument(mode) { const form = document.getElementById('exportForm'); if (!form.reportValidity()) return; const brandError = exportBrandError(); if (brandError) { alert(brandError); setExportBusy(false, brandError, true); return; } const data = new FormData(form); data.set('mode', mode); setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false); try { const response = await fetch(window.location.href, {method: 'POST', body: data}); if (!response.ok) { let message = '导出失败。'; try { message = (await response.json()).error || message; } catch (_error) {} throw new Error(message); } const blob = await response.blob(); const url = URL.createObjectURL(blob); if (mode === 'preview') { const previewWindow = window.open(url, '_blank', 'noopener'); if (!previewWindow) throw new Error('浏览器阻止了预览窗口，请允许弹出窗口后重试。'); setTimeout(function() { URL.revokeObjectURL(url); }, 300000); setExportBusy(false, '预览已在新窗口打开；原始 PI 未被修改。', false); } else { const link = document.createElement('a'); link.href = url; link.download = responseFilename(response, '{{ pi.pi_number }}.' + document.getElementById('output_format').value); document.body.appendChild(link); link.click(); link.remove(); setTimeout(function() { URL.revokeObjectURL(url); }, 1000); setExportBusy(false, '文件已导出；原始 PI 未被修改。', false); } } catch (error) { alert(error.message || '导出失败。'); setExportBusy(false, error.message || '导出失败。', true); } }
+let previewUrl = null;
+let exportRevision = 0;
+let exportBusy = false;
+function showExportView(pdf) {
+    document.getElementById('exportEditor').classList.toggle('d-none', pdf);
+    document.querySelector('.pi-export-extra').classList.toggle('d-none', pdf);
+    document.getElementById('pdfPreviewPanel').classList.toggle('d-none', !pdf);
+    document.getElementById('editViewButton').className = 'btn btn-sm ' + (pdf ? 'btn-outline-primary' : 'btn-primary');
+    document.getElementById('pdfViewButton').className = 'btn btn-sm ' + (pdf ? 'btn-primary' : 'btn-outline-primary');
+    if (!pdf) resizeDocumentTextareas();
+}
+function clearPdfPreview(message, error) {
+    const frame = document.getElementById('pdfPreviewFrame');
+    frame.classList.add('d-none'); frame.removeAttribute('src');
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+    const status = document.getElementById('pdfPreviewMessage');
+    status.className = 'alert ' + (error ? 'alert-danger' : 'alert-info');
+    status.textContent = message;
+}
+function invalidatePreview(event) {
+    if (event.target.id === 'output_format') return;
+    exportRevision++;
+    clearPdfPreview('内容或导出设置已更改，请点击“预览”生成最新 PDF。', false);
+}
+document.getElementById('exportForm').addEventListener('input', invalidatePreview);
+document.getElementById('exportForm').addEventListener('change', invalidatePreview);
+window.addEventListener('pagehide', function() { if (previewUrl) URL.revokeObjectURL(previewUrl); });
+async function exportDocument(mode) {
+    if (exportBusy) return;
+    const form = document.getElementById('exportForm');
+    if (!form.checkValidity()) { showExportView(false); form.reportValidity(); return; }
+    const brandError = exportBrandError();
+    if (brandError) { clearPdfPreview(brandError, true); setExportBusy(false, brandError, true); return; }
+    const data = new FormData(form); data.set('mode', mode);
+    if (mode === 'preview') data.set('output_format', 'pdf');
+    const revision = exportRevision;
+    const templateName = document.getElementById('template_id').selectedOptions[0].textContent;
+    exportBusy = true;
+    setExportBusy(true, mode === 'preview' ? '正在生成预览……' : '正在生成文件……', false);
+    if (mode === 'preview') { clearPdfPreview('正在生成预览……', false); showExportView(true); }
+    try {
+        const response = await fetch(window.location.href, {method: 'POST', body: data});
+        if (!response.ok) {
+            let message = '导出失败。';
+            try { message = (await response.json()).error || message; } catch (_error) {}
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        if (mode === 'preview') {
+            if (revision !== exportRevision) throw new Error('生成期间内容或模板已更改，请重新点击预览。');
+            if (!blob.type.includes('application/pdf')) throw new Error('未收到 PDF 文件，请重新生成预览。');
+            previewUrl = URL.createObjectURL(blob);
+            const frame = document.getElementById('pdfPreviewFrame');
+            frame.src = previewUrl; frame.classList.remove('d-none');
+            document.getElementById('pdfPreviewMessage').className = 'alert alert-success';
+            document.getElementById('pdfPreviewMessage').textContent = '当前模板：' + templateName + '。以下为实际生成的 PDF。';
+            setExportBusy(false, '预览已更新；可切换回“编辑内容”继续修改。', false);
+        } else {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a'); link.href = url;
+            link.download = responseFilename(response, {{ pi.pi_number|tojson }} + '.' + data.get('output_format'));
+            document.body.appendChild(link); link.click(); link.remove();
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+            setExportBusy(false, '文件已导出；原始 PI 未被修改。', false);
+        }
+    } catch (error) {
+        if (mode === 'preview') clearPdfPreview(error.message || '预览失败。', true);
+        setExportBusy(false, error.message || '导出失败。', true);
+    } finally { exportBusy = false; }
+}
 document.querySelectorAll('.pi-auto-height').forEach(function(field) { field.addEventListener('input', resizeDocumentTextareas); });
 resizeDocumentTextareas(); recalculateExport();
 </script>
