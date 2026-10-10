@@ -26,12 +26,12 @@ function queueAccountLookup(delay=450){
   const sequence=++accountLookupSequence, account=$('account').value.trim();
   if(accountLookupController)accountLookupController.abort();
   $('account-name').textContent=account?'正在识别账号……':'系统会根据账号自动识别用户名。';
-  if(!account||state.user)return;
+  if(!account||state.user||!state.csrf)return;
   accountLookupTimer=setTimeout(async()=>{
     const controller=new AbortController();accountLookupController=controller;
     const timeout=setTimeout(()=>controller.abort(),10000);
     try{
-      const response=await fetch('/login/account-name',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({account}),signal:controller.signal});
+      const response=await fetch('/login/account-name',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-CSRFToken':state.csrf},body:JSON.stringify({account}),signal:controller.signal});
       const data=await response.json();
       if(sequence!==accountLookupSequence||$('account').value.trim()!==account)return;
       $('account-name').textContent=response.ok&&data.ok?'用户名：'+data.username:(data.message||'未识别到可用账号，请检查后重试。');
@@ -105,7 +105,7 @@ window.addEventListener('hashchange',()=>route().catch(error));
 window.addEventListener('beforeunload',e=>{saveWork();if(state.busy||state.sending||[...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done))){e.preventDefault();e.returnValue='';}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 setInterval(poll,5000);
-(async()=>{try{const boot=await api('session');state.csrf=boot.csrf_token;state.user=boot.user;renderSession();setupPush();await route();await poll();}catch(e){renderSession();error(e);}})();
+(async()=>{try{const boot=await api('session');state.csrf=boot.csrf_token;state.user=boot.user;renderSession();queueAccountLookup(0);setupPush();await route();await poll();}catch(e){renderSession();error(e);}})();
 
 let pushRegistration=null, pushPublicKey=null;
 async function setupPush(){
