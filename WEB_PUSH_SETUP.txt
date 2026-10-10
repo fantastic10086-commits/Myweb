@@ -56,7 +56,9 @@ https://github.com/web-push-libs/pywebpush
 
 生产接入（2026-10-10）
 入口 https://pimanager.cn/mobile/；复用既有受信证书和服务器。
-私钥保存在 /etc/pi-manager/webpush-private.pem，root:pi-manager 0640；不进源码。
+私钥保存在 /etc/pi-manager-webpush/private.pem，root:pi-manager 0640；不进源码。
 网站和 worker 共用 /etc/pi-manager/webpush.env，VAPID subject 为既有网站 https://pimanager.cn/。
 requirements.txt 已包含 Web Push 依赖；更新脚本会在配置存在时重启 worker。
 用户须在自己的手机上允许通知；目前尚未建立任何真实订阅或发送推送。
+
+生产权限说明：/etc/pi-manager-webpush 为 root:pi-manager 0710，仅服务组可遍历；private.pem 为 0640。原 /etc/pi-manager 目录权限保持不变。新增推送依赖只赋予服务组读取；更新脚本以 022 安装库并在发布前以服务账号验证依赖导入，避免继承备份命令的严格 umask。

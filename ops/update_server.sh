@@ -55,7 +55,10 @@ rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'stati
 
 require_static_assets "$RELEASE"
 
-"$APP_DIR/venv/bin/pip" install -r "$RELEASE/requirements.txt"
+# Dependency files must remain readable by the unprivileged service account,
+# even when the caller uses a restrictive umask for backups and credentials.
+(umask 022; "$APP_DIR/venv/bin/pip" install -r "$RELEASE/requirements.txt")
+runuser -u pi-manager -- "$APP_DIR/venv/bin/python" -c 'from pywebpush import webpush; from cryptography.hazmat.primitives import serialization'
 ln -sfn "$RELEASE" "$APP_DIR/current"
 install -m 0644 "$RELEASE/ops/pi-manager.service" /etc/systemd/system/pi-manager.service
 install -m 0644 "$RELEASE/ops/pi-manager-backup.service" /etc/systemd/system/pi-manager-backup.service
@@ -91,5 +94,6 @@ echo "Update completed successfully."
 if [ -f /etc/pi-manager/webpush.env ]; then
     systemctl enable pi-manager-webpush
     systemctl restart pi-manager-webpush
+    sleep 3
     systemctl is-active --quiet pi-manager-webpush
 fi
