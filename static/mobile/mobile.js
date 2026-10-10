@@ -19,6 +19,32 @@ async function api(path, options={}) {
 }
 const post=(path,data)=>api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
 function renderSession(){ $('login').hidden=!!state.user; $('logout').hidden=!state.user; $('workspace').hidden=true; $('detail').hidden=true; if(state.user)$('greeting').textContent=state.user.name+' · '+(state.user.is_admin?'管理员':'业务员'); }
+// Reuse the normal login page's account lookup and server-side rate limit.
+let accountLookupTimer, accountLookupSequence=0, accountLookupController;
+function queueAccountLookup(delay=450){
+  clearTimeout(accountLookupTimer);
+  const sequence=++accountLookupSequence, account=$('account').value.trim();
+  if(accountLookupController)accountLookupController.abort();
+  $('account-name').textContent=account?'正在识别账号……':'系统会根据账号自动识别用户名。';
+  if(!account||state.user)return;
+  accountLookupTimer=setTimeout(async()=>{
+    const controller=new AbortController();accountLookupController=controller;
+    const timeout=setTimeout(()=>controller.abort(),10000);
+    try{
+      const response=await fetch('/login/account-name',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({account}),signal:controller.signal});
+      const data=await response.json();
+      if(sequence!==accountLookupSequence||$('account').value.trim()!==account)return;
+      $('account-name').textContent=response.ok&&data.ok?'用户名：'+data.username:(data.message||'未识别到可用账号，请检查后重试。');
+    }catch(_error){
+      if(sequence===accountLookupSequence)$('account-name').textContent='暂时无法识别，仍可输入密码尝试登录。';
+    }finally{clearTimeout(timeout);}
+  },delay);
+}
+$('account').addEventListener('input',()=>queueAccountLookup());
+$('account').addEventListener('change',()=>queueAccountLookup(0));
+$('account').addEventListener('blur',()=>queueAccountLookup(0));
+window.addEventListener('pageshow',()=>queueAccountLookup(0));
+queueAccountLookup(0);
 function dateText(value){ const d=new Date(value);return isNaN(d)?'':d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 function orderLink(o,count=state.unread.get(o.id)||0){const a=el('a',undefined,'card order');a.dataset.orderId=o.id;a.href='#order/'+o.id+'/photos';a.append(el('span',o.number,'eyebrow'),el('strong',o.customer_name),el('span','已回款 '+o.currency+' '+Number(o.received_amount).toFixed(2),'muted'));if(count)a.append(el('span',count+' 条未读','badge'));return a;}
 async function loadOrders(append=false){const epoch=state.epoch;const page=append?state.page+1:1;const data=await api('orders?q='+encodeURIComponent(state.query)+'&page='+page);if(epoch!==state.epoch)return;if(!append)$('order-list').replaceChildren();state.page=page;for(const o of data.orders)$('order-list').append(orderLink(o));if(!data.orders.length&&!append)$('order-list').append(el('p','暂无符合条件的订单。','muted'));$('orders-more').hidden=!data.has_more;}

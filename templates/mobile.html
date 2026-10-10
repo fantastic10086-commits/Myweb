@@ -18,7 +18,7 @@
 {% if config.get('MOBILE_DEMO') %}
 <div class="card"><h2>本机演示 · 非正式系统</h2><p class="muted">这里使用虚拟数据，正式系统的账号密码不能登录。</p><p>用户名：测试业务员<br>登录账号：<strong>demo-sales</strong></p><p>用户名：管理员<br>登录账号：<strong>admin</strong></p><p>两个演示账号的密码：<strong>LocalPhotoTest123!</strong></p></div>
 {% else %}<p class="muted">使用现有系统账号登录，照片与电脑端同步。</p>{% endif %}
-<form id="login-form" class="card"><label>登录账号<input id="account" autocomplete="username" autocapitalize="none" spellcheck="false" {% if config.get('MOBILE_DEMO') %}value="demo-sales"{% endif %} required></label><label>密码<input id="password" type="password" autocomplete="current-password" required></label><button type="submit">登录</button></form>
+<form id="login-form" class="card"><label>登录账号<input id="account" autocomplete="username" autocapitalize="none" spellcheck="false" {% if config.get('MOBILE_DEMO') %}value="demo-sales"{% endif %} required aria-describedby="account-name"></label><p id="account-name" class="hint" role="status" aria-live="polite">系统会根据账号自动识别用户名。</p><label>密码<input id="password" type="password" autocomplete="current-password" required></label><button type="submit">登录</button></form>
 <p class="hint">首次使用临时密码？请先到<a href="/profile">网页系统修改密码</a>。</p>
 </section>
 <section id="workspace" hidden>
