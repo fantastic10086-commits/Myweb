@@ -21,6 +21,7 @@
         </a>
     </div>
     <div class="col-auto">
+        <a href="{{ url_for('customer_detail', id=pi.customer_id, _anchor='customer-files') }}" class="btn btn-outline-primary me-2">订单照片 / 文件夹</a>
         {% if pi.customs_required is sameas true %}
         <a href="{{ url_for('customs_document_edit', pi_id=pi.id) }}" class="btn btn-outline-success me-2">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i> 报关资料

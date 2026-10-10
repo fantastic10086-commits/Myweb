@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#193c60"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="订单照片">
+<link rel="manifest" href="/mobile/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/mobile/icon.png">
+<link rel="stylesheet" href="/static/mobile/mobile.css?v={{ mobile_asset_version }}"><script src="/static/mobile/mobile.js?v={{ mobile_asset_version }}" defer></script>
+<title>订单照片 · PI Manager</title>
+</head>
+<body>
+<header><a href="#orders" class="brand">PI Manager <small>订单助手</small></a><button id="logout" class="quiet" hidden>退出</button></header>
+<main>
+<div id="notice" role="status" aria-live="polite"></div>
+<div id="unread-notice" role="status" aria-live="polite"></div>
+<section id="login" hidden>
+<p class="eyebrow">手机工作台</p><h1>照片归档，随手完成</h1>
+{% if config.get('MOBILE_DEMO') %}
+<div class="card"><h2>本机演示 · 非正式系统</h2><p class="muted">这里使用虚拟数据，正式系统的账号密码不能登录。</p><p>用户名：测试业务员<br>登录账号：<strong>demo-sales</strong></p><p>用户名：管理员<br>登录账号：<strong>admin</strong></p><p>两个演示账号的密码：<strong>LocalPhotoTest123!</strong></p></div>
+{% else %}<p class="muted">使用现有系统账号登录，照片与电脑端同步。</p>{% endif %}
+<form id="login-form" class="card"><label>登录账号<input id="account" autocomplete="username" autocapitalize="none" spellcheck="false" {% if config.get('MOBILE_DEMO') %}value="demo-sales"{% endif %} required></label><label>密码<input id="password" type="password" autocomplete="current-password" required></label><button type="submit">登录</button></form>
+<p class="hint">首次使用临时密码？请先到<a href="/profile">网页系统修改密码</a>。</p>
+</section>
+<section id="workspace" hidden>
+<div class="intro"><div><p class="eyebrow" id="greeting"></p><h1>客户订单</h1></div><button id="refresh" class="secondary">刷新</button></div>
+<p class="muted">只显示已有回款（含定金）、且你有权限的订单。</p>
+<form id="search-form" class="search"><input id="search" type="search" placeholder="搜索客户或订单号" aria-label="搜索客户或订单号"><button>搜索</button></form>
+<div id="order-list" class="stack"></div><button id="orders-more" class="secondary wide" hidden>加载更多订单</button>
+<div class="card"><h2>消息通知</h2><p id="push-status" class="hint">正在检查通知支持…</p><div class="actions"><button id="push-enable" class="secondary" disabled>开启后台通知</button><button id="push-disable" class="secondary" hidden>关闭本机通知</button></div></div>
+<details class="card install"><summary>添加到手机桌面</summary><p>在 Safari 打开本页面，点“分享”→“添加到主屏幕”。以后点桌面图标即可进入，不用安装或续签。</p><p>后台通知需要 iOS 16.4 及以上、添加到主屏幕、允许通知，并完成服务器配置。</p></details>
+</section>
+<section id="detail" hidden>
+<a href="#orders" class="back">← 返回订单</a><div class="card"><p class="eyebrow" id="order-number"></p><h1 id="customer"></h1><p class="muted" id="paid"></p></div>
+<nav class="tabs"><button id="photos-tab">订单照片</button><button id="chat-tab" class="secondary">订单讨论</button></nav>
+<section id="photos-panel">
+<div class="card"><h2>上传到这个订单</h2><p class="muted">自动归档到客户下的订单照片文件夹。</p><label>照片备注<input id="note" maxlength="300" placeholder="选填，例如：装箱前确认"></label>
+<div class="actions"><label class="file-button">拍照上传<input id="camera" type="file" accept="image/*" capture="environment"></label><label class="file-button secondary">相册选择<input id="gallery" type="file" accept="image/*" multiple></label></div>
+<p class="hint">每批最多 8 张；上传完成前请保持页面打开。照片会压缩到长边 2560 像素以内。</p><div id="upload-status" role="status" aria-live="polite"></div><button id="retry" class="secondary" hidden>重试失败照片</button></div>
+<div class="intro"><h2>已归档照片</h2><button id="photos-refresh" class="secondary">刷新</button></div><div id="photo-list" class="stack"></div><button id="photos-more" class="secondary wide" hidden>加载更多照片</button>
+</section>
+<section id="chat-panel" hidden><p class="hint">仅本订单业务员和有权限的管理员可参与讨论。</p><button id="messages-more" class="secondary wide" hidden>加载更早消息</button><div id="messages" class="stack" role="log" aria-label="订单讨论"></div>
+<form id="message-form" class="composer"><label for="message">订单消息</label><textarea id="message" maxlength="4000" rows="3" placeholder="输入消息；照片请在“订单照片”中上传" required></textarea><button id="send">发送</button><p class="hint">切换订单会保留草稿；刷新或关闭页面后不保留。</p></form></section>
+</section>
+<noscript>请启用浏览器 JavaScript 后使用手机工作台。</noscript>
+</main>
+</body></html>

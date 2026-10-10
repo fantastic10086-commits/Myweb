@@ -1,0 +1,2 @@
+# Optional worker dependencies; no paid service subscription required.
+pywebpush>=2.0,<3

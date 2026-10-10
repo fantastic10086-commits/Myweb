@@ -2395,6 +2395,9 @@ def login():
         password = request.form.get('password', '')
         user = _find_user_by_account(login_account)
         if user and user.active and check_password_hash(user.password_hash, password):
+            # Stop this browser's old subscription before switching accounts.
+            from web_push import disable_session_web_push
+            disable_session_web_push()
             # Clear any pre-login state to prevent session fixation.
             session.clear()
             session['user_id'] = user.id
@@ -2432,6 +2435,8 @@ def login_account_name():
 
 @app.route('/logout')
 def logout():
+    from web_push import disable_session_web_push
+    disable_session_web_push()
     session.clear()
     flash('已安全退出。', 'info')
     return redirect(url_for('login'))
@@ -3485,6 +3490,8 @@ def customer_file_delete(id):
     record = CustomerFile.query.filter_by(id=id).filter(CustomerFile.deleted_at.is_(None)).first_or_404()
     customer = Customer.query.get_or_404(record.customer_id)
     require_customer_access(customer)
+    if record.pi_id and (record.mime_type or '').startswith('image/') and not is_admin():
+        abort(403)
     record.deleted_at = datetime.utcnow()
     _audit('soft_delete', 'customer_file', record.id,
            f'删除客户文件：{customer.name} / {record.original_name}', before={
@@ -9478,6 +9485,17 @@ def inject_globals():
 # ═══════════════════════════════════════════════════════════════════════
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════
+
+from mobile_web import register_mobile_web
+register_mobile_web(app)
+
+from mobile_photos import register_mobile_photos
+register_mobile_photos(
+    app, current_user=get_current_user, is_admin=is_admin, login=login,
+    customer_access=require_customer_access, pi_access=require_pi_access,
+    validate_file=_validate_customer_file, save_file=_save_customer_file,
+    remove_file=_remove_upload, audit=_audit, thumbnail=_ensure_product_thumbnail,
+)
 
 if __name__ == '__main__':
     print(f"App root: {APP_ROOT}")

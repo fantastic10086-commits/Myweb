@@ -1005,3 +1005,86 @@ class TranslationCache(db.Model):
     provider = db.Column(db.String(40), nullable=False, default='')
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OrderPhotoUpload(db.Model):
+    """Durable per-user idempotency keys for mobile photo retries."""
+    __tablename__ = 'order_photo_uploads'
+    __table_args__ = (db.UniqueConstraint('user_id', 'request_id'),)
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    request_id = db.Column(db.String(36), nullable=False)
+    file_id = db.Column(db.Integer, db.ForeignKey('customer_files.id', ondelete='CASCADE'), nullable=False)
+    digest = db.Column(db.String(64), nullable=False)
+
+
+class OrderMessage(db.Model):
+    __tablename__ = 'order_messages'
+    __table_args__ = (db.UniqueConstraint('author_id', 'request_id'),)
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id', ondelete='CASCADE'), nullable=False, index=True)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='SET NULL'), nullable=True)
+    author_name = db.Column(db.String(100), nullable=False)
+    body = db.Column(db.Text, nullable=False)
+    request_id = db.Column(db.String(36), nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class OrderReadState(db.Model):
+    __tablename__ = 'order_read_states'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id', ondelete='CASCADE'), primary_key=True)
+    last_read_id = db.Column(db.Integer, nullable=False, default=0)
+
+
+class PushDevice(db.Model):
+    __tablename__ = 'push_devices'
+    id = db.Column(db.Integer, primary_key=True)
+    token = db.Column(db.String(512), nullable=False)
+    environment = db.Column(db.String(20), nullable=False)
+    __table_args__ = (db.UniqueConstraint('token', 'environment'),)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    auth_version = db.Column(db.Integer, nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+
+
+class PushDelivery(db.Model):
+    __tablename__ = 'push_deliveries'
+    __table_args__ = (db.UniqueConstraint('message_id', 'device_id'),)
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('order_messages.id', ondelete='CASCADE'), nullable=False)
+    device_id = db.Column(db.Integer, db.ForeignKey('push_devices.id', ondelete='CASCADE'), nullable=False)
+    # Freeze intended recipient so re-binding the same phone cannot leak an old notification.
+    user_id = db.Column(db.Integer, nullable=False)
+    auth_version = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    last_error = db.Column(db.String(200), nullable=False, default='')
+
+
+class WebPushSubscription(db.Model):
+    __tablename__ = 'web_push_subscriptions'
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint = db.Column(db.String(2048), nullable=False, unique=True)
+    p256dh = db.Column(db.String(128), nullable=False)
+    auth = db.Column(db.String(64), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False, index=True)
+    auth_version = db.Column(db.Integer, nullable=False)
+    binding = db.Column(db.String(36), nullable=False)
+    active = db.Column(db.Boolean, nullable=False, default=True)
+
+
+class WebPushDelivery(db.Model):
+    __tablename__ = 'web_push_deliveries'
+    __table_args__ = (db.UniqueConstraint('message_id', 'subscription_id'),)
+    id = db.Column(db.Integer, primary_key=True)
+    message_id = db.Column(db.Integer, db.ForeignKey('order_messages.id', ondelete='CASCADE'), nullable=False)
+    subscription_id = db.Column(db.Integer, db.ForeignKey('web_push_subscriptions.id', ondelete='CASCADE'), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
+    auth_version = db.Column(db.Integer, nullable=False)
+    binding = db.Column(db.String(36), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='pending', index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    next_attempt_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    last_error = db.Column(db.String(200), nullable=False, default='')

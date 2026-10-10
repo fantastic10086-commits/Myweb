@@ -1,0 +1,62 @@
+免费网页后台通知 — 接入与验收说明
+
+当前状态
+已部署并配置生产网站与独立推送 worker；尚未完成 iPhone 锁屏实测。
+不需要苹果开发者会员，不使用付费推送平台。现有服务器/存储/流量套餐费用不因此消失。
+演示环境没有启用推送配置，页面会明确提示尚未启用。
+
+已实现
+登录用户登记浏览器订阅；用户点击按钮后才请求通知权限。
+订单讨论与推送队列在同一数据库事务写入，消息重试不会重复建队列。
+仅发送给有订单权限的管理员/业务员，排除发送者。
+发送前复查权限、账号状态、密码版本、订阅绑定及已读状态。
+退出（网页或手机入口）、切换账号、关闭订阅后旧队列取消。
+通知仅含通用提示及订单 ID，不传客户名、金额或聊天正文。
+点击通知打开订单讨论，仍须通过登录和订单 API 权限校验。
+标准 Web Push 加密、VAPID 签名、受信端点白名单、禁止 HTTP 重定向。
+支持 Apple、Chrome 的 FCM 及 Mozilla 标准端点；其他浏览器可能需要单独适配。
+404/410 停用订阅；网络错误、429 和 5xx 退避重试，最多 8 次；超过 24 小时取消。
+向推送平台设置 TTL=300 秒，尽量减少退出或改派后已经在途的过时提醒。
+服务工作线程只处理推送和点击，不离线缓存订单、聊天或照片。
+
+配置步骤（先测试环境，后生产）
+1. 提供手机可访问、证书受信任的 HTTPS 网站地址。自签名证书警告不能作为推送验收环境。
+2. 部署本开发版本时保留真实数据库与文件，先备份，再由新版 create_all 创建
+   web_push_subscriptions、web_push_deliveries（另有之前的照片/聊天新表）。
+   不把一次性演示数据库、演示账号或 MOBILE_DEMO=True 带入真实环境。
+3. 在隔离的服务器 Python 环境安装 requirements-webpush.txt。
+4. 用 tools/generate_webpush_key.py 在代码目录外生成私钥；不覆盖旧密钥，不提交私钥。
+   配置 WEB_PUSH_PRIVATE_KEY_PATH 和真实管理员联系地址 WEB_PUSH_SUBJECT（mailto: 或 https:）。
+   网站进程和工作进程必须读取同一组配置。ops/webpush.env.example 仅为结构示例。
+   私钥给服务账号读取权限，目录不可对外访问；不要把私钥发到聊天里。
+5. 在 ops/pi-manager-webpush.service 配置工作进程，先确认网站新增表完成，再启动。
+   网站进程也需加载 webpush.env（或在既有 pi-manager.env 中设置同样两项），然后重启。
+6. iPhone iOS 16.4+：Safari 打开→添加到主屏幕→从桌面打开→登录→开启后台通知→允许。
+7. 使用两个不同账号测试前台、后台、锁屏、已读、退出、换账号、关闭权限、订单改派、点通知。
+   只有完成真实手机验收后才可声明通知已可用。
+
+限制
+通知发送成功只说明推送平台接受，不保证手机显示；网络、专注模式及系统设置均会影响。
+已送达或在途通知无法保证在退出后撤回；正文不含业务内容，打开后仍检查权限。
+队列是至少一次投递，固定订单 Topic/tag 缓解重复，崩溃重试仍可能出现重复通知。
+主屏幕图标删除、清理浏览器数据或密钥轮换后可能需要重新开启通知。
+前台页面的 5 秒轮询提醒继续保留；后台推送与前台提醒可能同时出现。
+
+验证记录
+新增 WebPushTests 的 9 项功能测试 + 13 项共用照片 API 测试，共 22 项通过。
+既有聊天/APNs 模拟测试 24 项、手机页面/照片 API 15 项通过；有重复基础用例，不相加算不同测试。
+真实加密与 VAPID 签名使用测试临时密钥验证，网络请求被 mock 截断，没有发送真实通知。
+服务工作线程 4 类行为检查通过：通用可见通知、异常数据、安全跳转、复用现有窗口。
+当前演示页面已核对未配置通知时的说明和禁用按钮。
+开发副本已合入主仓库并发布；基线见 MOBILE_WEB_BASE.txt。
+
+官方资料
+https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers
+https://github.com/web-push-libs/pywebpush
+
+生产接入（2026-10-10）
+入口 https://pimanager.cn/mobile/；复用既有受信证书和服务器。
+私钥保存在 /etc/pi-manager/webpush-private.pem，root:pi-manager 0640；不进源码。
+网站和 worker 共用 /etc/pi-manager/webpush.env，VAPID subject 为既有网站 https://pimanager.cn/。
+requirements.txt 已包含 Web Push 依赖；更新脚本会在配置存在时重启 worker。
+用户须在自己的手机上允许通知；目前尚未建立任何真实订阅或发送推送。

@@ -1,6 +1,6 @@
 [Unit]
-Description=PI Manager
-After=network-online.target
+Description=PI Manager Web Push Notification Worker
+After=network-online.target pi-manager.service
 Wants=network-online.target
 
 [Service]
@@ -9,11 +9,11 @@ User=pi-manager
 Group=pi-manager
 WorkingDirectory=/opt/pi-manager/current
 EnvironmentFile=/etc/pi-manager/pi-manager.env
-EnvironmentFile=-/etc/pi-manager/webpush.env
+EnvironmentFile=/etc/pi-manager/webpush.env
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/pi-manager/venv/bin/gunicorn --workers 1 --threads 4 --timeout 120 --access-logfile - --error-logfile - --bind 127.0.0.1:8000 app:app
+ExecStart=/opt/pi-manager/venv/bin/python web_push_worker.py
 Restart=on-failure
-RestartSec=5
+RestartSec=15
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true

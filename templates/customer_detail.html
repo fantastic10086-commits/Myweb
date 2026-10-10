@@ -26,7 +26,9 @@
     <div class="text-nowrap">
         {% if file.is_previewable %}<a href="{{ url_for('customer_file_view', id=file.id) }}" target="_blank" class="btn btn-sm btn-outline-primary" title="查看"><i class="bi bi-eye"></i></a>{% endif %}
         <a href="{{ url_for('customer_file_view', id=file.id, download=1) }}" class="btn btn-sm btn-outline-secondary" title="下载"><i class="bi bi-download"></i></a>
+        {% if is_admin or not (file.pi_id and file.mime_type.startswith('image/')) %}
         <form method="post" action="{{ url_for('customer_file_delete', id=file.id) }}" class="d-inline" onsubmit='return confirm({{ ("确认移除文件：" ~ file.original_name ~ "？")|tojson }});'><button class="btn btn-sm btn-outline-danger" type="submit" title="删除"><i class="bi bi-trash"></i></button></form>
+        {% endif %}
     </div>
 </div>
 {% endmacro %}

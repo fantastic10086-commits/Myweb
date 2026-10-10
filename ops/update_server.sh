@@ -60,6 +60,7 @@ ln -sfn "$RELEASE" "$APP_DIR/current"
 install -m 0644 "$RELEASE/ops/pi-manager.service" /etc/systemd/system/pi-manager.service
 install -m 0644 "$RELEASE/ops/pi-manager-backup.service" /etc/systemd/system/pi-manager-backup.service
 install -m 0644 "$RELEASE/ops/pi-manager-backup.timer" /etc/systemd/system/pi-manager-backup.timer
+install -m 0644 "$RELEASE/ops/pi-manager-webpush.service" /etc/systemd/system/pi-manager-webpush.service
 systemctl daemon-reload
 
 health_ok=false
@@ -87,3 +88,8 @@ if [ "$health_ok" != true ]; then
 fi
 
 echo "Update completed successfully."
+if [ -f /etc/pi-manager/webpush.env ]; then
+    systemctl enable pi-manager-webpush
+    systemctl restart pi-manager-webpush
+    systemctl is-active --quiet pi-manager-webpush
+fi
