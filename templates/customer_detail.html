@@ -289,10 +289,19 @@
 <script>
 var followDefaults = {{ follow_up_defaults|tojson }};
 var requestedTab = window.location.hash;
+var requestedFolderId = new URLSearchParams(window.location.search).get('order_folder') || '';
+var requestedFolder = /^\d+$/.test(requestedFolderId) ? document.getElementById('fileFolder' + requestedFolderId) : null;
+if (requestedFolder) requestedTab = '#customer-files';
 if (!requestedTab && new URLSearchParams(window.location.search).toString()) requestedTab = '#orders';
 if (requestedTab) {
     var tabButton = document.querySelector('[data-bs-target="' + requestedTab + '"]');
     if (tabButton) bootstrap.Tab.getOrCreateInstance(tabButton).show();
+}
+if (requestedFolder) {
+    requestedFolder.addEventListener('shown.bs.collapse', function() {
+        document.getElementById('fileFolderHeading' + requestedFolderId).scrollIntoView({block: 'start', behavior: 'smooth'});
+    }, {once: true});
+    bootstrap.Collapse.getOrCreateInstance(requestedFolder, {toggle: false}).show();
 }
 document.querySelectorAll('#customerRecordTabs [data-bs-toggle="tab"]').forEach(function(button) {
     button.addEventListener('shown.bs.tab', function(event) {

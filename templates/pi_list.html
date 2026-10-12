@@ -287,6 +287,11 @@
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end text-start">
                                     <li>
+                                        <a href="{{ url_for('customer_detail', id=pi.customer_id, order_folder=pi.id, _anchor='customer-files') }}" class="dropdown-item">
+                                            <i class="bi bi-images text-primary"></i>查看归档照片
+                                        </a>
+                                    </li>
+                                    <li>
                                         <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post">
                                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                             <button type="submit" class="dropdown-item" title="复制为新 PI，日期使用今天">
