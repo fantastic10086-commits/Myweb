@@ -1,0 +1,22 @@
+<div class="modal fade" id="orderPhotosModal" tabindex="-1" aria-labelledby="orderPhotosTitle" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
+    <div class="modal-header"><div><h5 class="modal-title" id="orderPhotosTitle">订单归档照片</h5><small class="text-muted" id="orderPhotosSummary"></small></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+    <div class="modal-body">
+      <p id="orderPhotosStatus" role="status" aria-live="polite"></p>
+      <button type="button" id="orderPhotosRetry" class="btn btn-outline-primary mb-3" hidden>重新加载</button>
+      <div id="orderPhotosGrid" class="row g-3"></div>
+      <div id="orderPhotoPreview" hidden>
+        <button type="button" id="orderPhotosBack" class="btn btn-outline-secondary mb-3">← 返回全部照片</button>
+        <div class="text-center bg-light rounded"><img id="orderPhotoOriginal" class="img-fluid" style="max-height:65vh" alt=""></div>
+        <p id="orderPhotoCaption" class="mt-3 text-break"></p>
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <button type="button" id="orderPhotoPrevious" class="btn btn-outline-primary">上一张</button>
+          <span id="orderPhotoPosition" class="text-muted"></span>
+          <button type="button" id="orderPhotoNext" class="btn btn-outline-primary">下一张</button>
+          <a id="orderPhotoDownload" class="btn btn-primary ms-auto">下载原图</a>
+        </div>
+      </div>
+      <button type="button" id="orderPhotosMore" class="btn btn-outline-primary mt-3 w-100" hidden>加载更多照片</button>
+    </div>
+  </div></div>
+</div>

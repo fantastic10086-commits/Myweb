@@ -133,7 +133,7 @@ def register_mobile_photos(app, *, current_user, is_admin, login, customer_acces
         result = CustomerFile.query.filter_by(pi_id=id, customer_id=pi.customer_id).filter(
             CustomerFile.deleted_at.is_(None), CustomerFile.mime_type.startswith('image/')
         ).order_by(CustomerFile.id.desc()).paginate(page=page, per_page=30, error_out=False)
-        return jsonify(order=order_payload(pi), photos=[photo_payload(p) for p in result.items], has_more=result.has_next)
+        return jsonify(order=order_payload(pi), photos=[photo_payload(p) for p in result.items], has_more=result.has_next, total=result.total)
 
     @bp.post('/orders/<int:id>/photos')
     def upload(id):

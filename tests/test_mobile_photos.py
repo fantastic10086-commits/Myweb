@@ -55,6 +55,7 @@ class MobilePhotosTests(unittest.TestCase):
         self.assertEqual(self.client.get(f'/api/mobile/photos/{id}/file').status_code, 200)
         self.assertEqual(self.client.get(f'/customer-files/{id}').status_code, 200)
         self.assertIn(id, [p['id'] for p in self.client.get(f'/api/mobile/orders/{self.paid}/photos').json['photos']])
+        self.assertEqual(self.client.get(f'/api/mobile/orders/{self.paid}/photos').json['total'], 1)
         with application.app.app_context():
             record = db.session.get(CustomerFile, id)
             self.assertEqual(record.pi_id, self.paid)

@@ -287,9 +287,9 @@
                                 </button>
                                 <ul class="dropdown-menu dropdown-menu-end text-start">
                                     <li>
-                                        <a href="{{ url_for('customer_detail', id=pi.customer_id, order_folder=pi.id, _anchor='customer-files') }}" class="dropdown-item">
+                                        <button type="button" class="dropdown-item" data-order-photos="{{ pi.id }}">
                                             <i class="bi bi-images text-primary"></i>查看归档照片
-                                        </a>
+                                        </button>
                                     </li>
                                     <li>
                                         <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post">
@@ -334,6 +334,8 @@
     </div>
 </div>
 
+{% include 'order_photos_modal.html' %}
+<script src="{{ url_for('static', filename='order_photos.js', v='20261012-1') }}" defer></script>
 <div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">PI 预览</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
