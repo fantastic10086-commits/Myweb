@@ -5,16 +5,27 @@
 <style>
 .procurement-list-table {
     table-layout: fixed;
-    min-width: 1280px;
+    min-width: 1420px;
 }
 .procurement-list-table th,
 .procurement-list-table td {
     white-space: nowrap;
+    padding: 0.65rem;
+}
+.procurement-list-table .proc-customer-cell,
+.procurement-list-table .proc-country-cell,
+.procurement-list-table .proc-salesperson-cell {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.procurement-list-table .proc-number-cell {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .procurement-list-table .proc-products-col,
 .procurement-list-table .proc-products-cell {
-    width: 320px;
-    max-width: 320px;
+    width: 260px;
+    max-width: 260px;
 }
 .procurement-list-table .proc-products-cell {
     overflow: hidden;
@@ -53,16 +64,16 @@
         <div class="table-responsive">
             <table class="table table-hover table-sm mb-0 align-middle procurement-list-table">
                 <colgroup>
-                    <col style="width:145px;">
-                    <col style="width:175px;">
-                    <col style="width:90px;">
-                    <col style="width:105px;">
+                    <col style="width:185px;">
+                    <col style="width:220px;">
+                    <col style="width:100px;">
+                    <col style="width:115px;">
                     <col class="proc-products-col">
-                    <col style="width:105px;">
+                    <col style="width:135px;">
                     <col style="width:65px;">
                     <col style="width:100px;">
                     <col style="width:90px;">
-                    <col style="width:105px;">
+                    <col style="width:125px;">
                 </colgroup>
                 <thead class="table-light">
                     <tr>
@@ -81,9 +92,9 @@
                 <tbody>
                     {% for p in pis %}
                     <tr>
-                        <td><strong>{{ p.pi_number }}</strong></td>
-                        <td>{{ p.customer.name if p.customer else '—' }}</td>
-                        <td><small>{{ p.customer.country if p.customer else '-' }}</small></td>
+                        <td class="proc-number-cell" title="{{ p.pi_number }}"><strong>{{ p.pi_number }}</strong></td>
+                        <td class="proc-customer-cell">{{ p.customer.name if p.customer else '—' }}</td>
+                        <td class="proc-country-cell"><small>{{ p.customer.country if p.customer else '-' }}</small></td>
                         <td>{{ p.issue_date }}</td>
                         <td class="proc-products-cell">
                             <strong class="proc-products-summary">{{ p.items|length }} 项产品</strong>
@@ -107,7 +118,7 @@
                             {% set status_class = {'待采购':'warning', '部分采购':'info', '采购完成':'primary', '发货完成':'success'}.get(status, 'secondary') %}
                             <span class="badge bg-{{ status_class }}{% if status in ['待采购', '部分采购'] %} text-dark{% endif %}">{{ status }}</span>
                         </td>
-                        <td>{{ p.salesperson }}</td>
+                        <td class="proc-salesperson-cell">{{ p.salesperson }}</td>
                         <td class="text-end proc-action-cell">
                             {% if p.id in pi_complete %}
                             <a href="{{ url_for('procurement_page', pi_id=p.id) }}" class="btn btn-sm btn-outline-secondary">
