@@ -358,11 +358,18 @@
                            placeholder="选填，例如快递单号、提单号">
                 </div>
                 <div class="mb-3">
+                    <label class="form-label" for="shippingAttachment">发货图片（选填）</label>
+                    <input type="file" id="shippingAttachment" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                    <div class="form-text">选择图片，或在此弹窗内按 Ctrl+V / ⌘V 粘贴。单张最大 12 MB。</div>
+                    <button type="button" id="shippingImageClear" class="btn btn-sm btn-outline-secondary mt-2" onclick="setShippingImage(null)">移除待上传图片</button>
+                </div>
+                <div class="mb-3">
                     <label class="form-label" for="shippingRecordNote">备注</label>
                     <textarea class="form-control" id="shippingRecordNote" rows="3" maxlength="1000"
                               placeholder="选填，例如物流公司、发货说明"></textarea>
                 </div>
             </fieldset>
+            <img id="shippingImagePreview" class="img-fluid rounded mb-3 d-none" alt="发货图片" style="max-height:420px;object-fit:contain">
             <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
         </div>
         <div class="modal-footer">
@@ -552,6 +559,36 @@ function localToday() {
     var offset = now.getTimezoneOffset() * 60000;
     return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 }
+var shippingImageFile = null;
+var shippingImageObjectUrl = null;
+function setShippingImage(file) {
+    if (file && (!/^image\/(jpeg|png|webp|gif)$/.test(file.type) || file.size > 12 * 1024 * 1024)) {
+        shippingError('请选择 JPG、PNG、WebP 或 GIF 图片，最大 12 MB。');
+        document.getElementById('shippingAttachment').value = '';
+        return;
+    }
+    if (shippingImageObjectUrl) URL.revokeObjectURL(shippingImageObjectUrl);
+    shippingImageFile = file;
+    shippingImageObjectUrl = file ? URL.createObjectURL(file) : null;
+    var img = document.getElementById('shippingImagePreview');
+    img.classList.toggle('d-none', !file);
+    if (file) img.src = shippingImageObjectUrl;
+    else { img.removeAttribute('src'); document.getElementById('shippingAttachment').value = ''; }
+}
+document.getElementById('shippingAttachment').addEventListener('change', function() {
+    setShippingImage(this.files[0] || null);
+});
+document.getElementById('shippingModal').addEventListener('paste', function(event) {
+    if (document.getElementById('shippingFields').disabled) return;
+    var items = (event.clipboardData || {}).items || [];
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') === 0) {
+            event.preventDefault();
+            setShippingImage(items[i].getAsFile());
+            break;
+        }
+    }
+});
 function renderShippingRecord(data) {
     var completed = data.shipping_completed === true;
     var canShip = data.can_ship === true;
@@ -565,6 +602,11 @@ function renderShippingRecord(data) {
     document.getElementById('shippingTrackingNo').value = data.tracking_no || '';
     document.getElementById('shippingRecordNote').value = data.note || '';
     fields.disabled = !canShip;
+    if (data.attachment_url) {
+        setShippingImage(null);
+        document.getElementById('shippingImagePreview').src = data.attachment_url;
+        document.getElementById('shippingImagePreview').classList.remove('d-none');
+    }
     saveButton.classList.toggle('d-none', !canShip);
     saveButton.disabled = !canShip;
     var revertButton = document.getElementById('shippingRevertBtn');
@@ -581,6 +623,7 @@ function renderShippingRecord(data) {
     }
 }
 function openShippingRecord(piId, piNumber) {
+    setShippingImage(null);
     currentShippingPiId = piId;
     document.getElementById('shippingPINumber').textContent = piNumber;
     document.getElementById('shippingDate').value = '';
@@ -620,14 +663,14 @@ function saveShippingRecord() {
     button.disabled = true;
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在保存……';
     document.getElementById('shippingModalError').classList.add('d-none');
+    var form = new FormData();
+    form.append('shipping_date', shippingDate);
+    form.append('tracking_no', document.getElementById('shippingTrackingNo').value.trim());
+    form.append('note', document.getElementById('shippingRecordNote').value.trim());
+    if (shippingImageFile) form.append('attachment', shippingImageFile, shippingImageFile.name || 'clipboard.png');
     fetch('/api/pi/' + currentShippingPiId + '/shipping-record', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            shipping_date: shippingDate,
-            tracking_no: document.getElementById('shippingTrackingNo').value.trim(),
-            note: document.getElementById('shippingRecordNote').value.trim()
-        })
+        body: form
     })
         .then(function(response) {
             return response.json().then(function(data) { return {ok: response.ok, data: data}; });

@@ -488,6 +488,7 @@ class PI(db.Model):
     shipping_date = db.Column(db.Date, nullable=True)
     shipping_tracking_no = db.Column(db.String(200), default='')
     shipping_record_note = db.Column(db.Text, default='')
+    shipping_attachment = db.Column(db.String(500), default='')
     shipping_recorded_at = db.Column(db.DateTime, nullable=True)
     shipping_recorded_by = db.Column(db.String(100), default='')
     procurement_status = db.Column(db.String(20), nullable=False, default='未回款')

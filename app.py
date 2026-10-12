@@ -405,7 +405,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -9212,12 +9212,27 @@ def _shipping_record_payload(pi):
         'shipping_date': pi.shipping_date.isoformat() if pi.shipping_date else '',
         'tracking_no': pi.shipping_tracking_no or '',
         'note': pi.shipping_record_note or '',
+        'attachment_url': url_for('shipping_attachment', pi_id=pi.id) if pi.shipping_attachment else '',
         'recorded_at': (
             pi.shipping_recorded_at.strftime('%Y-%m-%d %H:%M')
             if pi.shipping_recorded_at else ''
         ),
         'recorded_by': pi.shipping_recorded_by or '',
     }
+
+
+@app.route('/pi/<int:pi_id>/shipping-attachment')
+@login_required
+def shipping_attachment(pi_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    filename = secure_filename(pi.shipping_attachment or '')
+    if not filename or filename != pi.shipping_attachment:
+        abort(404)
+    filepath = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+    if not os.path.isfile(filepath):
+        abort(404)
+    return send_file(filepath, conditional=True)
 
 
 @app.route('/api/pi/<int:pi_id>/shipping-record', methods=['GET', 'POST'])
@@ -9253,12 +9268,25 @@ def api_pi_shipping_record(pi_id):
     if len(note) > 1000:
         return jsonify({'success': False, 'error': '备注不能超过 1000 个字符。'}), 400
 
+    attachment_name = ''
+    attachment_file = request.files.get('attachment')
+    if attachment_file and attachment_file.filename:
+        attachment_file.stream.seek(0, os.SEEK_END)
+        attachment_size = attachment_file.stream.tell()
+        attachment_file.stream.seek(0)
+        if attachment_size > 12 * 1024 * 1024:
+            return jsonify({'success': False, 'error': '发货图片不能超过 12 MB。'}), 400
+        attachment_name = _save_upload(attachment_file)
+        if not attachment_name:
+            return jsonify({'success': False, 'error': '请选择有效的 JPG、PNG、WebP 或 GIF 图片。'}), 400
+
     fields = [
         'shipping_completed', 'shipping_date', 'shipping_tracking_no',
-        'shipping_record_note', 'shipping_recorded_at',
+        'shipping_record_note', 'shipping_attachment', 'shipping_recorded_at',
         'shipping_recorded_by', 'procurement_status',
     ]
     before = _snapshot(pi, fields)
+    pi.shipping_attachment = attachment_name
     pi.shipping_completed = True
     pi.shipping_date = parsed_shipping_date
     pi.shipping_tracking_no = tracking_no
@@ -9276,7 +9304,14 @@ def api_pi_shipping_record(pi_id):
         db.session.commit()
     except StaleDataError:
         db.session.rollback()
+        if attachment_name:
+            os.remove(os.path.join(current_app.config['UPLOAD_DIR'], attachment_name))
         return jsonify({'success': False, 'error': '该 PI 已被其他用户更新，请刷新后重试。'}), 409
+    except Exception:
+        db.session.rollback()
+        if attachment_name:
+            os.remove(os.path.join(current_app.config['UPLOAD_DIR'], attachment_name))
+        raise
     return jsonify(_shipping_record_payload(pi))
 
 
@@ -9327,6 +9362,7 @@ def api_pi_shipping_complete(pi_id):
         pi.shipping_date = None
         pi.shipping_tracking_no = ''
         pi.shipping_record_note = ''
+        pi.shipping_attachment = ''
         pi.shipping_recorded_at = None
         pi.shipping_recorded_by = ''
     pi.procurement_status = '发货完成' if completed else ('采购完成' if pi.procurement_confirmed else '待采购')
