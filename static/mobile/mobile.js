@@ -20,10 +20,12 @@ async function api(path, options={}) {
 const post=(path,data)=>api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
 function renderSession(){ $('login').hidden=!!state.user; $('logout').hidden=!state.user; $('workspace').hidden=true; $('detail').hidden=true; if(state.user)$('greeting').textContent=state.user.name+' · '+(state.user.is_admin?'管理员':'业务员'); }
 // Reuse the normal login page's account lookup and server-side rate limit.
-let accountLookupTimer, accountLookupSequence=0, accountLookupController;
+let accountLookupTimer, accountLookupSequence=0, accountLookupController, observedAccount;
 function queueAccountLookup(delay=450){
   clearTimeout(accountLookupTimer);
   const sequence=++accountLookupSequence, account=$('account').value.trim();
+  observedAccount=account;
+  $('resolved-username').value='';
   if(accountLookupController)accountLookupController.abort();
   $('account-name').textContent=account?'正在识别账号……':'系统会根据账号自动识别用户名。';
   if(!account||state.user||!state.csrf)return;
@@ -34,7 +36,10 @@ function queueAccountLookup(delay=450){
       const response=await fetch('/login/account-name',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-CSRFToken':state.csrf},body:JSON.stringify({account}),signal:controller.signal});
       const data=await response.json();
       if(sequence!==accountLookupSequence||$('account').value.trim()!==account)return;
-      $('account-name').textContent=response.ok&&data.ok?'用户名：'+data.username:(data.message||'未识别到可用账号，请检查后重试。');
+      if(response.ok&&data.ok){
+        $('resolved-username').value=data.username;
+        $('account-name').textContent='账号已识别，请输入密码。';
+      }else $('account-name').textContent=data.message||'未识别到可用账号，请检查后重试。';
     }catch(_error){
       if(sequence===accountLookupSequence)$('account-name').textContent='暂时无法识别，仍可输入密码尝试登录。';
     }finally{clearTimeout(timeout);}
@@ -44,6 +49,11 @@ $('account').addEventListener('input',()=>queueAccountLookup());
 $('account').addEventListener('change',()=>queueAccountLookup(0));
 $('account').addEventListener('blur',()=>queueAccountLookup(0));
 window.addEventListener('pageshow',()=>queueAccountLookup(0));
+// Password managers can fill the account after pageshow without input/change.
+// Observe only value changes on the visible login page; never poll the API.
+setInterval(()=>{
+  if(!state.user&&!document.hidden&&state.csrf&&$('account').value.trim()!==observedAccount)queueAccountLookup(0);
+},500);
 queueAccountLookup(0);
 function dateText(value){ const d=new Date(value);return isNaN(d)?'':d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
 function orderLink(o,count=state.unread.get(o.id)||0){const a=el('a',undefined,'card order');a.dataset.orderId=o.id;a.href='#order/'+o.id+'/photos';a.append(el('span',o.number,'eyebrow'),el('strong',o.customer_name),el('span','已回款 '+o.currency+' '+Number(o.received_amount).toFixed(2),'muted'));if(count)a.append(el('span',count+' 条未读','badge'));return a;}
