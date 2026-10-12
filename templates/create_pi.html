@@ -293,8 +293,11 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         p = normalizeProduct(p);
         if (productAlreadySelected(p.productId)) return;
         selectedProducts[p.id] = {name: p.name, code: p.code, spec: p.spec||'', unitWeight: p.unitWeight, priceUsd: p.priceUsd, price: p.price, qty: 1, img: p.img||''};
+        var row;
+        try { row = makeRow(p); }
+        catch (error) { delete selectedProducts[p.id]; throw error; }
         selectedProductOrder.push(p.id);
-        selectedTableBody.appendChild(makeRow(p));
+        selectedTableBody.appendChild(row);
         renumberRows(); showHideEmpty(); updateTotal();
     }
 
@@ -488,7 +491,15 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         });
         document.getElementById('picker_add_selected').addEventListener('click', function() {
             var ids = pickerSelectionOrder.slice();
-            for (var i = 0; i < ids.length; i++) addProductObj(pickerSelections[ids[i]]);
+            try {
+                for (var i = 0; i < ids.length; i++) addProductObj(pickerSelections[ids[i]]);
+            } catch (error) {
+                console.error('Product selection failed', error);
+                var errorBox = document.getElementById('product_picker_error');
+                errorBox.textContent = '部分产品未能加入，请重试。已加入的产品会保留且不会重复添加。';
+                errorBox.classList.remove('d-none');
+                return;
+            }
             productSearch.value = '';
             pickerSelections = {};
             pickerSelectionOrder = [];
@@ -644,7 +655,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     }
 
     function escHtml(s) {
-        return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
     function initSearchable(inputId, selectId, dropdownId) {
         var input = document.getElementById(inputId), select = document.getElementById(selectId), dropdown = document.getElementById(dropdownId);
