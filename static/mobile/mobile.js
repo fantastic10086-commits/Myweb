@@ -1,10 +1,10 @@
 'use strict';
 const $ = id => document.getElementById(id);
-const state = {user:null, csrf:'', order:null, page:1, photoPage:1, query:'', tab:'photos', epoch:0, busy:false, jobs:[], messages:[], pending:null, polling:false, work:new Map(), unread:new Map(), activeHash:'#orders', sending:false};
+const state = {user:null, csrf:'', order:null, page:1, photoPage:1, query:'', tab:'photos', epoch:0, busy:false, jobs:[], messages:[], pending:null, polling:false, work:new Map(), unread:new Map(), activeHash:'#orders', sending:false, chatPhotos:[]};
 function el(tag, text, cls) { const n=document.createElement(tag); if(text!==undefined)n.textContent=text; if(cls)n.className=cls; return n; }
 function showNotice(text) { $('notice').replaceChildren(); if(text)$('notice').append(el('span',text)); }
-function saveWork(){if(state.order)state.work.set(state.order.id,{draft:$('message').value,note:$('note').value,jobs:state.jobs,pending:state.pending});}
-function clearPrivateState(){state.work.clear();state.unread.clear();$('unread-notice').replaceChildren();}
+function saveWork(){if(state.order)state.work.set(state.order.id,{draft:$('message').value,note:$('note').value,jobs:state.jobs,pending:state.pending,chatPhotos:state.chatPhotos});}
+function clearPrivateState(){state.chatPhotos=[];renderChatAttachments();closeChatPicker();state.work.clear();state.unread.clear();$('unread-notice').replaceChildren();}
 function error(err) { showNotice(err.message || '操作失败，请重试。'); }
 async function api(path, options={}) {
   const headers=new Headers(options.headers||{});
@@ -62,12 +62,12 @@ async function route(){
   if(!state.user)return;
   if(state.busy||state.sending){history.replaceState(null,'',state.activeHash);showNotice('正在上传或发送，请完成后再切换页面。');return;}
   saveWork();state.activeHash=location.hash||'#orders';
-  const epoch=++state.epoch;showNotice('');state.order=null;state.jobs=[];state.messages=[];state.pending=null;$('message').value='';$('note').value='';$('upload-status').textContent='';$('retry').hidden=true;
+  const epoch=++state.epoch;showNotice('');state.order=null;state.jobs=[];state.messages=[];state.pending=null;state.chatPhotos=[];renderChatAttachments();closeChatPicker();$('message').value='';$('note').value='';$('upload-status').textContent='';$('retry').hidden=true;
   const match=location.hash.match(/^#order\/(\d+)\/(photos|chat)$/);
   $('workspace').hidden=!!match;$('detail').hidden=true;
   if(!match){await loadOrders();return;}
   const data=await api('orders/'+match[1]);if(epoch!==state.epoch)return;state.order=data.order;$('detail').hidden=false;$('order-number').textContent=data.order.number;$('customer').textContent=data.order.customer_name;$('paid').textContent='已回款 '+data.order.currency+' '+Number(data.order.received_amount).toFixed(2);state.tab=match[2];
-  const saved=state.work.get(data.order.id);if(saved){state.jobs=saved.jobs;state.pending=saved.pending;$('message').value=saved.draft;$('note').value=saved.note;uploadStatus();$('retry').hidden=!state.jobs.some(j=>!j.done);}
+  const saved=state.work.get(data.order.id);if(saved){state.jobs=saved.jobs;state.pending=saved.pending;state.chatPhotos=saved.chatPhotos||[];renderChatAttachments();$('message').value=saved.draft;$('note').value=saved.note;uploadStatus();$('retry').hidden=!state.jobs.some(j=>!j.done);}
   $('photos-panel').hidden=state.tab!=='photos';$('chat-panel').hidden=state.tab!=='chat';$('photos-tab').className=state.tab==='photos'?'':'secondary';$('chat-tab').className=state.tab==='chat'?'':'secondary';
   if(state.tab==='photos')await loadPhotos();else await loadMessages();
 }
@@ -89,7 +89,7 @@ async function uploadJobs(){
 async function selectFiles(event){const files=[...event.target.files];event.target.value='';if(!files.length)return;if(state.busy)return;if(files.length>8){showNotice('每批最多选择 8 张照片。');return;}if(state.jobs.some(j=>!j.done)&&!confirm('还有上传失败的照片，放弃这些重试任务并选择新照片？'))return;
   state.jobs=files.map(file=>({file,name:file.name,key:crypto.randomUUID(),note:$('note').value.trim(),status:'等待上传',done:false}));await uploadJobs();
 }
-function renderMessages(){const box=$('messages');box.replaceChildren();for(const m of state.messages){const node=el('article',undefined,'message'+(m.author_id===state.user.id?' mine':''));node.append(el('small',m.author_name+' · '+dateText(m.created_at)),el('p',m.body));box.append(node);}if(!state.messages.length)box.append(el('p','还没有讨论，发送第一条订单消息。','muted'));}
+function renderMessages(){const box=$('messages');box.replaceChildren();for(const m of state.messages){const node=el('article',undefined,'message'+(m.author_id===state.user.id?' mine':''));node.append(el('small',m.author_name+' · '+dateText(m.created_at)));if(m.body)node.append(el('p',m.body));appendMessagePhotos(node,m.photos||[]);box.append(node);}if(!state.messages.length)box.append(el('p','还没有讨论，发送第一条订单消息。','muted'));}
 async function loadMessages(mode='initial'){
   const epoch=state.epoch,id=state.order.id;const first=state.messages[0]?.id,last=state.messages.at(-1)?.id;const suffix=mode==='older'&&first?'?before='+first:mode==='new'&&last?'?after='+last:'';const data=await api('orders/'+id+'/messages'+suffix);if(epoch!==state.epoch)return;
   const map=new Map((mode==='initial'?[]:state.messages).map(m=>[m.id,m]));for(const m of data.messages)map.set(m.id,m);state.messages=[...map.values()].sort((a,b)=>a.id-b.id);if(data.messages.length||mode==='initial')renderMessages();if(mode!=='new')$('messages-more').hidden=!data.has_more;
@@ -102,17 +102,17 @@ function renderUnread(data){
   $('unread-notice').replaceChildren();
   for(const row of other){const a=el('a',row.order.number+' · '+row.count+' 条未读','unread-link');a.href='#order/'+row.order.id+'/chat';$('unread-notice').append(a);}
 }
-async function poll(){if(!state.user||document.hidden||state.polling||state.busy||state.sending)return;state.polling=true;const epoch=state.epoch;try{if(state.order&&state.tab==='chat')await loadMessages('new');if(epoch!==state.epoch)return;const data=await api('unread');if(epoch!==state.epoch)return;renderUnread(data);}catch(e){error(e);}finally{state.polling=false;}}
+async function poll(){if(!state.user||document.hidden||state.polling||state.busy||state.sending)return;state.polling=true;const epoch=state.epoch;try{if(state.order&&state.tab==='chat'){await loadMessages('new');if(epoch!==state.epoch)return;await refreshChatPhotoStatus();}if(epoch!==state.epoch)return;const data=await api('unread');if(epoch!==state.epoch)return;renderUnread(data);}catch(e){error(e);}finally{state.polling=false;}}
 $('login-form').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const boot=await api('session');state.csrf=boot.csrf_token;const body=new URLSearchParams({account:$('account').value.trim(),password:$('password').value});const data=await api('login',{method:'POST',body});state.user=data.user;state.csrf=data.csrf_token;$('password').value='';renderSession();setupPush();await route();await poll();}catch(e){error(e);}finally{button.disabled=false;}};
-$('logout').onclick=async()=>{if(state.busy||state.sending)return;saveWork();if([...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done))&&!confirm('有未发送消息或未完成上传，退出后不会保留。确认退出？'))return;try{await post('logout',{});await clearBrowserPush().catch(()=>{});clearPrivateState();state.order=null;state.jobs=[];$('message').value='';location.replace('/mobile/');}catch(e){error(e);}};
+$('logout').onclick=async()=>{if(state.busy||state.sending)return;saveWork();if([...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done)||(w.chatPhotos||[]).length)&&!confirm('有未发送消息或未完成上传，退出后不会保留。确认退出？'))return;try{await post('logout',{});await clearBrowserPush().catch(()=>{});clearPrivateState();state.order=null;state.jobs=[];$('message').value='';location.replace('/mobile/');}catch(e){error(e);}};
 $('search-form').onsubmit=e=>{e.preventDefault();state.query=$('search').value.trim();state.epoch++;loadOrders().catch(error);};
 $('refresh').onclick=()=>{state.epoch++;loadOrders().catch(error);};
 for(const [id,fn] of [['orders-more',()=>loadOrders(true)],['photos-more',()=>loadPhotos(true)],['photos-refresh',()=>loadPhotos()],['messages-more',()=>loadMessages('older')],['retry',uploadJobs]])$(id).onclick=async()=>{$(id).disabled=true;try{await fn();}catch(e){error(e);}finally{$(id).disabled=false;}};
 $('camera').onchange=e=>selectFiles(e).catch(error);$('gallery').onchange=e=>selectFiles(e).catch(error);
 for(const tab of ['photos','chat'])$(tab+'-tab').onclick=()=>{if(state.busy){showNotice('请等待照片上传完成。');return;}location.hash='order/'+state.order.id+'/'+tab;};
-$('message-form').onsubmit=async e=>{e.preventDefault();const body=$('message').value.trim();if(!body||!state.order)return;const id=state.order.id,epoch=state.epoch;if(!state.pending||state.pending.body!==body||state.pending.id!==id)state.pending={body,id,key:crypto.randomUUID()};const pending=state.pending;state.sending=true;saveWork();$('send').disabled=true;try{await post('orders/'+id+'/messages',{body,request_id:pending.key});if(epoch!==state.epoch)return;if($('message').value.trim()===body)$('message').value='';state.pending=null;saveWork();await loadMessages('new');}catch(err){error(err);}finally{state.sending=false;$('send').disabled=false;}};
+$('message-form').onsubmit=sendChatMessage;
 window.addEventListener('hashchange',()=>route().catch(error));
-window.addEventListener('beforeunload',e=>{saveWork();if(state.busy||state.sending||[...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done))){e.preventDefault();e.returnValue='';}});
+window.addEventListener('beforeunload',e=>{saveWork();if(state.busy||state.sending||[...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done)||(w.chatPhotos||[]).length)){e.preventDefault();e.returnValue='';}});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 setInterval(poll,5000);
 (async()=>{try{const boot=await api('session');state.csrf=boot.csrf_token;state.user=boot.user;renderSession();queueAccountLookup(0);setupPush();await route();await poll();}catch(e){renderSession();error(e);}})();
@@ -168,3 +168,88 @@ if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('messag
   if(state.busy||state.sending){showNotice('收到订单通知，请完成当前上传或发送后进入订单讨论。');return;}
   location.hash=event.data.path.split('#')[1]||'orders';
 });
+
+// Chat photos reference the same archive file; uploads retain UUIDs on retry.
+let chatPickerPage=0, chatPickerLoading=false, chatPickerGeneration=0;
+function closeChatPicker(){ chatPickerGeneration++;chatPickerLoading=false;$('chat-picker').hidden=true;$('chat-picker-list').replaceChildren();chatPickerPage=0; }
+function renderChatAttachments(){
+  const box=$('chat-attachments');box.replaceChildren();
+  for(const job of state.chatPhotos){
+    const row=el('div',undefined,'chat-attachment');
+    row.append(el('span',job.name+' · '+(job.status||(job.photo?'已选归档照片':'待发送'))));
+    const remove=el('button','移除','quiet');remove.type='button';remove.onclick=()=>{if(state.sending)return;state.chatPhotos=state.chatPhotos.filter(j=>j!==job);state.pending=null;renderChatAttachments();saveWork();};row.append(remove);box.append(row);
+  }
+}
+function appendMessagePhotos(node,photos){
+  const grid=el('div',undefined,'chat-photo-grid');
+  for(const photo of photos){
+    const card=el('div');
+    if(photo.deleted){card.append(el('p','照片已删除','muted'));}
+    else{
+      const link=el('a');link.href='/api/mobile/photos/'+photo.id+'/file';link.target='_blank';link.rel='noopener';
+      const img=el('img');img.src=link.href+'?thumbnail=1';img.alt=photo.note||photo.name;img.loading='lazy';img.className='photo';link.append(img);
+      img.onerror=()=>{img.alt='照片加载失败，请重新打开';};
+      const download=el('a','下载');download.href=link.href+'?download=1';download.target='_blank';download.rel='noopener';card.append(link,download);
+    }
+    grid.append(card);
+  }
+  if(photos.length)node.append(grid);
+}
+async function refreshChatPhotoStatus(){
+  const epoch=state.epoch,id=state.order.id;
+  const ids=[...new Set(state.messages.flatMap(m=>(m.photos||[]).filter(p=>!p.deleted).map(p=>p.id)))];
+  let changed=false;
+  for(let start=0;start<ids.length;start+=200){
+    const batch=ids.slice(start,start+200),data=await api('orders/'+id+'/photos/status?ids='+batch.join(','));
+    if(epoch!==state.epoch)return;
+    const active=new Set(data.active_ids),checked=new Set(batch);
+    for(const m of state.messages)for(const p of m.photos||[])if(!p.deleted&&checked.has(p.id)&&!active.has(p.id)){p.deleted=true;changed=true;}
+  }
+  if(changed)renderMessages();
+}
+async function chooseChatFiles(event){
+  const files=[...event.target.files];event.target.value='';if(state.sending||!files.length)return;
+  if(state.chatPhotos.length+files.length>8){showNotice('每条消息最多 8 张照片，请先移除部分照片。');return;}
+  for(const file of files)state.chatPhotos.push({file,name:file.name,key:crypto.randomUUID(),photo:null});
+  state.pending=null;renderChatAttachments();saveWork();
+}
+async function loadChatPicker(append=false){
+  if(chatPickerLoading||!state.order||state.sending)return;
+  const epoch=state.epoch,id=state.order.id,page=append?chatPickerPage+1:1,token=++chatPickerGeneration;chatPickerLoading=true;
+  $('chat-picker').hidden=false;$('chat-picker-more').disabled=true;
+  try{
+    const data=await api('orders/'+id+'/photos?page='+page);if(epoch!==state.epoch||token!==chatPickerGeneration)return;
+    if(!append)$('chat-picker-list').replaceChildren();chatPickerPage=page;
+    for(const photo of data.photos){
+      const button=el('button',undefined,'secondary');button.type='button';const img=el('img');img.src='/api/mobile/photos/'+photo.id+'/file?thumbnail=1';img.alt=photo.note||photo.name;img.className='photo';img.loading='lazy';button.append(img,el('span',photo.note||photo.name));
+      button.onclick=()=>{if(state.sending)return;if(state.chatPhotos.some(j=>j.photo?.id===photo.id)){showNotice('这张照片已经选择。');return;}if(state.chatPhotos.length>=8){showNotice('每条消息最多 8 张照片。');return;}state.chatPhotos.push({photo,name:photo.name});state.pending=null;renderChatAttachments();saveWork();showNotice('已选择照片，可继续选择或填写文字后发送。');};$('chat-picker-list').append(button);
+    }
+    if(!data.photos.length&&!append)$('chat-picker-list').append(el('p','该订单暂无归档照片。','muted'));
+    $('chat-picker-more').hidden=!data.has_more;
+  }catch(e){if(epoch===state.epoch&&token===chatPickerGeneration)error(e);}finally{if(token===chatPickerGeneration){chatPickerLoading=false;$('chat-picker-more').disabled=false;}}
+}
+async function sendChatMessage(event){
+  event.preventDefault();const body=$('message').value.trim();if(state.sending||!state.order||(!body&&!state.chatPhotos.length))return;
+  const id=state.order.id,epoch=state.epoch;state.sending=true;$('chat-composer-controls').disabled=true;saveWork();
+  try{
+    for(const job of state.chatPhotos){
+      if(job.photo)continue;
+      job.status='上传并归档中…';renderChatAttachments();
+      if(job.note===undefined)job.note=body.slice(0,300);
+      if(!job.blob)job.blob=await jpeg(job.file);
+      const form=new FormData();form.append('request_id',job.key);form.append('note',job.note);form.append('photo',job.blob,'photo-'+job.key+'.jpg');
+      const data=await api('orders/'+id+'/photos',{method:'POST',body:form});
+      if(epoch!==state.epoch)return;
+      job.photo=data.photo;job.file=null;job.blob=null;job.status='已归档，等待发送消息';renderChatAttachments();saveWork();
+    }
+    const photoIds=state.chatPhotos.map(j=>j.photo.id),signature=JSON.stringify({body,photoIds});
+    if(!state.pending||state.pending.signature!==signature||state.pending.id!==id)state.pending={signature,id,key:crypto.randomUUID()};
+    saveWork();await post('orders/'+id+'/messages',{body,photo_ids:photoIds,request_id:state.pending.key});
+    if(epoch!==state.epoch)return;
+    $('message').value='';state.pending=null;state.chatPhotos=[];renderChatAttachments();closeChatPicker();saveWork();showNotice('');await loadMessages('new');
+  }catch(err){
+    if(epoch===state.epoch){for(const job of state.chatPhotos)if(!job.photo)job.status='未完成，发送可重试';renderChatAttachments();saveWork();error(new Error(err.message+' 已归档的照片会保留，重试不会重复上传。'));}
+  }finally{state.sending=false;$('chat-composer-controls').disabled=false;}
+}
+$('chat-camera').onchange=chooseChatFiles;$('chat-gallery').onchange=chooseChatFiles;
+$('chat-archive').onclick=()=>loadChatPicker();$('chat-picker-more').onclick=()=>loadChatPicker(true);$('chat-picker-close').onclick=closeChatPicker;

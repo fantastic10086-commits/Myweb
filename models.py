@@ -1031,6 +1031,15 @@ class OrderMessage(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
+class OrderMessagePhoto(db.Model):
+    """A reference to the existing archive, with a tombstone after file removal."""
+    __tablename__ = 'order_message_photos'
+    message_id = db.Column(db.Integer, db.ForeignKey('order_messages.id', ondelete='CASCADE'), primary_key=True)
+    position = db.Column(db.Integer, primary_key=True)
+    file_id = db.Column(db.Integer, db.ForeignKey('customer_files.id', ondelete='SET NULL'), nullable=True)
+    original_file_id = db.Column(db.Integer, nullable=False)
+
+
 class OrderReadState(db.Model):
     __tablename__ = 'order_read_states'
     user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)

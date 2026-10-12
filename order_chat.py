@@ -5,7 +5,7 @@ from flask import request, jsonify, abort, session
 from sqlalchemy import func, or_
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.exc import IntegrityError
-from models import db, PI, User, OrderMessage, OrderReadState, PushDevice, PushDelivery
+from models import db, PI, User, OrderMessage, OrderReadState, PushDevice, PushDelivery, OrderMessagePhoto, CustomerFile
 
 
 def user_can_chat(user, pi):
@@ -22,9 +22,19 @@ def unread_query(user_id):
 
 
 def register_chat(bp, *, current_user, accessible_order, orders_query, order_payload, audit):
+    def links(m):
+        return OrderMessagePhoto.query.filter_by(message_id=m.id).order_by(OrderMessagePhoto.position).all()
+
     def payload(m):
+        photos=[]
+        for link in links(m):
+            photo=db.session.get(CustomerFile,link.file_id) if link.file_id else None
+            valid=bool(photo and not photo.deleted_at and photo.pi_id==m.pi_id and
+                       photo.customer_id==db.session.get(PI,m.pi_id).customer_id and (photo.mime_type or '').startswith('image/'))
+            photos.append({'id':link.original_file_id, 'deleted':not valid,
+                           'name':photo.original_name if valid else '', 'note':photo.note if valid else ''})
         return {'id':m.id, 'author_id':m.author_id, 'author_name':m.author_name,
-                'body':m.body, 'created_at':m.created_at.isoformat()+'Z'}
+                'body':m.body, 'photos':photos, 'created_at':m.created_at.isoformat()+'Z'}
 
     @bp.get('/orders/<int:id>/messages')
     def messages(id):
@@ -47,21 +57,32 @@ def register_chat(bp, *, current_user, accessible_order, orders_query, order_pay
         pi=accessible_order(id); user=current_user(); data=request.get_json(silent=True) or {}
         if not isinstance(data,dict): abort(400)
         body=data.get('body', '')
-        if not isinstance(body,str) or not body.strip() or len(body)>4000:
-            abort(400, description='消息需包含 1–4000 个字符。')
+        photo_ids=data.get('photo_ids', [])
+        if (not isinstance(photo_ids,list) or len(photo_ids)>8 or
+            any(type(value) is not int or value<1 or value>9223372036854775807 for value in photo_ids) or len(set(photo_ids))!=len(photo_ids)):
+            abort(400, description='每条消息最多引用 8 张不同的照片。')
+        if not isinstance(body,str) or len(body)>4000 or (not body.strip() and not photo_ids):
+            abort(400, description='请输入文字或选择照片，文字最多 4000 字。')
         body=body.strip()
         try: key=str(uuid.UUID(str(data.get('request_id',''))))
         except ValueError: abort(400, description='消息标识无效。')
         def previous():
             m=OrderMessage.query.filter_by(author_id=user.id, request_id=key).first()
-            if m and (m.pi_id != id or m.body != body):
+            if m and (m.pi_id != id or m.body != body or [link.original_file_id for link in links(m)] != photo_ids):
                 abort(409, description='消息标识已使用，请重新编辑后发送。')
             return m
         old=previous()
         if old: return jsonify(message=payload(old)),200
+        for photo_id in photo_ids:
+            photo=db.session.get(CustomerFile,photo_id)
+            if (not photo or photo.deleted_at or photo.pi_id!=id or photo.customer_id!=pi.customer_id or
+                not (photo.mime_type or '').startswith('image/')):
+                abort(400, description='只能引用当前订单中尚未删除的归档照片，请重新选择。')
         m=OrderMessage(pi_id=id, author_id=user.id, author_name=user.username, body=body, request_id=key)
         try:
             db.session.add(m); db.session.flush()
+            for position,photo_id in enumerate(photo_ids):
+                db.session.add(OrderMessagePhoto(message_id=m.id,position=position,file_id=photo_id,original_file_id=photo_id))
             devices=PushDevice.query.join(User,User.id==PushDevice.user_id).filter(
                 PushDevice.active.is_(True), User.active.is_(True), User.id != user.id,
                 or_(User.role=='admin',User.salesperson_name==pi.salesperson)).all()

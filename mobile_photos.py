@@ -135,6 +135,18 @@ def register_mobile_photos(app, *, current_user, is_admin, login, customer_acces
         ).order_by(CustomerFile.id.desc()).paginate(page=page, per_page=30, error_out=False)
         return jsonify(order=order_payload(pi), photos=[photo_payload(p) for p in result.items], has_more=result.has_next, total=result.total)
 
+    @bp.get('/orders/<int:id>/photos/status')
+    def photo_status(id):
+        pi=accessible_order(id)
+        values=request.args.get('ids','').split(',')
+        if len(values)>200 or any(not value.isdigit() or len(value)>18 for value in values):
+            abort(400)
+        ids=[int(value) for value in values]
+        active=CustomerFile.query.filter(CustomerFile.id.in_(ids),CustomerFile.pi_id==id,
+            CustomerFile.customer_id==pi.customer_id,CustomerFile.deleted_at.is_(None),
+            CustomerFile.mime_type.startswith('image/')).with_entities(CustomerFile.id).all()
+        return jsonify(active_ids=[row[0] for row in active])
+
     @bp.post('/orders/<int:id>/photos')
     def upload(id):
         pi = accessible_order(id, paid=True)
