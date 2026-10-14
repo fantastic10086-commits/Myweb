@@ -133,6 +133,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 setInterval(poll,5000);
 (async()=>{try{const boot=await api('session');state.csrf=boot.csrf_token;state.user=boot.user;renderSession();queueAccountLookup(0);setupPush();await route();await poll();}catch(e){renderSession();error(e);}})();
 
+$('notification-settings-link').onclick=event=>{event.preventDefault();$('notification-settings').scrollIntoView({block:'start'});};
 let pushRegistration=null, pushPublicKey=null;
 async function setupPush(){
   if(!state.user)return;
