@@ -36,6 +36,9 @@ def decode_key(value, size):
 def push_config():
     path = os.environ.get('WEB_PUSH_PRIVATE_KEY_PATH', '')
     subject = os.environ.get('WEB_PUSH_SUBJECT', '')
+    # py-vapid's strict HTTPS subject validation rejects a trailing root slash.
+    if subject.startswith('https://') and urlsplit(subject).path == '/' and not urlsplit(subject).query and not urlsplit(subject).fragment:
+        subject = subject[:-1]
     if not path or not subject:
         return None
     from cryptography.hazmat.primitives import serialization

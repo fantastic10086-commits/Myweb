@@ -70,9 +70,9 @@ def deliver_batch(transport, limit=50, now=None):
         attempted+=1
         try:
             status,reason=transport.send(device,row,payload)
-        except Exception:
-            # Never log device tokens, keys, response bodies or message text.
-            status,reason=503,'TransportError'
+        except Exception as exc:
+            # Keep only the exception class, never endpoints, keys or message text.
+            status,reason=503,'TransportError:'+type(exc).__name__[:80]
         if 200<=status<300:
             row.status='sent';row.last_error=''
         elif status in (404,410):

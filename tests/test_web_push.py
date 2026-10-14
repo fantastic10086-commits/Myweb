@@ -112,8 +112,8 @@ class WebPushTests(MobilePhotosTests):
         with tempfile.TemporaryDirectory() as folder:
             key=ec.generate_private_key(ec.SECP256R1());path=Path(folder)/'key.pem'
             path.write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
-            with patch.dict(os.environ,WEB_PUSH_PRIVATE_KEY_PATH=str(path),WEB_PUSH_SUBJECT='mailto:test@example.test'):
-                config=push_config();self.assertEqual(len(base64.urlsafe_b64decode(config['public_key']+'=')),65)
+            with patch.dict(os.environ,WEB_PUSH_PRIVATE_KEY_PATH=str(path),WEB_PUSH_SUBJECT='https://pimanager.cn/'):
+                config=push_config();self.assertEqual(config['subject'],'https://pimanager.cn');self.assertEqual(len(base64.urlsafe_b64decode(config['public_key']+'=')),65)
                 transport=WebPushTransport()
                 import requests
                 captured=[]
