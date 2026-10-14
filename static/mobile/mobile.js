@@ -4,7 +4,7 @@ const state = {user:null, csrf:'', order:null, page:1, photoPage:1, query:'', ta
 function el(tag, text, cls) { const n=document.createElement(tag); if(text!==undefined)n.textContent=text; if(cls)n.className=cls; return n; }
 function showNotice(text) { $('notice').replaceChildren(); if(text)$('notice').append(el('span',text)); }
 function saveWork(){if(state.order)state.work.set(state.order.id,{draft:$('message').value,note:$('note').value,jobs:state.jobs,pending:state.pending,chatPhotos:state.chatPhotos});}
-function clearPrivateState(){state.chatPhotos=[];renderChatAttachments();closeChatPicker();state.work.clear();state.unread.clear();$('unread-notice').replaceChildren();}
+function clearPrivateState(){state.chatPhotos=[];renderChatAttachments();closeChatPicker();state.work.clear();state.unread.clear();alertedMessages.clear();$('message-toast').hidden=true;$('unread-notice').replaceChildren();}
 function error(err) { showNotice(err.message || '操作失败，请重试。'); }
 async function api(path, options={}) {
   const headers=new Headers(options.headers||{});
@@ -89,13 +89,29 @@ async function uploadJobs(){
 async function selectFiles(event){const files=[...event.target.files];event.target.value='';if(!files.length)return;if(state.busy)return;if(files.length>8){showNotice('每批最多选择 8 张照片。');return;}if(state.jobs.some(j=>!j.done)&&!confirm('还有上传失败的照片，放弃这些重试任务并选择新照片？'))return;
   state.jobs=files.map(file=>({file,name:file.name,key:crypto.randomUUID(),note:$('note').value.trim(),status:'等待上传',done:false}));await uploadJobs();
 }
+// Foreground alerts use authorized API metadata, never private push payloads.
+const alertedMessages=new Map();
+function messageAlert(order,id,text){
+  if(!state.user||document.hidden||!Number.isSafeInteger(id)||id<1)return;
+  if(id<=(alertedMessages.get(order.id)||0))return;
+  alertedMessages.set(order.id,id);
+  $('message-toast-text').textContent=text;
+  $('message-toast-link').href='#order/'+order.id+'/chat';
+  $('message-toast').hidden=false;
+}
+$('message-toast-close').onclick=()=>{$('message-toast').hidden=true;};
+$('message-toast-link').onclick=()=>{if(state.busy||state.sending){showNotice('请完成当前上传或发送后查看新消息。');return false;}$('message-toast').hidden=true;};
 function renderMessages(){const box=$('messages');box.replaceChildren();for(const m of state.messages){const node=el('article',undefined,'message'+(m.author_id===state.user.id?' mine':''));node.append(el('small',m.author_name+' · '+dateText(m.created_at)));if(m.body)node.append(el('p',m.body));appendMessagePhotos(node,m.photos||[]);box.append(node);}if(!state.messages.length)box.append(el('p','还没有讨论，发送第一条订单消息。','muted'));}
 async function loadMessages(mode='initial'){
   const epoch=state.epoch,id=state.order.id;const first=state.messages[0]?.id,last=state.messages.at(-1)?.id;const suffix=mode==='older'&&first?'?before='+first:mode==='new'&&last?'?after='+last:'';const data=await api('orders/'+id+'/messages'+suffix);if(epoch!==state.epoch)return;
+  const previousIds=new Set(state.messages.map(m=>m.id));
+  if(mode==='new'){const incoming=data.messages.filter(m=>m.author_id!==state.user.id&&!previousIds.has(m.id));if(incoming.length)messageAlert(state.order,incoming.at(-1).id,'当前订单收到 '+incoming.length+' 条新消息');}
+  else if(mode==='initial'&&data.messages.length)alertedMessages.set(id,Math.max(alertedMessages.get(id)||0,data.messages.at(-1).id));
   const map=new Map((mode==='initial'?[]:state.messages).map(m=>[m.id,m]));for(const m of data.messages)map.set(m.id,m);state.messages=[...map.values()].sort((a,b)=>a.id-b.id);if(data.messages.length||mode==='initial')renderMessages();if(mode!=='new')$('messages-more').hidden=!data.has_more;
   const newest=state.messages.at(-1);if(newest&&!document.hidden)await post('orders/'+id+'/read',{last_read_id:newest.id});
 }
 function renderUnread(data){
+  for(const row of data.orders)messageAlert(row.order,row.latest_id,row.order.number+' · '+row.count+' 条未读消息');
   state.unread=new Map(data.orders.map(r=>[r.order.id,r.count]));
   for(const card of $('order-list').querySelectorAll('[data-order-id]')){card.querySelector('.badge')?.remove();const count=state.unread.get(Number(card.dataset.orderId));if(count)card.append(el('span',count+' 条未读','badge'));}
   const other=data.orders.filter(r=>r.order.id!==state.order?.id||state.tab!=='chat');
@@ -128,7 +144,8 @@ async function setupPush(){
     if(!config.enabled){$('push-status').textContent=config.message;return;}
     pushPublicKey=config.public_key;
     pushRegistration=await navigator.serviceWorker.register('/mobile/sw.js',{scope:'/mobile/'});
-    await navigator.serviceWorker.ready;
+    pushRegistration=await navigator.serviceWorker.ready;
+    $('push-test').disabled=Notification.permission!=='granted';
     const sub=await pushRegistration.pushManager.getSubscription();
     if(sub&&Notification.permission==='granted'){
       await post('web-push/subscribe',sub.toJSON());
@@ -148,13 +165,24 @@ $('push-enable').onclick=async()=>{
     let sub=await pushRegistration.pushManager.getSubscription();
     if(sub&&sub.options.applicationServerKey){const old=new Uint8Array(sub.options.applicationServerKey);if(old.length!==key.length||old.some((v,i)=>v!==key[i])){await sub.unsubscribe();sub=null;}}
     sub=sub||await pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
-    await post('web-push/subscribe',sub.toJSON());$('push-disable').hidden=false;
+    await post('web-push/subscribe',sub.toJSON());$('push-disable').hidden=false;$('push-test').disabled=false;
     $('push-status').textContent='本机通知已登记；请用另一账号发送订单消息进行验证。';
   }catch(e){$('push-status').textContent=e.message;}finally{$('push-enable').disabled=false;}
 };
+$('push-test').onclick=async()=>{
+  if(!pushRegistration||!state.user)return;
+  try{
+    if(Notification.permission!=='granted')throw new Error('请先开启并允许通知。');
+    await pushRegistration.showNotification('订单助手 · 本机通知测试',{
+      body:'看到这条系统通知，说明本机可以显示通知；远程接收需另用订单消息验证。',
+      icon:'/static/mobile/icon.png',tag:'local-test',renotify:true,data:{path:'/mobile/'}
+    });
+    $('push-status').textContent='已请求显示本机测试通知，请检查屏幕顶部或通知中心。如未看到，请检查手机设置中的通知权限、横幅和专注模式。此测试不代表远程推送成功。';
+  }catch(e){$('push-status').textContent='本机通知测试失败：'+e.message;}
+};
 $('push-disable').onclick=async()=>{
   $('push-disable').disabled=true;
-  try{await post('web-push/unsubscribe',{});await clearBrowserPush();$('push-disable').hidden=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
+  try{await post('web-push/unsubscribe',{});await clearBrowserPush();$('push-disable').hidden=true;$('push-test').disabled=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
   catch(e){$('push-status').textContent=e.message;}finally{$('push-disable').disabled=false;}
 };
 async function clearBrowserPush(){

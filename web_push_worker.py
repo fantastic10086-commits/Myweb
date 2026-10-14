@@ -34,7 +34,7 @@ class WebPushTransport:
                 data=json.dumps(payload,ensure_ascii=False),
                 vapid_private_key=self.config['path'], vapid_claims={'sub':self.config['subject']},
                 ttl=300, timeout=15, requests_session=self.http,
-                headers={'Urgency':'normal','Topic':'order-'+str(payload['order_id'])})
+                headers={'Urgency':'high','Topic':'order-'+str(payload['order_id'])})
             return response.status_code, ''
         except WebPushException as exc:
             response = exc.response

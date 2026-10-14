@@ -4,3 +4,5 @@
 
 #resolved-username{background:#f7f9fc;color:#193c60}
 .chat-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0}.chat-photo-grid .photo{width:100%;max-height:220px;object-fit:contain}.chat-photo-grid button{min-width:0;overflow-wrap:anywhere}.chat-attachment{display:flex;align-items:center;justify-content:space-between;gap:10px;overflow-wrap:anywhere}.chat-attachment span{min-width:0}#chat-composer-controls:disabled{opacity:.7}
+
+.message-toast{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:calc(100% - 24px);max-width:610px;z-index:1000;padding:16px 18px;border:1px solid #9bbada;border-radius:16px;background:#fff;box-shadow:0 8px 32px #193c6040;overflow-wrap:anywhere}.message-toast strong{display:block;margin-bottom:12px}.message-toast a{color:#245f99;font-weight:650}.message-toast .actions{flex-direction:row}#notification-settings .actions{flex-wrap:wrap}#notification-settings .actions button{flex-basis:140px}

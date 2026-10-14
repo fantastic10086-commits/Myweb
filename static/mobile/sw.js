@@ -1,4 +1,6 @@
 'use strict';
+self.addEventListener('install',event=>event.waitUntil(self.skipWaiting()));
+self.addEventListener('activate',event=>event.waitUntil(self.clients.claim()));
 // No fetch handler: never cache private orders, chats or photos offline.
 self.addEventListener('push', event => {
   let value={};try{value=event.data?.json()||{};}catch(_){}
@@ -6,7 +8,7 @@ self.addEventListener('push', event => {
   const path=Number.isSafeInteger(id)&&id>0?'/mobile/#order/'+id+'/chat':'/mobile/';
   event.waitUntil(self.registration.showNotification('订单新消息',{
     body:'订单中有新消息，点击查看。',icon:'/static/mobile/icon.png',
-    tag:'order-'+(Number.isSafeInteger(id)?id:'new'),data:{path}
+    renotify:true,tag:'order-'+(Number.isSafeInteger(id)?id:'new'),data:{path}
   }));
 });
 self.addEventListener('notificationclick', event => {

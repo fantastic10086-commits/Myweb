@@ -124,5 +124,5 @@ class WebPushTests(MobilePhotosTests):
                     with patch.object(transport.http,'send',side_effect=send):
                         result=transport.send(sub,None,{'order_id':self.paid,'body':'private'})
                 self.assertEqual(result[0],201);request,kwargs=captured[0]
-                self.assertFalse(kwargs['allow_redirects']);self.assertIn('Authorization',request.headers)
+                self.assertEqual(request.headers['Urgency'],'high');self.assertFalse(kwargs['allow_redirects']);self.assertIn('Authorization',request.headers)
                 self.assertNotIn(b'private',request.body)
