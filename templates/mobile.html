@@ -41,12 +41,12 @@
 <div class="intro"><h2>已归档照片</h2><button id="photos-refresh" class="secondary">刷新</button></div><div id="photo-list" class="stack"></div><button id="photos-more" class="secondary wide" hidden>加载更多照片</button>
 </section>
 <section id="chat-panel" hidden><p class="hint">仅本订单业务员和有权限的管理员可参与讨论。照片与订单归档共用一份文件。</p><button id="messages-more" class="secondary wide" hidden>加载更早消息</button><div id="messages" class="stack" role="log" aria-label="订单讨论"></div>
-<form id="message-form" class="composer"><fieldset id="chat-composer-controls" style="border:0;padding:0;margin:0;min-width:0">
-<div class="actions"><label class="file-button secondary">拍照<input id="chat-camera" type="file" accept="image/*" capture="environment"></label><label class="file-button secondary">相册<input id="chat-gallery" type="file" accept="image/*" multiple></label><button type="button" id="chat-archive" class="secondary">引用归档照片</button></div>
+<form id="message-form" class="composer"><fieldset id="chat-composer-controls"><div id="chat-entry"><div class="chat-photo-tools">
+<div class="actions chat-photo-actions"><label class="file-button secondary">拍照<input id="chat-camera" type="file" accept="image/*" capture="environment"></label><label class="file-button secondary">相册<input id="chat-gallery" type="file" accept="image/*" multiple></label><button type="button" id="chat-archive" class="secondary">引用归档照片</button></div>
 <p class="hint">每条最多 8 张。新照片发送时自动归档；引用已有照片不重复上传。</p>
 <div id="chat-attachments" class="stack" aria-live="polite"></div>
 <section id="chat-picker" class="card" hidden><div class="intro"><h2>选择本订单照片</h2><button type="button" id="chat-picker-close" class="quiet">收起</button></div><div id="chat-picker-list" class="chat-photo-grid"></div><button type="button" id="chat-picker-more" class="secondary wide" hidden>加载更多照片</button></section>
-<div id="chat-entry"><label for="message">订单消息</label><div class="chat-entry-row"><textarea id="message" maxlength="4000" rows="2" placeholder="输入消息，或选择照片发送"></textarea><button id="send">发送</button></div></div></fieldset><p class="hint">切换订单会保留草稿；刷新或关闭页面后不保留。</p></form></section>
+</div><label for="message">订单消息</label><div class="chat-entry-row"><textarea id="message" maxlength="4000" rows="2" placeholder="输入消息，或选择照片发送"></textarea><button id="send">发送</button></div></div></fieldset><p class="hint">切换订单会保留草稿；刷新或关闭页面后不保留。</p></form></section>
 </section>
 <noscript>请启用浏览器 JavaScript 后使用手机工作台。</noscript>
 </main>

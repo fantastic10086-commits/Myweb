@@ -96,6 +96,7 @@ function updateChatDock(){
   const entry=$('chat-entry'),viewport=window.visualViewport;
   const focused=entry.contains(document.activeElement);
   const gap=focused&&viewport&&viewport.scale===1?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop):0;
+  document.documentElement.style.setProperty('--chat-viewport-height',(viewport?.height||window.innerHeight)+'px');
   document.documentElement.style.setProperty('--chat-keyboard-gap',gap+'px');
   document.documentElement.style.setProperty('--chat-dock-height',Math.ceil(entry.getBoundingClientRect().height)+'px');
 }
