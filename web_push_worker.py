@@ -5,7 +5,7 @@ import json
 import uuid
 from pathlib import Path
 from datetime import datetime, timedelta
-from models import db, PI, User, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery, WebPushReceipt
+from models import db, PI, User, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery, WebPushReceipt, OrderMessagePhoto
 from order_chat import user_can_chat
 from web_push import push_config, valid_endpoint
 
@@ -42,6 +42,17 @@ class WebPushTransport:
             return (response.status_code if response is not None else 503), 'PushServiceError'
 
 
+def message_preview(message, pi):
+    text=' '.join((message.body or '').split())
+    count=OrderMessagePhoto.query.filter_by(message_id=message.id).count()
+    if text:
+        text=text[:140]+('…' if len(text)>140 else '')
+        if count:text+=' [照片]'
+    else:
+        text=('发送了 '+str(count)+' 张照片') if count else '发送了一条订单消息'
+    return {'title':pi.pi_number+' · '+(message.author_name or '同事')[:40], 'body':text}
+
+
 def deliver_batch(transport, limit=50, now=None):
     clock_override=now
     now=now or datetime.utcnow()
@@ -72,7 +83,7 @@ def deliver_batch(transport, limit=50, now=None):
             receipt=WebPushReceipt(id=str(uuid.uuid4()),delivery_id=row.id,subscription_id=device.id,
                 user_id=row.user_id,binding=row.binding,auth_version=row.auth_version)
             db.session.add(receipt);db.session.commit()
-        payload={'receipt_id':receipt.id,'title':'订单新消息','body':'订单中有新消息，点击查看。','order_id':pi.id}
+        payload={'receipt_id':receipt.id,'order_id':pi.id,**message_preview(message,pi)}
         attempted+=1
         try:
             status,reason=transport.send(device,row,payload)

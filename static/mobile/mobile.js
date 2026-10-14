@@ -18,7 +18,7 @@ async function api(path, options={}) {
   return data;
 }
 const post=(path,data)=>api(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-function renderSession(){ $('login').hidden=!!state.user; $('logout').hidden=!state.user; $('workspace').hidden=true; $('detail').hidden=true; if(state.user)$('greeting').textContent=state.user.name+' · '+(state.user.is_admin?'管理员':'业务员'); }
+function renderSession(){ document.body.classList.remove('chat-open'); $('login').hidden=!!state.user; $('logout').hidden=!state.user; $('workspace').hidden=true; $('detail').hidden=true; if(state.user)$('greeting').textContent=state.user.name+' · '+(state.user.is_admin?'管理员':'业务员'); }
 // Reuse the normal login page's account lookup and server-side rate limit.
 let accountLookupTimer, accountLookupSequence=0, accountLookupController, observedAccount;
 function queueAccountLookup(delay=450){
@@ -61,6 +61,7 @@ async function loadOrders(append=false){const epoch=state.epoch;const page=appen
 async function route(){
   if(!state.user)return;
   if(state.busy||state.sending){history.replaceState(null,'',state.activeHash);showNotice('正在上传或发送，请完成后再切换页面。');return;}
+  document.body.classList.remove('chat-open');
   saveWork();state.activeHash=location.hash||'#orders';
   const epoch=++state.epoch;showNotice('');state.order=null;state.jobs=[];state.messages=[];state.pending=null;state.chatPhotos=[];renderChatAttachments();closeChatPicker();$('message').value='';$('note').value='';$('upload-status').textContent='';$('retry').hidden=true;
   const match=location.hash.match(/^#order\/(\d+)\/(photos|chat)$/);
@@ -69,6 +70,7 @@ async function route(){
   const data=await api('orders/'+match[1]);if(epoch!==state.epoch)return;state.order=data.order;$('detail').hidden=false;$('order-number').textContent=data.order.number;$('customer').textContent=data.order.customer_name;$('paid').textContent='已回款 '+data.order.currency+' '+Number(data.order.received_amount).toFixed(2);state.tab=match[2];
   const saved=state.work.get(data.order.id);if(saved){state.jobs=saved.jobs;state.pending=saved.pending;state.chatPhotos=saved.chatPhotos||[];renderChatAttachments();$('message').value=saved.draft;$('note').value=saved.note;uploadStatus();$('retry').hidden=!state.jobs.some(j=>!j.done);}
   $('photos-panel').hidden=state.tab!=='photos';$('chat-panel').hidden=state.tab!=='chat';$('photos-tab').className=state.tab==='photos'?'':'secondary';$('chat-tab').className=state.tab==='chat'?'':'secondary';
+  document.body.classList.toggle('chat-open',state.tab==='chat');updateChatDock();
   if(state.tab==='photos')await loadPhotos();else await loadMessages();
 }
 async function loadPhotos(append=false){const epoch=state.epoch,id=state.order.id,page=append?state.photoPage+1:1;const data=await api('orders/'+id+'/photos?page='+page);if(epoch!==state.epoch)return;if(!append)$('photo-list').replaceChildren();state.photoPage=page;
@@ -89,6 +91,20 @@ async function uploadJobs(){
 async function selectFiles(event){const files=[...event.target.files];event.target.value='';if(!files.length)return;if(state.busy)return;if(files.length>8){showNotice('每批最多选择 8 张照片。');return;}if(state.jobs.some(j=>!j.done)&&!confirm('还有上传失败的照片，放弃这些重试任务并选择新照片？'))return;
   state.jobs=files.map(file=>({file,name:file.name,key:crypto.randomUUID(),note:$('note').value.trim(),status:'等待上传',done:false}));await uploadJobs();
 }
+// Reserve the fixed composer height so the last message is never underneath it.
+function updateChatDock(){
+  const entry=$('chat-entry'),viewport=window.visualViewport;
+  const focused=entry.contains(document.activeElement);
+  const gap=focused&&viewport&&viewport.scale===1?Math.max(0,window.innerHeight-viewport.height-viewport.offsetTop):0;
+  document.documentElement.style.setProperty('--chat-keyboard-gap',gap+'px');
+  document.documentElement.style.setProperty('--chat-dock-height',Math.ceil(entry.getBoundingClientRect().height)+'px');
+}
+if('ResizeObserver' in window)new ResizeObserver(updateChatDock).observe($('chat-entry'));
+window.addEventListener('resize',updateChatDock);
+window.visualViewport?.addEventListener('resize',updateChatDock);
+window.visualViewport?.addEventListener('scroll',updateChatDock);
+$('message').addEventListener('focus',updateChatDock);
+$('message').addEventListener('blur',()=>setTimeout(updateChatDock,0));
 // Foreground alerts use authorized API metadata, never private push payloads.
 const alertedMessages=new Map();
 function messageAlert(order,id,text){

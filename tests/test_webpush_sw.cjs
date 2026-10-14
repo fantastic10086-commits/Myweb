@@ -8,9 +8,9 @@ vm.runInNewContext(fs.readFileSync(require('node:path').join(__dirname,'../stati
 async function run(name,event){let pending;events[name]({...event,waitUntil:p=>pending=p});await pending;}
 (async()=>{
  await run('install',{});await run('activate',{});
- await run('push',{data:{json:()=>({order_id:42,body:'private customer detail'})}});
- assert.equal(shown[0].options.renotify,true);assert.equal(shown[0].options.data.path,'/mobile/#order/42/chat');assert(!JSON.stringify(shown).includes('private customer'));
- await run('push',{data:{json:()=>{throw Error('malformed');}}});assert.equal(shown.length,2);
+ await run('push',{data:{json:()=>({order_id:42,title:'PI-42 · Limon',body:'请确认这张照片'})}});
+ assert.equal(shown[0].options.renotify,true);assert.equal(shown[0].options.data.path,'/mobile/#order/42/chat');assert.equal(shown[0].title,'PI-42 · Limon');assert.equal(shown[0].options.body,'请确认这张照片');
+ await run('push',{data:{json:()=>{throw Error('malformed');}}});assert.equal(shown.length,2);assert.equal(shown[1].title,'订单新消息');
  await run('notificationclick',{notification:{close(){},data:{path:'https://evil.test/'}}});assert.equal(opened[0],'https://orders.example.test/mobile/');
  windows=[{url:'https://orders.example.test/mobile/',focus:async()=>{},postMessage:data=>messaged.push(data)}];
  await run('notificationclick',{notification:{close(){},data:{path:'/mobile/#order/42/chat'}}});

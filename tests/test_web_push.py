@@ -10,7 +10,7 @@ from cryptography.hazmat.primitives import serialization
 from test_mobile_photos import MobilePhotosTests, application
 from models import db, User, PI, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery, WebPushReceipt
 from web_push import valid_endpoint, push_config
-from web_push_worker import deliver_batch, WebPushTransport
+from web_push_worker import deliver_batch, WebPushTransport, message_preview
 
 
 def b64(value):
@@ -61,7 +61,8 @@ class WebPushTests(MobilePhotosTests):
             self.assertEqual(WebPushDelivery.query.count(),2)
             transport=Transport();self.assertEqual(deliver_batch(transport),2)
             self.assertEqual(deliver_batch(transport),0)
-            self.assertNotIn('Internal',json.dumps(transport.calls))
+            self.assertIn('Internal private discussion',transport.calls[0]['body'])
+            self.assertIn(db.session.get(PI,self.paid).pi_number,transport.calls[0]['title'])
             self.assertTrue(all(r.status=='sent' for r in WebPushDelivery.query.all()))
 
     def test_mobile_logout_cancels_delivery(self):
@@ -181,3 +182,19 @@ class WebPushTests(MobilePhotosTests):
             self.assertFalse(data['accepted']);self.assertEqual(data['error'],'PushServiceError:410')
         with application.app.app_context():
             self.assertFalse(WebPushSubscription.query.filter_by(endpoint=self.subscription['endpoint']).first().active)
+
+
+    def test_notification_preview_bounds_and_photo_only_fallback(self):
+        self.queued()
+        with application.app.app_context():
+            message=OrderMessage.query.order_by(OrderMessage.id.desc()).first()
+            pi=db.session.get(PI,self.paid)
+            message.body='长'*300
+            preview=message_preview(message,pi)
+            self.assertEqual(preview['body'],'长'*140+'…')
+            self.assertIn(message.author_name,preview['title'])
+            message.body=''
+            with patch('web_push_worker.OrderMessagePhoto') as photos:
+                photos.query.filter_by.return_value.count.return_value=2
+                self.assertEqual(message_preview(message,pi)['body'],'发送了 2 张照片')
+            db.session.rollback()

@@ -6,11 +6,13 @@ self.addEventListener('push', event => {
   let value={};try{value=event.data?.json()||{};}catch(_){}
   const id=Number(value.order_id);
   const path=Number.isSafeInteger(id)&&id>0?'/mobile/#order/'+id+'/chat':'/mobile/';
+  const title=typeof value.title==='string'&&value.title.trim()?value.title.slice(0,120):'订单新消息';
+  const body=typeof value.body==='string'&&value.body.trim()?value.body.slice(0,180):'订单中有新消息，点击查看。';
   event.waitUntil((async()=>{
     let displayed=false;
     try{
-      await self.registration.showNotification(value.kind==='test'?'订单助手 · 远程通知测试':'订单新消息',{
-        body:value.kind==='test'?'这条通知由服务器发送到本机。':'订单中有新消息，点击查看。',
+      await self.registration.showNotification(value.kind==='test'?'订单助手 · 远程通知测试':title,{
+        body:value.kind==='test'?'这条通知由服务器发送到本机。':body,
         icon:'/static/mobile/icon.png',renotify:true,
         tag:value.kind==='test'?'remote-test':'order-'+(Number.isSafeInteger(id)?id:'new'),data:{path}
       });
