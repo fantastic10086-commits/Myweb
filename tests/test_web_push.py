@@ -8,7 +8,7 @@ from unittest.mock import patch
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives import serialization
 from test_mobile_photos import MobilePhotosTests, application
-from models import db, User, PI, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery
+from models import db, User, PI, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery, WebPushReceipt
 from web_push import valid_endpoint, push_config
 from web_push_worker import deliver_batch, WebPushTransport
 
@@ -26,7 +26,7 @@ class WebPushTests(MobilePhotosTests):
     def setUp(self):
         super().setUp()
         with application.app.app_context():
-            WebPushDelivery.query.delete();WebPushSubscription.query.delete();db.session.commit()
+            WebPushReceipt.query.delete();WebPushDelivery.query.delete();WebPushSubscription.query.delete();db.session.commit()
         self.config=patch('web_push.push_config',return_value={'public_key':'test','subject':'mailto:test@example.test','path':'unused'})
         self.config.start();self.addCleanup(self.config.stop)
         public=ec.generate_private_key(ec.SECP256R1()).public_key().public_bytes(serialization.Encoding.X962,serialization.PublicFormat.UncompressedPoint)
@@ -126,3 +126,58 @@ class WebPushTests(MobilePhotosTests):
                 self.assertEqual(result[0],201);request,kwargs=captured[0]
                 self.assertEqual(request.headers['Urgency'],'high');self.assertFalse(kwargs['allow_redirects']);self.assertIn('Authorization',request.headers)
                 self.assertNotIn(b'private',request.body)
+
+
+    def test_remote_probe_is_explicit_self_only_and_rate_limited(self):
+        with application.app.app_context():
+            initial_messages=OrderMessage.query.count()
+        self.login()
+        self.assertEqual(self.post('web-push/test',{}).status_code,409)
+        self.post('web-push/subscribe',self.subscription)
+        with patch('web_push_worker.WebPushTransport') as mock:
+            mock.return_value.send.return_value=(201,'')
+            result=self.post('web-push/test',{})
+            self.assertEqual(result.status_code,200)
+            self.assertTrue(result.json['accepted'])
+            self.assertFalse(result.json['received'])
+            payload=mock.return_value.send.call_args.args[2]
+            self.assertEqual(payload['kind'],'test')
+            self.assertEqual(payload['receipt_id'],result.json['id'])
+            self.assertEqual(self.post('web-push/test',{}).status_code,429)
+            self.assertEqual(mock.return_value.send.call_count,1)
+        with application.app.app_context():
+            self.assertEqual(OrderMessage.query.count(),initial_messages)
+
+    def test_receipt_requires_csrf_owner_and_current_binding(self):
+        self.login();self.post('web-push/subscribe',self.subscription)
+        with patch('web_push_worker.WebPushTransport') as mock:
+            mock.return_value.send.return_value=(201,'')
+            id=self.post('web-push/test',{}).json['id']
+        path='web-push/receipts/'+id
+        self.assertEqual(self.client.post('/api/mobile/'+path,json={'display_requested':True}).status_code,400)
+        self.assertEqual(self.post(path,{'display_requested':'true'}).status_code,400)
+        self.assertEqual(self.post(path,{'display_requested':False}).status_code,200)
+        data=self.client.get('/api/mobile/'+path).json
+        self.assertTrue(data['received']);self.assertFalse(data['display_requested'])
+        self.assertEqual(self.post(path,{'display_requested':True}).status_code,200)
+        self.assertTrue(self.client.get('/api/mobile/'+path).json['display_requested'])
+        self.post('logout',{})
+        self.assertEqual(self.post(path,{'display_requested':True}).status_code,401)
+        self.login('admin-test-login','AdminPass123!');self.post('web-push/subscribe',self.subscription)
+        self.assertEqual(self.post(path,{'display_requested':True}).status_code,404)
+
+    def test_actual_chat_has_receipt_and_remote_errors_stay_distinct(self):
+        message_id=self.queued()
+        with application.app.app_context():
+            transport=Transport();deliver_batch(transport)
+            receipt=WebPushReceipt.query.filter(WebPushReceipt.delivery_id.isnot(None)).first()
+            self.assertIsNotNone(receipt)
+            self.assertTrue(receipt.accepted);self.assertIsNone(receipt.received_at)
+            self.assertEqual(transport.calls[0]['receipt_id'],receipt.id)
+        self.post('web-push/subscribe',self.subscription)
+        with patch('web_push_worker.WebPushTransport') as mock:
+            mock.return_value.send.return_value=(410,'PushServiceError')
+            data=self.post('web-push/test',{}).json
+            self.assertFalse(data['accepted']);self.assertEqual(data['error'],'PushServiceError:410')
+        with application.app.app_context():
+            self.assertFalse(WebPushSubscription.query.filter_by(endpoint=self.subscription['endpoint']).first().active)

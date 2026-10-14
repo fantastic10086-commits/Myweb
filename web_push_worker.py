@@ -2,9 +2,10 @@
 import os
 import time
 import json
+import uuid
 from pathlib import Path
 from datetime import datetime, timedelta
-from models import db, PI, User, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery
+from models import db, PI, User, OrderMessage, OrderReadState, WebPushSubscription, WebPushDelivery, WebPushReceipt
 from order_chat import user_can_chat
 from web_push import push_config, valid_endpoint
 
@@ -66,7 +67,12 @@ def deliver_batch(transport, limit=50, now=None):
                  device.auth_version==user.auth_version==row.auth_version and device.binding==row.binding and user_can_chat(user,pi))
         if not allowed or message.created_at < attempt_now-timedelta(days=1) or (read and read.last_read_id>=message.id):
             row.status='cancelled'; db.session.commit(); continue
-        payload={'title':'订单新消息','body':'订单中有新消息，点击查看。','order_id':pi.id}
+        receipt=WebPushReceipt.query.filter_by(delivery_id=row.id).first()
+        if not receipt:
+            receipt=WebPushReceipt(id=str(uuid.uuid4()),delivery_id=row.id,subscription_id=device.id,
+                user_id=row.user_id,binding=row.binding,auth_version=row.auth_version)
+            db.session.add(receipt);db.session.commit()
+        payload={'receipt_id':receipt.id,'title':'订单新消息','body':'订单中有新消息，点击查看。','order_id':pi.id}
         attempted+=1
         try:
             status,reason=transport.send(device,row,payload)
@@ -74,7 +80,7 @@ def deliver_batch(transport, limit=50, now=None):
             # Keep only the exception class, never endpoints, keys or message text.
             status,reason=503,'TransportError:'+type(exc).__name__[:80]
         if 200<=status<300:
-            row.status='sent';row.last_error=''
+            row.status='sent';row.last_error='';receipt.accepted=True
         elif status in (404,410):
             device.active=False;row.status='failed';row.last_error=reason or str(status)
         else:

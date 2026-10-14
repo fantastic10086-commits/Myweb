@@ -150,7 +150,7 @@ async function setupPush(){
     const sub=await pushRegistration.pushManager.getSubscription();
     if(sub&&Notification.permission==='granted'){
       await post('web-push/subscribe',sub.toJSON());
-      $('push-status').textContent='本机通知已登记；实际提醒还取决于服务器发送和手机通知设置。';$('push-disable').hidden=false;
+      $('push-status').textContent='本机通知已登记；实际提醒还取决于服务器发送和手机通知设置。';$('push-disable').hidden=false;$('push-remote-test').disabled=false;
     }else $('push-status').textContent=Notification.permission==='denied'?'通知已被拒绝，请在手机或浏览器设置中允许后再开启。':'可接收订单新消息，无需购买苹果开发者会员。';
     $('push-enable').disabled=false;
   }catch(e){$('push-status').textContent='通知连接失败：'+e.message;}
@@ -166,9 +166,32 @@ $('push-enable').onclick=async()=>{
     let sub=await pushRegistration.pushManager.getSubscription();
     if(sub&&sub.options.applicationServerKey){const old=new Uint8Array(sub.options.applicationServerKey);if(old.length!==key.length||old.some((v,i)=>v!==key[i])){await sub.unsubscribe();sub=null;}}
     sub=sub||await pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
-    await post('web-push/subscribe',sub.toJSON());$('push-disable').hidden=false;$('push-test').disabled=false;
+    await post('web-push/subscribe',sub.toJSON());$('push-disable').hidden=false;$('push-remote-test').disabled=false;$('push-test').disabled=false;
     $('push-status').textContent='本机通知已登记；请用另一账号发送订单消息进行验证。';
   }catch(e){$('push-status').textContent=e.message;}finally{$('push-enable').disabled=false;}
+};
+// This button uses the same remote transport as order messages, without creating a chat.
+let remoteTestRunning=false;
+$('push-remote-test').onclick=async()=>{
+  if(!state.user||remoteTestRunning)return;
+  const userId=state.user.id;remoteTestRunning=true;$('push-remote-test').disabled=true;
+  $('push-diagnostic').textContent='正在从服务器向本机发送测试通知…';
+  try{
+    let result=await post('web-push/test',{});
+    for(let attempt=0;attempt<=12;attempt++){
+      if(state.user?.id!==userId)return;
+      if(result.display_requested){$('push-diagnostic').textContent='手机已收到远程通知，并已请求系统显示。如果没有看到横幅，请检查手机通知设置与专注模式。';return;}
+      if(result.received){$('push-diagnostic').textContent='手机已收到远程通知，但系统显示通知失败。请检查本机通知权限。';return;}
+      if(!result.accepted){$('push-diagnostic').textContent='服务器发送失败：'+result.error;return;}
+      if(attempt===12)break;
+      $('push-diagnostic').textContent='推送服务已接受，正在等待这台手机回执…';
+      await new Promise(resolve=>setTimeout(resolve,2000));
+      if(state.user?.id!==userId)return;
+      result=await api('web-push/receipts/'+result.id);
+    }
+    $('push-diagnostic').textContent='推送服务已接受，但暂未收到手机回执。可能是远程通知未到达，或回执受网络/登录状态影响；本机测试成功不能代替远程接收。';
+  }catch(e){if(state.user?.id===userId)$('push-diagnostic').textContent=e.message;}
+  finally{remoteTestRunning=false;$('push-remote-test').disabled=!state.user;}
 };
 $('push-test').onclick=async()=>{
   if(!pushRegistration||!state.user)return;
@@ -183,7 +206,7 @@ $('push-test').onclick=async()=>{
 };
 $('push-disable').onclick=async()=>{
   $('push-disable').disabled=true;
-  try{await post('web-push/unsubscribe',{});await clearBrowserPush();$('push-disable').hidden=true;$('push-test').disabled=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
+  try{await post('web-push/unsubscribe',{});await clearBrowserPush();$('push-disable').hidden=true;$('push-remote-test').disabled=true;$('push-test').disabled=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
   catch(e){$('push-status').textContent=e.message;}finally{$('push-disable').disabled=false;}
 };
 async function clearBrowserPush(){

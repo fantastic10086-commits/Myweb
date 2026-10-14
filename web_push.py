@@ -3,10 +3,11 @@ import base64
 import os
 import re
 import uuid
+from datetime import datetime, timedelta
 from urllib.parse import urlsplit
 from flask import jsonify, request, session, abort
 from sqlalchemy.dialects.sqlite import insert
-from models import db, User, WebPushSubscription, WebPushDelivery
+from models import db, User, WebPushSubscription, WebPushDelivery, WebPushReceipt
 
 
 def valid_endpoint(endpoint):
@@ -116,4 +117,62 @@ def register_web_push(bp, current_user):
     @bp.post('/web-push/unsubscribe')
     def unsubscribe():
         disable_session_web_push()
+        return jsonify(ok=True)
+
+
+    def current_subscription():
+        user = current_user()
+        sub = WebPushSubscription.query.filter_by(binding=session.get('web_push_binding'),
+            user_id=user.id, active=True, auth_version=user.auth_version).first()
+        if not sub:
+            abort(409, description='请先在这台手机开启后台通知。')
+        return sub
+
+    def receipt_payload(row):
+        return dict(id=row.id, accepted=row.accepted, received=bool(row.received_at),
+                    display_requested=bool(row.displayed_at), error=row.error)
+
+    @bp.post('/web-push/test')
+    def remote_test():
+        # Explicit user gesture only; target this session's device, never other staff.
+        sub = current_subscription()
+        recent = WebPushReceipt.query.filter_by(subscription_id=sub.id, delivery_id=None).filter(
+            WebPushReceipt.created_at > datetime.utcnow()-timedelta(seconds=30)).first()
+        if recent:
+            abort(429, description='请等待 30 秒后再测试。')
+        row = WebPushReceipt(id=str(uuid.uuid4()), subscription_id=sub.id, user_id=sub.user_id,
+                             binding=sub.binding, auth_version=sub.auth_version)
+        db.session.add(row); db.session.commit()
+        from web_push_worker import WebPushTransport
+        try:
+            status, reason = WebPushTransport().send(sub, None,
+                {'order_id':0, 'kind':'test', 'receipt_id':row.id})
+            row.accepted = 200 <= status < 300
+            row.error = '' if row.accepted else 'PushServiceError:'+str(status)
+            if status in (404,410):
+                sub.active = False
+        except Exception as exc:
+            row.error = 'TransportError:'+type(exc).__name__[:60]
+        db.session.commit()
+        return jsonify(receipt_payload(row))
+
+    @bp.get('/web-push/receipts/<uuid:id>')
+    def receipt_status(id):
+        sub = current_subscription()
+        row = WebPushReceipt.query.filter_by(id=str(id), subscription_id=sub.id,
+            user_id=sub.user_id, binding=sub.binding, auth_version=sub.auth_version).first_or_404()
+        return jsonify(receipt_payload(row))
+
+    @bp.post('/web-push/receipts/<uuid:id>')
+    def acknowledge(id):
+        sub = current_subscription()
+        row = WebPushReceipt.query.filter_by(id=str(id), subscription_id=sub.id,
+            user_id=sub.user_id, binding=sub.binding, auth_version=sub.auth_version).first_or_404()
+        data = request.get_json(silent=True)
+        if not isinstance(data,dict) or not isinstance(data.get('display_requested'),bool):
+            abort(400)
+        row.received_at = row.received_at or datetime.utcnow()
+        if data['display_requested']:
+            row.displayed_at = row.displayed_at or datetime.utcnow()
+        db.session.commit()
         return jsonify(ok=True)

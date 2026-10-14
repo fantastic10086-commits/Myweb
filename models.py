@@ -1098,3 +1098,19 @@ class WebPushDelivery(db.Model):
     attempts = db.Column(db.Integer, nullable=False, default=0)
     next_attempt_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
     last_error = db.Column(db.String(200), nullable=False, default='')
+
+
+class WebPushReceipt(db.Model):
+    """Diagnostic metadata only; accepted/displayed never means the user saw it."""
+    __tablename__ = 'web_push_receipts'
+    id = db.Column(db.String(36), primary_key=True)
+    delivery_id = db.Column(db.Integer, db.ForeignKey('web_push_deliveries.id', ondelete='CASCADE'), unique=True)
+    subscription_id = db.Column(db.Integer, db.ForeignKey('web_push_subscriptions.id', ondelete='CASCADE'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    binding = db.Column(db.String(36), nullable=False)
+    auth_version = db.Column(db.Integer, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    accepted = db.Column(db.Boolean, nullable=False, default=False)
+    received_at = db.Column(db.DateTime)
+    displayed_at = db.Column(db.DateTime)
+    error = db.Column(db.String(80), nullable=False, default='')
