@@ -136,7 +136,7 @@ function renderUnread(data){
 }
 async function poll(){if(!state.user||document.hidden||state.polling||state.busy||state.sending)return;state.polling=true;const epoch=state.epoch;try{if(state.order&&state.tab==='chat'){await loadMessages('new');if(epoch!==state.epoch)return;await refreshChatPhotoStatus();}if(epoch!==state.epoch)return;const data=await api('unread');if(epoch!==state.epoch)return;renderUnread(data);}catch(e){error(e);}finally{state.polling=false;}}
 $('login-form').onsubmit=async event=>{event.preventDefault();const button=event.submitter;button.disabled=true;try{const boot=await api('session');state.csrf=boot.csrf_token;const body=new URLSearchParams({account:$('account').value.trim(),password:$('password').value});const data=await api('login',{method:'POST',body});state.user=data.user;state.csrf=data.csrf_token;$('password').value='';renderSession();setupPush();await route();await poll();}catch(e){error(e);}finally{button.disabled=false;}};
-$('logout').onclick=async()=>{if(state.busy||state.sending)return;saveWork();if([...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done)||(w.chatPhotos||[]).length)&&!confirm('有未发送消息或未完成上传，退出后不会保留。确认退出？'))return;try{await post('logout',{});await clearBrowserPush().catch(()=>{});clearPrivateState();state.order=null;state.jobs=[];$('message').value='';location.replace('/mobile/');}catch(e){error(e);}};
+$('logout').onclick=async()=>{if(state.busy||state.sending)return;saveWork();if([...state.work.values()].some(w=>w.draft.trim()||w.jobs.some(j=>!j.done)||(w.chatPhotos||[]).length)&&!confirm('有未发送消息或未完成上传，退出后不会保留。确认退出？'))return;try{pushGeneration++;await post('logout',{});await clearBrowserPush(false).catch(()=>{});clearPrivateState();state.order=null;state.jobs=[];$('message').value='';location.replace('/mobile/');}catch(e){error(e);}};
 $('search-form').onsubmit=e=>{e.preventDefault();state.query=$('search').value.trim();state.epoch++;loadOrders().catch(error);};
 $('refresh').onclick=()=>{state.epoch++;loadOrders().catch(error);};
 for(const [id,fn] of [['orders-more',()=>loadOrders(true)],['photos-more',()=>loadPhotos(true)],['photos-refresh',()=>loadPhotos()],['messages-more',()=>loadMessages('older')],['retry',uploadJobs]])$(id).onclick=async()=>{$(id).disabled=true;try{await fn();}catch(e){error(e);}finally{$(id).disabled=false;}};
@@ -150,41 +150,52 @@ setInterval(poll,5000);
 (async()=>{try{const boot=await api('session');state.csrf=boot.csrf_token;state.user=boot.user;renderSession();queueAccountLookup(0);setupPush();await route();await poll();}catch(e){renderSession();error(e);}})();
 
 $('notification-settings-link').onclick=event=>{event.preventDefault();$('notification-settings').scrollIntoView({block:'start'});};
-let pushRegistration=null, pushPublicKey=null;
+let pushRegistration=null, pushPublicKey=null, pushGeneration=0;
+function pushOptedOut(){try{return localStorage.getItem('pi-push-off-'+state.user.id)==='1';}catch(_){return false;}}
+function setPushOptOut(off){try{const key='pi-push-off-'+state.user.id;if(off)localStorage.setItem(key,'1');else localStorage.removeItem(key);}catch(_){}}
+async function registerCurrentPush(current){
+  const encoded=pushPublicKey.replace(/-/g,'+').replace(/_/g,'/');
+  const key=Uint8Array.from(atob(encoded+'='.repeat((4-encoded.length%4)%4)),c=>c.charCodeAt(0));
+  let sub=await pushRegistration.pushManager.getSubscription();if(!current())return false;
+  if(sub&&sub.options.applicationServerKey){const old=new Uint8Array(sub.options.applicationServerKey);if(old.length!==key.length||old.some((v,i)=>v!==key[i])){await sub.unsubscribe();sub=null;if(!current())return false;}}
+  sub=sub||await pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
+  if(!current())return false;
+  await post('web-push/subscribe',sub.toJSON());if(!current())return false;
+  $('push-disable').hidden=false;$('push-remote-test').disabled=false;$('push-test').disabled=false;
+  $('push-status').textContent='后台通知已开启，重新登录后会自动恢复。';
+  return true;
+}
 async function setupPush(){
   if(!state.user)return;
+  const generation=++pushGeneration,userId=state.user.id,current=()=>generation===pushGeneration&&state.user?.id===userId;
   const ios=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   if(ios&&!navigator.standalone&&!matchMedia('(display-mode: standalone)').matches){$('push-status').textContent='请先在 Safari 中添加到主屏幕，再从桌面打开并开启通知。';return;}
   if(!window.isSecureContext||!('serviceWorker' in navigator)||!('PushManager' in window)||!('Notification' in window)){$('push-status').textContent='此浏览器暂不支持后台通知，页面内提醒仍可用。';return;}
   try{
-    const config=await api('web-push/config');if(!state.user)return;
+    const config=await api('web-push/config');if(!current())return;
     if(!config.enabled){$('push-status').textContent=config.message;return;}
     pushPublicKey=config.public_key;
     pushRegistration=await navigator.serviceWorker.register('/mobile/sw.js',{scope:'/mobile/'});
-    pushRegistration=await navigator.serviceWorker.ready;
+    pushRegistration=await navigator.serviceWorker.ready;if(!current())return;
     $('push-test').disabled=Notification.permission!=='granted';
-    const sub=await pushRegistration.pushManager.getSubscription();
-    if(sub&&Notification.permission==='granted'){
-      await post('web-push/subscribe',sub.toJSON());
-      $('push-status').textContent='本机通知已登记；实际提醒还取决于服务器发送和手机通知设置。';$('push-disable').hidden=false;$('push-remote-test').disabled=false;
-    }else $('push-status').textContent=Notification.permission==='denied'?'通知已被拒绝，请在手机或浏览器设置中允许后再开启。':'可接收订单新消息，无需购买苹果开发者会员。';
-    $('push-enable').disabled=false;
-  }catch(e){$('push-status').textContent='通知连接失败：'+e.message;}
+    if(pushOptedOut()){
+      $('push-status').textContent='你已在本机关闭此账号的后台通知；点击开启即可恢复。';
+    }else if(Notification.permission==='granted'){
+      await registerCurrentPush(current);
+    }else $('push-status').textContent=Notification.permission==='denied'?'通知已被拒绝，请在手机设置中允许；允许后重新打开会自动登记。':'首次使用请点“开启后台通知”并允许，以后登录自动恢复。';
+  }catch(e){if(current())$('push-status').textContent='自动开启通知失败，请点“开启后台通知”重试：'+e.message;}
+  finally{if(current())$('push-enable').disabled=false;}
 }
 $('push-enable').onclick=async()=>{
   if(!pushRegistration||!pushPublicKey)return;
   // Must be invoked directly by a user gesture on iOS.
-  const permissionPromise=Notification.requestPermission();$('push-enable').disabled=true;
+  const generation=++pushGeneration,userId=state.user.id,current=()=>generation===pushGeneration&&state.user?.id===userId;
+  const permissionPromise=Notification.permission==='granted'?Promise.resolve('granted'):Notification.requestPermission();$('push-enable').disabled=true;
   try{
     if(await permissionPromise!=='granted')throw new Error('未获得通知权限，页面内提醒仍可使用。');
-    const encoded=pushPublicKey.replace(/-/g,'+').replace(/_/g,'/');
-    const key=Uint8Array.from(atob(encoded+'='.repeat((4-encoded.length%4)%4)),c=>c.charCodeAt(0));
-    let sub=await pushRegistration.pushManager.getSubscription();
-    if(sub&&sub.options.applicationServerKey){const old=new Uint8Array(sub.options.applicationServerKey);if(old.length!==key.length||old.some((v,i)=>v!==key[i])){await sub.unsubscribe();sub=null;}}
-    sub=sub||await pushRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:key});
-    await post('web-push/subscribe',sub.toJSON());$('push-disable').hidden=false;$('push-remote-test').disabled=false;$('push-test').disabled=false;
-    $('push-status').textContent='本机通知已登记；请用另一账号发送订单消息进行验证。';
-  }catch(e){$('push-status').textContent=e.message;}finally{$('push-enable').disabled=false;}
+    if(!current())return;
+    if(await registerCurrentPush(current))setPushOptOut(false);
+  }catch(e){if(current())$('push-status').textContent=e.message;}finally{if(current())$('push-enable').disabled=false;}
 };
 // This button uses the same remote transport as order messages, without creating a chat.
 let remoteTestRunning=false;
@@ -221,14 +232,14 @@ $('push-test').onclick=async()=>{
   }catch(e){$('push-status').textContent='本机通知测试失败：'+e.message;}
 };
 $('push-disable').onclick=async()=>{
-  $('push-disable').disabled=true;
-  try{await post('web-push/unsubscribe',{});await clearBrowserPush();$('push-disable').hidden=true;$('push-remote-test').disabled=true;$('push-test').disabled=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
+  $('push-disable').disabled=true;pushGeneration++;
+  try{await post('web-push/unsubscribe',{});setPushOptOut(true);await clearBrowserPush();$('push-disable').hidden=true;$('push-remote-test').disabled=true;$('push-test').disabled=true;$('push-status').textContent='本机后台通知已关闭，页面内提醒仍可用。';}
   catch(e){$('push-status').textContent=e.message;}finally{$('push-disable').disabled=false;}
 };
-async function clearBrowserPush(){
+async function clearBrowserPush(unsubscribe=true){
   if(!('serviceWorker' in navigator))return;
   const reg=await navigator.serviceWorker.getRegistration('/mobile/');if(!reg)return;
-  const sub=await reg.pushManager.getSubscription();if(sub)await sub.unsubscribe();
+  const sub=await reg.pushManager.getSubscription();if(sub&&unsubscribe)await sub.unsubscribe();
   for(const notification of await reg.getNotifications())notification.close();
 }
 if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',event=>{

@@ -198,3 +198,24 @@ class WebPushTests(MobilePhotosTests):
                 photos.query.filter_by.return_value.count.return_value=2
                 self.assertEqual(message_preview(message,pi)['body'],'发送了 2 张照片')
             db.session.rollback()
+
+
+    def test_relogin_rebinds_retained_browser_subscription_safely(self):
+        self.queued()
+        business_client,business_csrf=self.client,self.csrf
+        self.client,self.csrf=self.admin_client,self.admin_csrf
+        with application.app.app_context():
+            old_binding=WebPushSubscription.query.filter_by(endpoint=self.subscription['endpoint']).first().binding
+        self.post('logout',{})
+        self.login('admin-test-login','AdminPass123!')
+        self.assertEqual(self.post('web-push/subscribe',self.subscription).status_code,200)
+        with application.app.app_context():
+            sub=WebPushSubscription.query.filter_by(endpoint=self.subscription['endpoint']).first()
+            self.assertTrue(sub.active);self.assertNotEqual(sub.binding,old_binding)
+            transport=Transport();deliver_batch(transport)
+            self.assertEqual(transport.calls,[], 'old binding notifications stay cancelled')
+        self.client,self.csrf=business_client,business_csrf
+        self.message()
+        with application.app.app_context():
+            transport=Transport();deliver_batch(transport)
+            self.assertEqual(len(transport.calls),1, 'new messages resume after automatic rebind')
