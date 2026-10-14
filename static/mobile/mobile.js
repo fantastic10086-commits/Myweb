@@ -56,7 +56,7 @@ setInterval(()=>{
 },500);
 queueAccountLookup(0);
 function dateText(value){ const d=new Date(value);return isNaN(d)?'':d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }
-function orderLink(o,count=state.unread.get(o.id)||0){const a=el('a',undefined,'card order');a.dataset.orderId=o.id;a.href='#order/'+o.id+'/photos';a.append(el('span',o.number,'eyebrow'),el('strong',o.customer_name+(o.customer_country?'（'+o.customer_country+'）':'')),el('span','已回款 '+o.currency+' '+Number(o.received_amount).toFixed(2),'muted'));if(count)a.append(el('span',count+' 条未读','badge'));return a;}
+function orderLink(o,count=state.unread.get(o.id)||0){const a=el('a',undefined,'card order');a.dataset.orderId=o.id;a.href='#order/'+o.id+'/photos';a.append(el('span',o.number,'eyebrow'),el('strong',o.customer_name+(o.customer_country?'（'+o.customer_country+'）':'')),el('span','已回款 '+o.currency+' '+Number(o.received_amount).toFixed(2)+' · 业务员：'+(o.salesperson||'未分配'),'muted'));if(count)a.append(el('span',count+' 条未读','badge'));return a;}
 async function loadOrders(append=false){const epoch=state.epoch;const page=append?state.page+1:1;const data=await api('orders?q='+encodeURIComponent(state.query)+'&page='+page);if(epoch!==state.epoch)return;if(!append)$('order-list').replaceChildren();state.page=page;for(const o of data.orders)$('order-list').append(orderLink(o));if(!data.orders.length&&!append)$('order-list').append(el('p','暂无符合条件的订单。','muted'));$('orders-more').hidden=!data.has_more;}
 async function route(){
   if(!state.user)return;

@@ -106,6 +106,7 @@ def register_mobile_photos(app, *, current_user, is_admin, login, customer_acces
     def order_payload(pi):
         return {'id': pi.id, 'number': pi.pi_number, 'customer_name': pi.customer.name,
                 'customer_country': (pi.customer.country or '').strip(),
+                'salesperson': (pi.salesperson or '').strip(),
                 'received_amount': pi.received_amount or 0, 'currency': pi.currency or 'USD'}
 
     def photo_payload(record):
