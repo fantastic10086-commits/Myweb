@@ -3286,9 +3286,6 @@ def customer_detail(id):
             Product.name.ilike(f'%{product}%')
         ).distinct()
 
-    tracking_no_filter = request.args.get('tracking_no', '').strip()
-    if tracking_no_filter:
-        query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
     pis = query.order_by(PI.created_at.desc()).all()
     follow_ups = CustomerFollowUp.query.filter_by(customer_id=id).order_by(
         CustomerFollowUp.contacted_at.desc(), CustomerFollowUp.id.desc()
@@ -6128,6 +6125,9 @@ def pi_list():
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
+    tracking_no_filter = request.args.get('tracking_no', '').strip()
+    if tracking_no_filter:
+        query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
     pis = query.order_by(PI.created_at.desc()).all()
     if order_status:
         expected_order_status = order_labels[order_status]
