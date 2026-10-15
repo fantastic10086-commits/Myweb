@@ -235,13 +235,13 @@
                                    class="pi-list-workflow-stage is-{{ procurement_state }} is-action"
                                    title="{{ procurement_text }}；点击{{ '查看' if pi.procurement_confirmed or pi.shipping_completed else '处理' }}采购单">
                                 {% else %}
-                                <span role="listitem" class="pi-list-workflow-stage is-{{ procurement_state }}"
-                                      title="{{ procurement_text }}{{ '；尚未回款，不能开始采购' if total_received <= 0 else '；仅管理员可以处理采购' }}">
+                                <button type="button" role="listitem" class="pi-list-workflow-stage is-{{ procurement_state }} is-action"
+                                        onclick="openProcurementProgress({{ pi.id }})" title="点击查看产品采购进度">
                                 {% endif %}
                                     <span class="pi-list-workflow-dot"><i class="bi bi-cart-check"></i></span>
                                     <span class="pi-list-workflow-label">采购</span>
                                     <span class="pi-list-workflow-status">{{ procurement_text }}</span>
-                                {% if is_admin and total_received > 0 %}</a>{% else %}</span>{% endif %}
+                                {% if is_admin and total_received > 0 %}</a>{% else %}</button>{% endif %}
 
                                 {% set packing_state = 'complete' if pi.packing_list and pi.packing_list.is_completed else ('partial' if pi.packing_list else 'pending') %}
                                 {% set packing_text = '装箱完成' if packing_state == 'complete' else ('装箱草稿' if packing_state == 'partial' else '未装箱') %}
@@ -345,6 +345,13 @@
     <div class="modal-dialog modal-xl"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">PI 预览</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
+    </div></div>
+</div>
+<div class="modal fade" id="procurementProgressModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">产品采购进度 <small id="procurementProgressNumber"></small></h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body" id="procurementProgressBody"></div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
     </div></div>
 </div>
 <div class="modal fade" id="shippingModal" tabindex="-1" aria-hidden="true">
@@ -602,6 +609,41 @@ document.getElementById('shippingModal').addEventListener('paste', function(even
         }
     }
 });
+var procurementProgressRequest = 0;
+async function openProcurementProgress(piId) {
+    var revision = ++procurementProgressRequest;
+    var body = document.getElementById('procurementProgressBody');
+    document.getElementById('procurementProgressNumber').textContent = '';
+    body.textContent = '正在读取……';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('procurementProgressModal')).show();
+    try {
+        var response = await fetch('/api/pi/' + piId + '/procurement-progress');
+        if (!response.ok) throw new Error('无法读取采购进度，请重试。');
+        var data = await response.json();
+        if (revision !== procurementProgressRequest) return;
+        document.getElementById('procurementProgressNumber').textContent = data.pi_number;
+        body.replaceChildren();
+        var wrapper = document.createElement('div');
+        wrapper.className = 'table-responsive';
+        var table = document.createElement('table');
+        table.className = 'table table-sm align-middle';
+        var header = table.createTHead().insertRow();
+        ['产品 / 编码 / 规格', 'PI数量', '已采购', '未采购', '状态'].forEach(function(label) {
+            var th = document.createElement('th'); th.textContent = label; header.appendChild(th);
+        });
+        var tbody = table.createTBody();
+        data.items.forEach(function(item) {
+            var row = tbody.insertRow();
+            [ [item.name, item.code, item.specification].filter(Boolean).join(' · '), item.quantity, item.purchased, item.remaining, item.status ].forEach(function(value) {
+                var cell = row.insertCell(); cell.textContent = value; cell.style.overflowWrap = 'anywhere';
+            });
+        });
+        wrapper.appendChild(table); body.appendChild(wrapper);
+        if (!data.items.length) body.textContent = '此 PI 暂无产品。';
+    } catch (error) {
+        if (revision === procurementProgressRequest) body.textContent = error.message;
+    }
+}
 function renderShippingRecord(data) {
     var completed = data.shipping_completed === true;
     var canShip = data.can_ship === true;

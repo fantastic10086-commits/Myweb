@@ -9389,6 +9389,34 @@ def api_pi_shipping_complete(pi_id):
                     'version': pi.version})
 
 
+@app.route('/api/pi/<int:pi_id>/procurement-progress')
+@login_required
+def api_pi_procurement_progress(pi_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    purchased = dict(db.session.query(
+        Procurement.pi_item_id, func.sum(Procurement.quantity)
+    ).filter(
+        Procurement.pi_id == pi.id,
+        Procurement.supplier_id.isnot(None),
+        Procurement.unit_price >= 0,
+    ).group_by(Procurement.pi_item_id).all())
+    items = []
+    for item in sorted(pi.items, key=lambda item: (item.sort_order or 0, item.id)):
+        quantity = int(item.quantity or 0)
+        actual = int(purchased.get(item.id, 0) or 0)
+        items.append({
+            'name': item.display_name,
+            'code': item.display_code,
+            'specification': item.display_specification,
+            'quantity': quantity,
+            'purchased': actual,
+            'remaining': max(quantity - actual, 0),
+            'status': '已采购' if quantity > 0 and actual >= quantity else ('部分采购' if actual > 0 else '未采购'),
+        })
+    return jsonify({'pi_number': pi.pi_number, 'items': items})
+
+
 @app.route('/api/procurement/<int:pi_id>')
 @admin_required
 def api_procurement_get(pi_id):
