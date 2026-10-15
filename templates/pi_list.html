@@ -3,6 +3,14 @@
 
 {% block extra_head %}
 <style>
+    #paymentModal .payment-history-table { min-width: 920px; table-layout: fixed; font-size: .9rem; }
+    #paymentModal .payment-history-table th { white-space: nowrap; background: #f8f9fa; }
+    #paymentModal .payment-history-table th,
+    #paymentModal .payment-history-table td { padding: .65rem .5rem; vertical-align: middle; }
+    #paymentModal .payment-history-table td { overflow-wrap: anywhere; }
+    #paymentModal .payment-history-table .btn { white-space: nowrap; }
+    #paymentModal .payment-history-table .payment-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
+    #paymentModal .payment-history-table .payment-note { white-space: pre-wrap; background: #f8f9fa; color: #6c757d; }
     .pi-list-table-wrap { overflow: visible; }
     .pi-list-table { width: 100%; min-width: 1280px; table-layout: fixed; }
     .pi-list-table > :not(caption) > * > * { padding: .8rem .65rem; }
@@ -507,7 +515,7 @@
     </div></div>
 </div>
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title" id="payModalTitle">登记回款</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body">
             <p>PI：<strong id="payPINumber"></strong>｜总额：<strong id="payPITotal"></strong></p>
@@ -1215,10 +1223,17 @@ function viewPayments(id) {
             title.textContent = '历史记录';
             history.appendChild(title);
             var table = document.createElement('table');
-            table.className = 'table table-sm';
+            table.className = 'table table-sm payment-history-table mb-0';
+            var columns = document.createElement('colgroup');
+            [4, 23, 12, 9, 15, 10, 14, 13].forEach(function(width) {
+                var col = document.createElement('col');
+                col.style.width = width + '%';
+                columns.appendChild(col);
+            });
+            table.appendChild(columns);
             var thead = table.createTHead();
             var header = thead.insertRow();
-            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '备注', '日期', '操作'].forEach(function(label) {
+            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '日期', '操作'].forEach(function(label) {
                 var th = document.createElement('th');
                 th.textContent = label;
                 header.appendChild(th);
@@ -1246,7 +1261,7 @@ function viewPayments(id) {
                         if (!this.previewRow) {
                             var previewRow = document.createElement('tr');
                             var previewCell = previewRow.insertCell();
-                            previewCell.colSpan = 9;
+                            previewCell.colSpan = 8;
                             previewCell.className = 'text-center bg-light p-2';
                             var image = document.createElement('img');
                             image.alt = '回款凭证';
@@ -1276,10 +1291,6 @@ function viewPayments(id) {
                 } else {
                     attachmentCell.textContent = '—';
                 }
-                var noteCell = row.insertCell();
-                noteCell.textContent = pmts[i].note || '—';
-                noteCell.style.whiteSpace = 'pre-wrap';
-                noteCell.style.overflowWrap = 'anywhere';
                 var dateCell = row.insertCell();
                 dateCell.textContent = pmts[i].created_at || '-';
                 var actionCell = row.insertCell();
@@ -1302,8 +1313,20 @@ function viewPayments(id) {
                     };
                 })(pmts[i]);
                 actionCell.appendChild(deleteButton);
+                row.cells[2].className = 'payment-amount';
+                row.cells[3].className = 'payment-amount';
+                if (pmts[i].note) {
+                    var noteRow = tbody.insertRow();
+                    var noteCell = noteRow.insertCell();
+                    noteCell.colSpan = 8;
+                    noteCell.className = 'payment-note';
+                    noteCell.textContent = '备注：' + pmts[i].note;
+                }
             }
-            history.appendChild(table);
+            var tableWrap = document.createElement('div');
+            tableWrap.className = 'table-responsive';
+            tableWrap.appendChild(table);
+            history.appendChild(tableWrap);
         }
         new bootstrap.Modal(document.getElementById('paymentModal')).show();
     });
