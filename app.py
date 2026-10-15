@@ -3286,6 +3286,9 @@ def customer_detail(id):
             Product.name.ilike(f'%{product}%')
         ).distinct()
 
+    tracking_no_filter = request.args.get('tracking_no', '').strip()
+    if tracking_no_filter:
+        query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
     pis = query.order_by(PI.created_at.desc()).all()
     follow_ups = CustomerFollowUp.query.filter_by(customer_id=id).order_by(
         CustomerFollowUp.contacted_at.desc(), CustomerFollowUp.id.desc()
@@ -6143,7 +6146,7 @@ def pi_list():
         'RMB': round(sum(pi.grand_total for pi in pis if pi.currency == 'RMB'), 2),
     }
 
-    resp = make_response(render_template('pi_list.html', customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
+    resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
                            payment_status=payment_status,
