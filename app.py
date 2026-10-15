@@ -6098,6 +6098,9 @@ def pi_list():
             func.coalesce(PI.received_amount, 0) <= 0,
         )
 
+    if customs_status:
+        query = query.filter(or_(PI.paid.is_(True), func.coalesce(PI.received_amount, 0) > 0))
+
     if customs_status == 'required':
         query = query.filter(PI.customs_required.is_(True))
     elif customs_status == 'not_required':
@@ -7233,6 +7236,10 @@ def pi_toggle_paid(id):
     received_str = request.form.get('received_amount', '').strip()
     fee_str = request.form.get('fee', '0').strip()
     order_no = request.form.get('order_no', '').strip()
+    payment_note = request.form.get('note', '').strip()
+    if len(payment_note) > 200:
+        flash('回款备注不能超过 200 个字符。', 'danger')
+        return redirect(request.referrer or url_for('pi_list'))
     order_no_normalized = _normalize_payment_reference(order_no)
     idempotency_key = request.form.get('idempotency_key', '').strip()
     receiving_account_id = request.form.get('receiving_account_id', type=int)
@@ -7310,6 +7317,7 @@ def pi_toggle_paid(id):
         receiving_account_name=receiving_account.name,
         receiving_account_currency=pi_currency,
         attachment=attachment_name,
+        note=payment_note,
     )
     db.session.add(payment)
     try:
@@ -7465,6 +7473,7 @@ def api_pi_payments(id):
             'receiving_account_name': p.receiving_account_name or '',
             'receiving_account_currency': p.receiving_account_currency or '',
             'has_attachment': bool(p.attachment),
+            'note': p.note or '',
             'created_at': p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '',
         } for p in payments]
     })

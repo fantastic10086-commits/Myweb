@@ -510,6 +510,7 @@
                     </select>
                     <small class="text-muted" id="payAccountHelp">仅显示与 PI 币种一致的账户。</small>
                 </div>
+                <div class="mb-3"><label class="form-label" for="payNote">备注（选填）</label><textarea class="form-control" name="note" id="payNote" rows="2" maxlength="200" placeholder="例如定金、尾款或其他回款说明，最多 200 字"></textarea></div>
                 <div class="mb-3"><label class="form-label">回款流水号 <span class="text-danger">*</span></label><input type="text" class="form-control" name="order_no" id="payOrderNo" required placeholder="订单号 / 银行流水号"><small class="text-muted">阿里巴巴信保订单号、支付宝订单号、微信订单号或银行流水号</small></div>
                 <div class="mb-3">
                     <label class="form-label" for="payAttachment">回款凭证图片 <span class="text-danger">*</span></label>
@@ -1115,6 +1116,7 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     document.getElementById('payPITotal').textContent = sym + total.toFixed(2);
     document.getElementById('payCurrency').textContent = currency;
     document.getElementById('payOrderNo').value = '';
+    document.getElementById('payNote').value = '';
     document.getElementById('payAmount').value = total.toFixed(2);
     document.getElementById('payFee').value = '0';
     clearPaymentAttachment();
@@ -1144,6 +1146,7 @@ function viewPayments(id) {
         document.getElementById('payPITotal').textContent = sym + grandTotal.toFixed(2) + '｜已收：' + sym + data.received.toFixed(2);
         document.getElementById('payCurrency').textContent = data.currency;
         document.getElementById('payOrderNo').value = '';
+    document.getElementById('payNote').value = '';
         document.getElementById('payFee').value = '0';
         clearPaymentAttachment();
         populatePaymentAccounts(data.currency, data.default_account_id);
@@ -1168,7 +1171,7 @@ function viewPayments(id) {
             table.className = 'table table-sm';
             var thead = table.createTHead();
             var header = thead.insertRow();
-            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '日期', '操作'].forEach(function(label) {
+            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '备注', '日期', '操作'].forEach(function(label) {
                 var th = document.createElement('th');
                 th.textContent = label;
                 header.appendChild(th);
@@ -1196,7 +1199,7 @@ function viewPayments(id) {
                         if (!this.previewRow) {
                             var previewRow = document.createElement('tr');
                             var previewCell = previewRow.insertCell();
-                            previewCell.colSpan = 8;
+                            previewCell.colSpan = 9;
                             previewCell.className = 'text-center bg-light p-2';
                             var image = document.createElement('img');
                             image.alt = '回款凭证';
@@ -1226,6 +1229,10 @@ function viewPayments(id) {
                 } else {
                     attachmentCell.textContent = '—';
                 }
+                var noteCell = row.insertCell();
+                noteCell.textContent = pmts[i].note || '—';
+                noteCell.style.whiteSpace = 'pre-wrap';
+                noteCell.style.overflowWrap = 'anywhere';
                 var dateCell = row.insertCell();
                 dateCell.textContent = pmts[i].created_at || '-';
                 var actionCell = row.insertCell();
