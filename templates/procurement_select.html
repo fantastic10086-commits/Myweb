@@ -5,12 +5,13 @@
 <style>
 .procurement-list-table {
     table-layout: fixed;
-    min-width: 1420px;
+    width: 100%;
 }
 .procurement-list-table th,
 .procurement-list-table td {
-    white-space: nowrap;
-    padding: 0.65rem;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 0.65rem 0.5rem;
 }
 .procurement-list-table .proc-customer-cell,
 .procurement-list-table .proc-country-cell,
@@ -19,13 +20,8 @@
     overflow-wrap: anywhere;
 }
 .procurement-list-table .proc-number-cell {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.procurement-list-table .proc-products-col,
-.procurement-list-table .proc-products-cell {
-    width: 260px;
-    max-width: 260px;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 .procurement-list-table .proc-products-cell {
     overflow: hidden;
@@ -42,6 +38,32 @@
 }
 .procurement-list-table .proc-action-cell .btn {
     white-space: nowrap;
+}
+/* Narrow desktops and zoomed browsers use labeled cards so actions stay visible. */
+@media (max-width: 1199.98px) {
+    .procurement-list-table,
+    .procurement-list-table tbody { display: block; width: 100%; }
+    .procurement-list-table colgroup,
+    .procurement-list-table thead { display: none; }
+    .procurement-list-table tbody tr {
+        display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+        padding: .65rem; border-bottom: 1px solid #dee2e6;
+    }
+    .procurement-list-table tbody td {
+        display: block; min-width: 0; border: 0; text-align: left !important;
+        padding: .4rem .5rem;
+    }
+    .procurement-list-table tbody td::before {
+        content: attr(data-label); display: block; color: #6c757d;
+        font-size: .75rem; margin-bottom: .2rem;
+    }
+    .procurement-list-table .proc-action-cell {
+        grid-column: 1 / -1; text-align: right !important;
+    }
+    .procurement-list-table .proc-action-cell::before { display: none; }
+}
+@media (max-width: 575.98px) {
+    .procurement-list-table tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>
 {% endblock %}
@@ -64,16 +86,16 @@
         <div class="table-responsive">
             <table class="table table-hover table-sm mb-0 align-middle procurement-list-table">
                 <colgroup>
-                    <col style="width:185px;">
-                    <col style="width:220px;">
-                    <col style="width:100px;">
-                    <col style="width:115px;">
-                    <col class="proc-products-col">
-                    <col style="width:135px;">
-                    <col style="width:65px;">
-                    <col style="width:100px;">
-                    <col style="width:90px;">
-                    <col style="width:125px;">
+                    <col style="width:14%;">
+                    <col style="width:16%;">
+                    <col style="width:7%;">
+                    <col style="width:9%;">
+                    <col style="width:15%;">
+                    <col style="width:11%;">
+                    <col style="width:5%;">
+                    <col style="width:8%;">
+                    <col style="width:6%;">
+                    <col style="width:9%;">
                 </colgroup>
                 <thead class="table-light">
                     <tr>
@@ -86,17 +108,17 @@
                         <th class="text-center">回款</th>
                         <th>订单进度</th>
                         <th>业务员</th>
-                        <th></th>
+                        <th>操作</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for p in pis %}
                     <tr>
-                        <td class="proc-number-cell" title="{{ p.pi_number }}"><strong>{{ p.pi_number }}</strong></td>
-                        <td class="proc-customer-cell">{{ p.customer.name if p.customer else '—' }}</td>
-                        <td class="proc-country-cell"><small>{{ p.customer.country if p.customer else '-' }}</small></td>
-                        <td>{{ p.issue_date }}</td>
-                        <td class="proc-products-cell">
+                        <td data-label="PI 编号" class="proc-number-cell" title="{{ p.pi_number }}"><strong>{{ p.pi_number }}</strong></td>
+                        <td data-label="客户" class="proc-customer-cell">{{ p.customer.name if p.customer else '—' }}</td>
+                        <td data-label="国家" class="proc-country-cell"><small>{{ p.customer.country if p.customer else '-' }}</small></td>
+                        <td data-label="日期">{{ p.issue_date }}</td>
+                        <td data-label="产品" class="proc-products-cell">
                             <strong class="proc-products-summary">{{ p.items|length }} 项产品</strong>
                             {% set item_names = [] %}
                             {% for item in p.items %}
@@ -105,21 +127,21 @@
                             {% set display = item_names|join(', ') %}
                             {% if display %}<small class="text-muted proc-products-names" title="{{ display|e }}">{{ display }}</small>{% endif %}
                         </td>
-                        <td>{{ p.currency }} {{ '%.2f'|format(p.grand_total) }}</td>
-                        <td class="text-center">
+                        <td data-label="总额">{{ p.currency }} {{ '%.2f'|format(p.grand_total) }}</td>
+                        <td data-label="回款" class="text-center">
                             {% if p.paid %}
                             <span class="badge bg-success" title="已全额回款">✓</span>
                             {% else %}
                             <span class="badge bg-warning text-dark" title="部分回款：{{ p.currency }} {{ '%.2f'|format(p.received_amount) }} / {{ p.currency }} {{ '%.2f'|format(p.grand_total) }}">◐</span>
                             {% endif %}
                         </td>
-                        <td>
+                        <td data-label="订单进度">
                             {% set status = p.effective_procurement_status %}
                             {% set status_class = {'待采购':'warning', '部分采购':'info', '采购完成':'primary', '发货完成':'success'}.get(status, 'secondary') %}
                             <span class="badge bg-{{ status_class }}{% if status in ['待采购', '部分采购'] %} text-dark{% endif %}">{{ status }}</span>
                         </td>
-                        <td class="proc-salesperson-cell">{{ p.salesperson }}</td>
-                        <td class="text-end proc-action-cell">
+                        <td data-label="业务员" class="proc-salesperson-cell">{{ p.salesperson }}</td>
+                        <td data-label="操作" class="text-end proc-action-cell">
                             {% if p.id in pi_complete %}
                             <a href="{{ url_for('procurement_page', pi_id=p.id) }}" class="btn btn-sm btn-outline-secondary">
                                 <i class="bi bi-check-lg"></i> 查看采购
