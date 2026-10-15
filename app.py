@@ -3764,6 +3764,7 @@ def fees_report():
             'id': pi.id,
             'pi_number': pi.pi_number,
             'customer': pi.customer.name if pi.customer else '未知客户',
+            'salesperson': pi.salesperson or '',
             'country': pi.customer.country if pi.customer else '',
             'currency': currency,
             'exchange_rate': exchange_rate,

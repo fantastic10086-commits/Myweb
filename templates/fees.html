@@ -180,6 +180,7 @@ function deleteExpense(id) {
                         <td>
                             <strong>{{ p.pi_number }}</strong>
                             <div class="profit-muted">{{ p.customer }}{% if p.country %} · {{ p.country }}{% endif %}</div>
+                            <div class="profit-muted">业务员：{{ p.salesperson or '未填写' }}</div>
                             <div class="profit-muted">{{ p.date }} · {% if p.paid %}已付清{% else %}部分回款 {{ p.sym }}{{ '%.2f'|format(p.received) }}{% endif %}</div>
                         </td>
                         <td class="text-end">
