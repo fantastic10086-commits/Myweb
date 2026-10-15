@@ -24,6 +24,7 @@ document.addEventListener('paste', function(e) {
     }
 });
 </script>
+<script src="{{ url_for('static', filename='customer_contacts.js') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -56,21 +57,7 @@ document.addEventListener('paste', function(e) {
                     <input type="text" class="form-control" id="country" name="country" list="country_list" autocomplete="off"
                            value="{{ customer.country if customer else '' }}" placeholder="可输入中文或英文……">
                 </div>
-                <div class="col-md-6">
-                    <label for="contact_person" class="form-label">联系人</label>
-                    <input type="text" class="form-control" id="contact_person" name="contact_person"
-                           value="{{ customer.contact_person if customer else '' }}" placeholder="联系人姓名">
-                </div>
-                <div class="col-md-6">
-                    <label for="email" class="form-label">邮箱</label>
-                    <input type="email" class="form-control" id="email" name="email"
-                           value="{{ customer.email if customer else '' }}" placeholder="email@example.com">
-                </div>
-                <div class="col-md-6">
-                    <label for="phone" class="form-label">电话</label>
-                    <input type="text" class="form-control" id="phone" name="phone"
-                           value="{{ customer.phone if customer else '' }}" placeholder="+1-xxx-xxx-xxxx">
-                </div>
+                {% include '_customer_contacts_editor.html' %}
                 <div class="col-md-6">
                     <label for="salesperson" class="form-label">业务员 <span class="text-danger">*</span></label>
                     <select class="form-select" id="salesperson" name="salesperson" required>

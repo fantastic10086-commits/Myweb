@@ -385,7 +385,7 @@ def _migrate_db():
     )
     pi_exchange_rate_was_missing = 'exchange_rate' not in pi_columns_before
     expected = {
-        'customers': {'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'customer_type_id': ('INTEGER REFERENCES customer_types(id)', 'NULL'), 'priority_level': ('VARCHAR(20)', "'normal'"), 'follow_up_status': ('VARCHAR(20)', "'needs_followup'"), 'next_follow_up_date': ('DATE', 'NULL'), 'last_follow_up_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'customers': {'contacts': ('JSON', 'NULL'), 'historical_deal_usd': ('FLOAT', '0'), 'historical_deal_cutoff': ('DATE', 'NULL'), 'historical_deal_note': ('TEXT', "''"), 'salesperson': 'VARCHAR(100)', 'created_at': 'DATETIME', 'total_deal_usd': 'FLOAT', 'image': 'VARCHAR(500)', 'customer_type_id': ('INTEGER REFERENCES customer_types(id)', 'NULL'), 'priority_level': ('VARCHAR(20)', "'normal'"), 'follow_up_status': ('VARCHAR(20)', "'needs_followup'"), 'next_follow_up_date': ('DATE', 'NULL'), 'last_follow_up_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'products': {
             'image': 'VARCHAR(500)',
             'chinese_name': 'VARCHAR(200)',
@@ -405,7 +405,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -1320,6 +1320,24 @@ def _ensure_packing_templates(app_instance):
     db.session.commit()
 
 
+def _migrate_contact_snapshots():
+    from sqlalchemy import text
+    for row in db.session.execute(text("SELECT id, contact_person, email, phone FROM customers WHERE contacts IS NULL")).mappings().all():
+        entries = []
+        if row['contact_person'] or row['email'] or row['phone']:
+            entries = [{'id': 'legacy', 'name': row['contact_person'] or '',
+                        'email': row['email'] or '', 'phone': row['phone'] or '',
+                        'position': '', 'whatsapp': '', 'note': '', 'is_default': True}]
+        db.session.execute(text("UPDATE customers SET contacts=:value WHERE id=:id AND contacts IS NULL"),
+                           {'id': row['id'], 'value': json.dumps(entries, ensure_ascii=False)})
+    for row in db.session.execute(text("SELECT p.id, c.contact_person, c.email, c.phone FROM pis p LEFT JOIN customers c ON c.id=p.customer_id WHERE p.contact_snapshot IS NULL")).mappings().all():
+        snapshot = {'name': row['contact_person'] or '', 'email': row['email'] or '',
+                    'phone': row['phone'] or '', 'position': '', 'whatsapp': '', 'note': ''}
+        db.session.execute(text("UPDATE pis SET contact_snapshot=:value WHERE id=:id AND contact_snapshot IS NULL"),
+                           {'id': row['id'], 'value': json.dumps(snapshot, ensure_ascii=False)})
+    db.session.commit()
+
+
 def create_app():
     app = Flask(__name__)
     secret_key = os.environ.get('SECRET_KEY', '').strip()
@@ -1374,6 +1392,7 @@ def create_app():
             connection.exec_driver_sql('PRAGMA journal_mode=WAL')
         db.create_all()
         _migrate_db()
+        _migrate_contact_snapshots()
         _ensure_customer_types()
 
         # The built-in design is a real editable Excel source.  Excel download
@@ -2999,6 +3018,68 @@ def customer_history_import():
                            preview_token=token, default_cutoff=DEFAULT_CUTOFF)
 
 
+def _customer_contacts_from_form(customer):
+    raw = request.form.get('contacts_json')
+    if raw is None:
+        return list(customer.contact_entries)
+    try:
+        entries = json.loads(raw)
+    except (TypeError, ValueError):
+        raise ValueError('联系人资料格式无效。')
+    if not isinstance(entries, list) or len(entries) > 50:
+        raise ValueError('每个客户最多保存 50 位联系人。')
+    limits = {'name': 100, 'position': 100, 'phone': 50, 'whatsapp': 50, 'email': 200, 'note': 1000}
+    result = []
+    seen = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError('联系人资料格式无效。')
+        item = {key: str(entry.get(key) or '').strip() for key in limits}
+        if not any(item.values()):
+            continue
+        if any(len(item[key]) > limit for key, limit in limits.items()):
+            raise ValueError('联系人字段超过允许长度，请缩短后保存。')
+        identity = str(entry.get('id') or uuid.uuid4().hex)
+        if len(identity) > 64 or identity in seen:
+            raise ValueError('联系人标识重复或无效。')
+        seen.add(identity)
+        item.update(id=identity, is_default=entry.get('is_default') is True)
+        result.append(item)
+    default = next((item for item in result if item['is_default']), result[0] if result else None)
+    for item in result:
+        item['is_default'] = item is default
+    return result
+
+
+def _apply_customer_contacts(customer, entries):
+    customer.contacts = entries
+    default = next((item for item in entries if item.get('is_default')), entries[0] if entries else {})
+    customer.contact_person = default.get('name', '')
+    customer.email = default.get('email', '')
+    customer.phone = default.get('phone', '')
+
+
+def _pi_contact_selection(customer, pi=None):
+    selected = request.form.get('contact_id', '')
+    if pi and selected in ('', '__snapshot__') and pi.customer_id == customer.id:
+        return dict(pi.contact_info)
+    entries = customer.contact_entries
+    if not selected:
+        return dict(next((c for c in entries if c.get('is_default')), entries[0] if entries else {}))
+    contact = next((c for c in entries if c['id'] == selected), None)
+    if contact is None:
+        raise ValueError('所选联系人已删除或不属于当前客户，请重新选择。')
+    return dict(contact)
+
+
+@app.route('/api/customers/<int:id>/contacts')
+@login_required
+def api_customer_contacts(id):
+    customer = Customer.query.get_or_404(id)
+    require_customer_access(customer)
+    return jsonify({'contacts': customer.contact_entries})
+
+
 @app.route('/customers/add', methods=['GET', 'POST'])
 @login_required
 def customer_add():
@@ -3033,6 +3114,11 @@ def customer_add():
         if not customer.salesperson:
             flash('请选择业务员。', 'danger')
             return _render_customer_form(customer, editing=False)
+        try:
+            _apply_customer_contacts(customer, _customer_contacts_from_form(customer))
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return _render_customer_form(customer, editing=False)
         db.session.add(customer)
         db.session.flush()
         _audit('create', 'customer', customer.id, f'新增客户：{customer.name}',
@@ -3053,7 +3139,12 @@ def customer_edit(id):
             db.session.rollback()
             flash('该客户已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('customer_edit', id=id, return_to=_customer_list_return_url()))
-        before = _snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
+        try:
+            contact_entries = _customer_contacts_from_form(customer)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return _render_customer_form(customer, editing=True)
+        before = _snapshot(customer, ['contacts', 'name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version'])
         image_file = request.files.get('image')
         if image_file and image_file.filename:
             new_img = _save_upload(image_file)
@@ -3066,9 +3157,7 @@ def customer_edit(id):
                 customer.image = new_img
         customer.name = request.form.get('name', '').strip()
         customer.country = request.form.get('country', '').strip()
-        customer.contact_person = request.form.get('contact_person', '').strip()
-        customer.email = request.form.get('email', '').strip()
-        customer.phone = request.form.get('phone', '').strip()
+        _apply_customer_contacts(customer, contact_entries)
         customer.address = request.form.get('address', '').strip()
         if is_admin():
             customer.salesperson = request.form.get('salesperson', '').strip()
@@ -3101,7 +3190,7 @@ def customer_edit(id):
         customer.version = (customer.version or 1) + 1
         db.session.flush()
         _audit('update', 'customer', customer.id, f'修改客户：{customer.name}', before=before,
-               after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
+               after=_snapshot(customer, ['contacts', 'name', 'country', 'contact_person', 'email', 'phone', 'address', 'salesperson', 'notes', 'customer_type_id', 'priority_level', 'follow_up_status', 'next_follow_up_date', 'version']))
         db.session.commit()
         flash('客户更新成功。', 'success')
         return redirect(_customer_list_return_url())
@@ -3138,6 +3227,7 @@ def api_customer_add():
         customer_type_option=customer_type,
     )
     _sync_legacy_customer_priority(customer)
+    _apply_customer_contacts(customer, list(customer.contact_entries))
     db.session.add(customer)
     db.session.flush()
     _audit('create', 'customer', customer.id, f'快速新增客户：{customer.name}', after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson']))
@@ -3157,6 +3247,7 @@ def api_customer_copy(id):
     require_customer_access(original)
     new_customer = Customer(
         name=original.name + ' (Copy)',
+        contacts=copy.deepcopy(original.contact_entries),
         country=original.country,
         contact_person=original.contact_person,
         email=original.email,
@@ -5685,7 +5776,7 @@ def _draft_images(draft):
 def _pi_create_postback_data(form, draft=None):
     """Rebuild the Create PI browser state after a validation error."""
     field_names = {
-        'customer_id', 'salesperson', 'notes', 'account_id', 'currency',
+        'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency',
         'company', 'exchange_rate', 'issue_date', 'payment_terms',
         'price_terms', 'delivery_time', 'bank_info', 'shipping_address',
         'shipping_cost', 'shipping_note', 'adjustment_operation',
@@ -5775,7 +5866,7 @@ def pi_draft_save():
             row['originalImage'] = product.image or ''
             row.pop('imageFile', None)
         fields = {key: value for key, value in request.form.items() if key in {
-            'customer_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
+            'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
             'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
             'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note',
             'adjustment_operation'}}
@@ -5892,6 +5983,10 @@ def pi_create():
 
         customer = Customer.query.get_or_404(customer_id)
         require_customer_access(customer)
+        try:
+            contact_snapshot = _pi_contact_selection(customer)
+        except ValueError as exc:
+            return render_postback(str(exc))
         if not is_admin():
             salesperson = current_salesperson_name()
 
@@ -5941,6 +6036,7 @@ def pi_create():
         pi = PI(
             pi_number=pi_number,
             customer_id=customer_id,
+            contact_snapshot=contact_snapshot,
             issue_date=issue_date,
             payment_terms=payment_terms or '100% TT before shipment',
             price_terms=price_terms,
@@ -5998,7 +6094,7 @@ def pi_create():
                                    is_admin=admin_flag)
 
         _audit('create', 'pi', pi.id, f'新增 PI：{pi.pi_number}',
-               after=_snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
+               after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
         db.session.commit()
         flash(f'PI {pi_number} 已创建并生成 PDF。', 'success')
         return redirect(url_for('pi_detail', id=pi.id))
@@ -6335,10 +6431,10 @@ def _packing_list_payload(pi, packing_list=None, batch=None, prefill=False):
             (pi.shipping_address or (pi.customer.address if pi.customer else ''))
         ),
         'contact_name': batch.contact_name if batch else (
-            pi.customer.contact_person if pi.customer else ''
+            pi.contact_info.get('name', '')
         ),
         'contact_phone': batch.contact_phone if batch else (
-            pi.customer.phone if pi.customer else ''
+            pi.contact_info.get('phone', '')
         ),
         'shipping_requirements': batch.shipping_requirements if batch else '',
         'tracking_no': batch.tracking_no if batch else '',
@@ -6577,8 +6673,8 @@ def packing_batch_create(pi_id):
         packing_list=packing_list, batch_no=next_no, status='draft',
         packing_date=date.today(), shipping_address=pi.shipping_address or (
             customer.address if customer else ''
-        ), contact_name=customer.contact_person if customer else '',
-        contact_phone=customer.phone if customer else '',
+        ), contact_name=pi.contact_info.get('name', ''),
+        contact_phone=pi.contact_info.get('phone', ''),
     )
     db.session.add(batch)
     packing_list.status = 'draft'
@@ -7609,6 +7705,7 @@ def pi_copy(id):
     new_pi = PI(
         pi_number=pi_number,
         customer_id=original.customer_id,
+        contact_snapshot=dict(original.contact_info),
         issue_date=date.today(),
         payment_terms=original.payment_terms,
         price_terms=original.price_terms,
@@ -7909,7 +8006,7 @@ def pi_edit(id):
             db.session.rollback()
             flash('该 PI 已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('pi_edit', id=id))
-        before = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        before = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         before['items'] = [item.to_dict() for item in pi.items]
         old_customer_id = pi.customer_id
         customer_id = request.form.get('customer_id', type=int)
@@ -7959,6 +8056,11 @@ def pi_edit(id):
 
         customer = Customer.query.get_or_404(customer_id)
         require_customer_access(customer)
+        try:
+            contact_snapshot = _pi_contact_selection(customer, pi)
+        except ValueError as exc:
+            flash(str(exc), 'danger')
+            return render_edit_page()
         if not is_admin():
             salesperson = current_salesperson_name()
 
@@ -8037,6 +8139,7 @@ def pi_edit(id):
             return redirect(url_for('pi_edit', id=id))
 
         # Update PI record
+        pi.contact_snapshot = contact_snapshot
         pi.customer_id = customer_id
         pi.salesperson = salesperson
         pi.currency = currency
@@ -8091,7 +8194,7 @@ def pi_edit(id):
             return render_edit_page()
 
         pi.version = (pi.version or 1) + 1
-        after = _snapshot(pi, ['pi_number', 'customer_id', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        after = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         after['items'] = [item.to_dict() for item in pi.items]
         if structural_changes:
             after['structural_changes'] = structural_changes
@@ -8152,9 +8255,8 @@ def _apply_form_to_pi(form, pi):
         if is_admin():
             pi.customer.name = form.get('cust_name', '').strip() or pi.customer.name
             pi.customer.country = form.get('cust_country', '').strip()
-        pi.customer.contact_person = form.get('cust_contact', '').strip()
-        pi.customer.email = form.get('cust_email', '').strip()
-        pi.customer.phone = form.get('cust_phone', '').strip()
+        pi.contact_snapshot = dict(pi.contact_info, name=form.get('cust_contact', '').strip(),
+                                   email=form.get('cust_email', '').strip(), phone=form.get('cust_phone', '').strip())
 
     # Product items
     total = 0.0
@@ -8219,10 +8321,10 @@ def _pi_export_copy(pi):
     customer = pi.customer
     customer_copy = SimpleNamespace(
         name=customer.name if customer else '',
-        contact_person=customer.contact_person if customer else '',
+        contact_person=pi.contact_info.get('name', ''),
         country=english_country(customer.country) if customer else '',
-        email=customer.email if customer else '',
-        phone=customer.phone if customer else '',
+        email=pi.contact_info.get('email', ''),
+        phone=pi.contact_info.get('phone', ''),
         address=customer.address if customer else '',
         notes=customer.notes if customer else '',
     )

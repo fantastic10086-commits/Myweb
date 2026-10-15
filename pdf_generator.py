@@ -261,12 +261,15 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     ]))
 
     customer = pi.customer
+    contact = getattr(pi, 'contact_info', None)
+    if contact is None:
+        contact = {'name': customer.contact_person if customer else '', 'email': customer.email if customer else '', 'phone': customer.phone if customer else ''}
     customer_info_data = [
         [Paragraph('<b>To / Buyer:</b>', info_style), Paragraph(customer.name or '', info_style)],
-        [Paragraph('<b>Contact:</b>', info_style), Paragraph(customer.contact_person or '', info_style)],
+        [Paragraph('<b>Contact:</b>', info_style), Paragraph(contact.get('name', '') or '', info_style)],
         [Paragraph('<b>Country:</b>', info_style), Paragraph(english_country(customer.country), info_style)],
-        [Paragraph('<b>Email:</b>', info_style), Paragraph(customer.email or '', info_style)],
-        [Paragraph('<b>Phone:</b>', info_style), Paragraph(customer.phone or '', info_style)],
+        [Paragraph('<b>Email:</b>', info_style), Paragraph(contact.get('email', '') or '', info_style)],
+        [Paragraph('<b>Phone:</b>', info_style), Paragraph(contact.get('phone', '') or '', info_style)],
         [Paragraph('<b>Address:</b>', info_style), Paragraph(customer.address or '', info_style)],
     ]
     customer_info_table = Table(customer_info_data, colWidths=[70, 250])

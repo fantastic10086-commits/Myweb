@@ -115,7 +115,7 @@
                     <tr id="customer-row-{{ c.id }}">
                         <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id, return_to=list_return) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
                         <td>{{ c.country }}</td>
-                        <td style="max-width:150px;"><span class="text-truncate d-block">{{ c.contact_person or '-' }}</span><small class="text-muted text-truncate d-block">{{ c.email or c.phone or '' }}</small></td>
+                        <td style="max-width:150px;"><span class="text-truncate d-block">{{ c.contact_person or '-' }}</span><small class="text-muted">共 {{ c.contact_entries|length }} 位联系人</small><small class="text-muted text-truncate d-block">{{ c.email or c.phone or '' }}</small></td>
                         <td>{{ c.salesperson }}</td>
                         <td class="text-end"><strong class="text-success">${{ '%.2f'|format(c.cumulative_deal_usd) }}</strong><small class="text-muted d-block">历史 ${{ '%.2f'|format(c.historical_deal_usd or 0) }} / 系统 ${{ '%.2f'|format(c.total_deal_usd or 0) }}</small></td>
                         <td style="min-width:150px;">

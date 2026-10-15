@@ -87,21 +87,24 @@ def generate_pi_excel(pi, output_dir):
 
     # Right column: Customer info
     customer = pi.customer
+    contact = getattr(pi, 'contact_info', None)
+    if contact is None:
+        contact = {'name': customer.contact_person if customer else '', 'email': customer.email if customer else '', 'phone': customer.phone if customer else ''}
     ws.cell(row=r, column=4, value='To / Buyer:').font = b9
     ws.cell(row=r, column=5, value=customer.name if customer else '').font = n9; r += 1
     if customer:
-        if customer.contact_person:
+        if contact.get('name', ''):
             ws.cell(row=r, column=4, value='Contact:').font = b9
-            ws.cell(row=r, column=5, value=customer.contact_person).font = n9; r += 1
+            ws.cell(row=r, column=5, value=contact.get('name', '')).font = n9; r += 1
         if customer.country:
             ws.cell(row=r, column=4, value='Country:').font = b9
             ws.cell(row=r, column=5, value=english_country(customer.country)).font = n9; r += 1
-        if customer.email:
+        if contact.get('email', ''):
             ws.cell(row=r, column=4, value='Email:').font = b9
-            ws.cell(row=r, column=5, value=customer.email).font = n9; r += 1
-        if customer.phone:
+            ws.cell(row=r, column=5, value=contact.get('email', '')).font = n9; r += 1
+        if contact.get('phone', ''):
             ws.cell(row=r, column=4, value='Phone:').font = b9
-            ws.cell(row=r, column=5, value=customer.phone).font = n9; r += 1
+            ws.cell(row=r, column=5, value=contact.get('phone', '')).font = n9; r += 1
         if customer.address:
             ws.cell(row=r, column=4, value='Address:').font = b9
             ws.cell(row=r, column=5, value=customer.address).font = n9; ws.cell(row=r, column=5).alignment = lft; r += 1

@@ -144,6 +144,9 @@ def _set_safe_excel_text(cell, value):
 
 def _fixed_values(pi, salesperson_info):
     customer = getattr(pi, 'customer', None)
+    contact = getattr(pi, 'contact_info', None)
+    if contact is None:
+        contact = {'name': getattr(customer, 'contact_person', ''), 'email': getattr(customer, 'email', ''), 'phone': getattr(customer, 'phone', '')}
     currency = (getattr(pi, 'currency', 'USD') or 'USD').upper()
     subtotal = round(float(getattr(pi, 'total_amount', 0) or 0), 2)
     adjustment = round(float(getattr(pi, 'shipping_cost', 0) or 0), 2)
@@ -162,10 +165,10 @@ def _fixed_values(pi, salesperson_info):
         'company_name': _company_name(pi),
         'company_address': _company_address(pi),
         'customer_name': getattr(customer, 'name', '') or '',
-        'customer_contact': getattr(customer, 'contact_person', '') or '',
+        'customer_contact': contact.get('name', '') or '',
         'customer_country': english_country(getattr(customer, 'country', '')),
-        'customer_email': getattr(customer, 'email', '') or '',
-        'customer_phone': getattr(customer, 'phone', '') or '',
+        'customer_email': contact.get('email', '') or '',
+        'customer_phone': contact.get('phone', '') or '',
         'customer_address': getattr(customer, 'address', '') or '',
         'customer_notes': getattr(customer, 'notes', '') or '',
         'payment_terms': getattr(pi, 'payment_terms', '') or '',

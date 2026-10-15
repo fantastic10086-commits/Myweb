@@ -76,7 +76,16 @@
                 <table class="table table-sm mb-0">
                     <tr><th class="ps-0">名称</th><td class="pe-0">{{ customer.name }}</td></tr>
                     <tr><th class="ps-0">国家</th><td class="pe-0">{{ customer.country or '-' }}</td></tr>
-                    <tr><th class="ps-0">联系人</th><td class="pe-0">{{ customer.contact_person or '-' }}</td></tr>
+                    <tr><th class="ps-0">联系人</th><td class="pe-0">
+                    {% for contact in customer.contact_entries %}
+                    <div class="border-bottom pb-2 mb-2"><strong>{{ contact.name or '未填写姓名' }}</strong>{% if contact.is_default %} <span class="badge bg-primary">默认</span>{% endif %}
+                    {% if contact.position %}<div>{{ contact.position }}</div>{% endif %}
+                    {% if contact.phone %}<div>电话：{{ contact.phone }}</div>{% endif %}
+                    {% if contact.whatsapp %}<div>WhatsApp：{{ contact.whatsapp }}</div>{% endif %}
+                    {% if contact.email %}<div>邮箱：{{ contact.email }}</div>{% endif %}
+                    {% if contact.note %}<div class="text-muted" style="white-space:pre-wrap">{{ contact.note }}</div>{% endif %}</div>
+                    {% else %}暂无联系人{% endfor %}
+                    </td></tr>
                     <tr><th class="ps-0">业务员</th><td class="pe-0">{{ customer.salesperson or '-' }}</td></tr>
                     <tr><th class="ps-0">邮箱</th><td class="pe-0">{{ customer.email or '-' }}</td></tr>
                     <tr><th class="ps-0">电话</th><td class="pe-0">{{ customer.phone or '-' }}</td></tr>

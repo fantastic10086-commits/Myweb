@@ -127,10 +127,10 @@
                 </div>
                 <div class="pi-paper-info-column">
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">To / Buyer:</span><input class="pi-paper-input" type="text" name="cust_name" value="{{ pi.customer.name if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}></div>
-                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Contact:</span><input class="pi-paper-input" type="text" name="cust_contact" value="{{ pi.customer.contact_person if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Contact:</span><input class="pi-paper-input" type="text" name="cust_contact" value="{{ pi.contact_info.get('name', '') if pi.customer else '' }}"></div>
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">Country:</span><input class="pi-paper-input" type="text" name="cust_country" value="{{ pi.customer.country if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}></div>
-                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Email:</span><input class="pi-paper-input" type="email" name="cust_email" value="{{ pi.customer.email if pi.customer else '' }}"></div>
-                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Phone:</span><input class="pi-paper-input" type="text" name="cust_phone" value="{{ pi.customer.phone if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Email:</span><input class="pi-paper-input" type="email" name="cust_email" value="{{ pi.contact_info.get('email', '') if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Phone:</span><input class="pi-paper-input" type="text" name="cust_phone" value="{{ pi.contact_info.get('phone', '') if pi.customer else '' }}"></div>
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">Address:</span><input class="pi-paper-input" type="text" name="cust_address" value="{{ pi.customer.address if pi.customer else '' }}"></div>
                 </div>
             </section>

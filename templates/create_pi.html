@@ -740,6 +740,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
+<script src="{{ url_for('static', filename='pi_contacts.js') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -781,6 +782,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </div>
                         <div class="searchable-dropdown dropdown-menu w-100" id="cust_dropdown" style="max-height:200px;overflow-y:auto;"></div>
                     </div>
+                    {% include '_pi_contact_select.html' %}
                     <div class="mb-3"><label class="form-label">客户备注</label><div id="customer_notes_display" class="form-control bg-light" style="height:auto;min-height:58px;white-space:pre-wrap;">{% if selected_customer_id %}{% for c in customers %}{% if c.id == selected_customer_id %}{{ c.notes or '—' }}{% endif %}{% endfor %}{% else %}—{% endif %}</div><div class="form-text">来自客户资料，并会显示在 PI 导出模板中。</div></div>
                     <div class="mb-3">
                         <label class="form-label">业务员 <span class="text-danger">*</span></label>

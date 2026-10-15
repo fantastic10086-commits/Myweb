@@ -39,6 +39,18 @@ class Customer(db.Model):
     contact_person = db.Column(db.String(100), default='')
     email = db.Column(db.String(200), default='')
     phone = db.Column(db.String(50), default='')
+    contacts = db.Column(db.JSON, nullable=True)
+
+    @property
+    def contact_entries(self):
+        if self.contacts is not None:
+            return self.contacts
+        if self.contact_person or self.email or self.phone:
+            return [{'id': 'legacy', 'name': self.contact_person or '',
+                     'email': self.email or '', 'phone': self.phone or '',
+                     'position': '', 'whatsapp': '', 'note': '', 'is_default': True}]
+        return []
+
     address = db.Column(db.Text, default='')
     salesperson = db.Column(db.String(100), default='')
     total_deal_usd = db.Column(db.Float, default=0.0)
@@ -75,6 +87,7 @@ class Customer(db.Model):
             'id': self.id,
             'name': self.name,
             'country': self.country,
+            'contacts': self.contact_entries,
             'contact_person': self.contact_person,
             'email': self.email,
             'phone': self.phone,
@@ -451,6 +464,16 @@ class PI(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     pi_number = db.Column(db.String(50), nullable=False, unique=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    contact_snapshot = db.Column(db.JSON, nullable=True)
+
+    @property
+    def contact_info(self):
+        if self.contact_snapshot is not None:
+            return self.contact_snapshot
+        customer = self.customer
+        return {'name': customer.contact_person or '', 'email': customer.email or '',
+                'phone': customer.phone or '', 'position': '', 'whatsapp': '', 'note': ''} if customer else {}
+
     issue_date = db.Column(db.Date, default=date.today)
     payment_terms = db.Column(db.Text, default='100% TT before shipment')
     price_terms = db.Column(db.String(200), default='')

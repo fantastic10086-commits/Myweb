@@ -177,11 +177,11 @@ def build_customs_snapshot(pi, form_data):
         'company_name_cn': company_name_cn,
         'customer': {
             'name': pi.customer.name,
-            'contact_person': pi.customer.contact_person or '',
+            'contact_person': pi.contact_info.get('name', '') or '',
             'country': pi.customer.country or '',
             'address': pi.customer.address or '',
-            'email': pi.customer.email or '',
-            'phone': pi.customer.phone or '',
+            'email': pi.contact_info.get('email', '') or '',
+            'phone': pi.contact_info.get('phone', '') or '',
         },
         'product_total': round(sum(
             group['amount'] for group in normalized_groups

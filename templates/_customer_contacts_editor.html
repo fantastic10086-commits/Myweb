@@ -1,0 +1,6 @@
+<div class="col-12">
+    <div class="d-flex justify-content-between align-items-center"><h5 class="mb-0">联系人</h5><button type="button" id="addContact" class="btn btn-sm btn-outline-primary">＋ 新增联系人</button></div>
+    <div class="form-text mb-2">可保存多位联系人，选择一位默认联系人。修改后新 PI 使用最新资料，历史 PI 保留原联系人快照。</div>
+    <input type="hidden" name="contacts_json" id="contactsJson" value="{{ request.form.get('contacts_json', (customer.contact_entries if customer else [])|tojson)|forceescape }}">
+    <div id="contactEditorRows"></div>
+</div>

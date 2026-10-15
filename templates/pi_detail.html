@@ -43,7 +43,7 @@
             <div class="card-body pi-view-info">
                 <div class="mb-3">
                     <label class="form-label">客户</label>
-                    <input type="text" class="form-control" value="{{ pi.customer.name if pi.customer else '-' }}" readonly>
+                    <input type="text" class="form-control" value="{{ pi.customer.name if pi.customer else '-' }}" readonly><div class="form-text">联系人：{{ pi.contact_info.get('name') or '未填写' }}{% if pi.contact_info.get('phone') %} · {{ pi.contact_info.get('phone') }}{% endif %}{% if pi.contact_info.get('email') %} · {{ pi.contact_info.get('email') }}{% endif %}</div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">业务员</label>

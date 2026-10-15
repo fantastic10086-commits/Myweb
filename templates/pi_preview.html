@@ -31,10 +31,10 @@
     <div class="col-7">
         <table style="font-size:11px;width:100%;">
             <tr><td style="width:65px;font-weight:bold;padding:1px 0;">To / Buyer:</td><td style="padding:1px 0;"><strong>{{ pi.customer.name if pi.customer else '' }}</strong></td></tr>
-            {% if pi.customer and pi.customer.contact_person %}<tr><td style="font-weight:bold;padding:1px 0;">Contact:</td><td style="padding:1px 0;">{{ pi.customer.contact_person }}</td></tr>{% endif %}
+            {% if pi.customer and pi.contact_info.get('name', '') %}<tr><td style="font-weight:bold;padding:1px 0;">Contact:</td><td style="padding:1px 0;">{{ pi.contact_info.get('name', '') }}</td></tr>{% endif %}
             {% if pi.customer and pi.customer.country %}<tr><td style="font-weight:bold;padding:1px 0;">Country:</td><td style="padding:1px 0;">{{ pi.customer.country }}</td></tr>{% endif %}
-            {% if pi.customer and pi.customer.email %}<tr><td style="font-weight:bold;padding:1px 0;">Email:</td><td style="padding:1px 0;">{{ pi.customer.email }}</td></tr>{% endif %}
-            {% if pi.customer and pi.customer.phone %}<tr><td style="font-weight:bold;padding:1px 0;">Phone:</td><td style="padding:1px 0;">{{ pi.customer.phone }}</td></tr>{% endif %}
+            {% if pi.customer and pi.contact_info.get('email', '') %}<tr><td style="font-weight:bold;padding:1px 0;">Email:</td><td style="padding:1px 0;">{{ pi.contact_info.get('email', '') }}</td></tr>{% endif %}
+            {% if pi.customer and pi.contact_info.get('phone', '') %}<tr><td style="font-weight:bold;padding:1px 0;">Phone:</td><td style="padding:1px 0;">{{ pi.contact_info.get('phone', '') }}</td></tr>{% endif %}
         </table>
     </div>
 </div>
