@@ -127,7 +127,7 @@
                         {% for p in products %}
                         <tr id="row-{{ p.id }}" class="{% if not p.active %}table-secondary{% endif %}">
                             <td><input type="checkbox" class="form-check-input product-check" value="{{ p.id }}" onchange="updateBatchBar()"></td>
-                            <td>{% if p.image %}<img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td>{% if p.image %}<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="{{ url_for('uploaded_file', filename=p.image) }}" aria-label="放大产品图片" title="点击放大图片"><img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" alt="{{ p.name }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:zoom-in;"></button>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                             <td><span class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</span>{% if not p.active %} <span class="badge text-bg-secondary">已停用</span>{% endif %}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="chinese_name">{{ p.chinese_name }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="product_code">{{ p.product_code }}</td>
@@ -187,7 +187,34 @@
 </nav>
 {% endif %}
 
+<div class="modal fade" id="productImageModal" tabindex="-1" aria-labelledby="productImageTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title" id="productImageTitle">产品图片</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        <div class="modal-body text-center">
+            <p id="productImageError" class="text-danger d-none">图片加载失败，请关闭后重试。</p>
+            <img id="productLargeImage" alt="产品图片" style="max-width:100%;max-height:75vh;object-fit:contain;">
+        </div>
+    </div></div>
+</div>
 <script>
+document.getElementById('productTbody')?.addEventListener('click', function(event) {
+    var button = event.target.closest('.product-image-preview');
+    if (!button) return;
+    var image = document.getElementById('productLargeImage');
+    document.getElementById('productImageError').classList.add('d-none');
+    image.hidden = false;
+    image.alt = button.querySelector('img').alt || '产品图片';
+    image.src = button.dataset.imageUrl;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('productImageModal')).show();
+});
+document.getElementById('productLargeImage').addEventListener('error', function() {
+    this.hidden = true;
+    document.getElementById('productImageError').classList.remove('d-none');
+});
+document.getElementById('productImageModal').addEventListener('hidden.bs.modal', function() {
+    document.getElementById('productLargeImage').removeAttribute('src');
+});
+
 var editModeActive = false;
 var exchangeRate = parseFloat(document.getElementById('rateValue').value) || {{ exchange_rate|tojson }};
 
@@ -640,7 +667,7 @@ function copyProduct(id) {
                 tr.id = 'row-' + p.id;
                 tr.innerHTML =
                     '<td><input type="checkbox" class="form-check-input product-check" value="' + p.id + '" onchange="updateBatchBar()"></td>' +
-                    '<td>' + (p.image ? '<img src="/uploads/thumb/' + encodeURIComponent(p.image) + '" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;">' : '<span class="text-muted">—</span>') + '</td>' +
+                    '<td>' + (p.image ? '<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="/uploads/' + encodeURIComponent(p.image) + '" aria-label="放大产品图片" title="点击放大图片"><img src="/uploads/thumb/' + encodeURIComponent(p.image) + '" alt="产品图片" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:zoom-in;"></button>' : '<span class="text-muted">—</span>') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="name">' + escHtml(p.name) + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="chinese_name">' + escHtml(p.chinese_name || '') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="product_code">' + escHtml(p.product_code || '') + '</td>' +
