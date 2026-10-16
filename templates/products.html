@@ -142,7 +142,7 @@
                                 <span class="text-muted">-</span>
                                 {% endif %}
                             </td>
-                            <td class="text-end text-nowrap">{{ "%.4f"|format(p.unit_weight_kg) if p.unit_weight_kg is not none else "待补全" }}</td>
+                            <td class="text-end text-nowrap editable" data-id="{{ p.id }}" data-field="unit_weight_kg" data-value="{{ p.unit_weight_kg if p.unit_weight_kg is not none else '' }}" title="点击编辑每件净重（kg）；留空为待补全">{{ "%.4f"|format(p.unit_weight_kg) if p.unit_weight_kg is not none else "待补全" }} <i class="bi bi-pencil-square small text-muted"></i></td>
                             <td class="text-end text-nowrap">
                                 <button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct({{ p.id }})"><i class="bi bi-copy"></i></button>
                                 <a href="{{ url_for('product_edit', id=p.id, return_to=url_for('product_list', search=search, filter=filter, sort=sort, page=page, _anchor='row-' ~ p.id)) }}" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a>
@@ -373,6 +373,7 @@ function updateRowDisplay(row, product) {
         else if (field === 'chinese_name') cell.textContent = product.chinese_name || '';
         else if (field === 'product_code') cell.textContent = product.product_code || '';
         else if (field === 'specification') cell.textContent = product.specification || '';
+        else if (field === 'unit_weight_kg') renderWeightCell(cell, product.unit_weight_kg);
         else if (field === 'unit_price') {
             cell.dataset.value = (product.unit_price || 0).toFixed(3);
             cell.textContent = '$' + (product.unit_price || 0).toFixed(3);
@@ -429,16 +430,18 @@ function makeEditable(cell, shouldFocus) {
     if (cell.classList.contains('editing')) return;
     var isPrice = cell.classList.contains('editable-price');
     var field = cell.dataset.field;
-    var value = isPrice ? (cell.dataset.value || '0.00') : cell.textContent.trim();
+    var isWeight = field === 'unit_weight_kg';
+    var value = isWeight ? (cell.dataset.value || '') : isPrice ? (cell.dataset.value || '0.00') : cell.textContent.trim();
     cell.dataset.oldValue = value;
     cell.dataset.oldDisplay = cell.textContent.trim();
     cell.classList.add('editing');
 
     var input = document.createElement('input');
-    input.type = isPrice ? 'number' : 'text';
+    input.type = (isPrice || isWeight) ? 'number' : 'text';
     input.className = 'form-control form-control-sm inline-input';
     input.value = value;
-    if (isPrice) { input.step = field === 'unit_price' ? '0.001' : '0.01'; input.min = '0'; input.style.width = '100px'; }
+    if (isWeight) { input.step = '0.0001'; input.min = '0'; input.placeholder = '待补全'; input.style.width = '120px'; }
+    else if (isPrice) { input.step = field === 'unit_price' ? '0.001' : '0.01'; input.min = '0'; input.style.width = '100px'; }
     else { input.style.width = '100%'; }
     cell.textContent = '';
     cell.appendChild(input);
@@ -534,11 +537,21 @@ function commitCellEdit(cell) {
     });
 }
 
+function renderWeightCell(cell, weight) {
+    cell.dataset.value = weight == null ? '' : String(weight);
+    cell.textContent = weight == null ? '待补全' : Number(weight).toFixed(4);
+    var icon = document.createElement('i');
+    icon.className = 'bi bi-pencil-square small text-muted ms-1';
+    cell.appendChild(icon);
+}
+
 function updateSingleCell(cell, product) {
     var field = cell.dataset.field;
     cell.classList.remove('editing');
     var row = cell.closest('tr');
-    if (field === 'unit_price') {
+    if (field === 'unit_weight_kg') {
+        renderWeightCell(cell, product.unit_weight_kg);
+    } else if (field === 'unit_price') {
         cell.dataset.value = (product.unit_price || 0).toFixed(3);
         cell.textContent = '$' + (product.unit_price || 0).toFixed(3);
         // Also update RMB cell
@@ -635,6 +648,7 @@ function copyProduct(id) {
                     '<td class="text-end editable editable-price" data-id="' + p.id + '" data-field="unit_price" data-value="' + (p.unit_price || 0).toFixed(3) + '">$' + (p.unit_price || 0).toFixed(3) + '</td>' +
                     '<td class="text-end editable editable-price" data-id="' + p.id + '" data-field="unit_price_rmb" data-value="' + (p.unit_price_rmb || 0).toFixed(2) + '">¥' + (p.unit_price_rmb || 0).toFixed(2) + '</td>' +
                     '<td class="text-end rate-cell" data-id="' + p.id + '">' + renderRateCell(p) + '</td>' +
+                    '<td class="text-end text-nowrap editable" data-id="' + p.id + '" data-field="unit_weight_kg" data-value="' + (p.unit_weight_kg == null ? '' : p.unit_weight_kg) + '">' + (p.unit_weight_kg == null ? '待补全' : Number(p.unit_weight_kg).toFixed(4)) + ' <i class="bi bi-pencil-square small text-muted"></i></td>' +
                     '<td class="text-end text-nowrap">' +
                         '<button type="button" class="btn btn-sm btn-outline-info" title="复制" onclick="copyProduct(' + p.id + ')"><i class="bi bi-copy"></i></button> ' +
                         '<a href="/products/' + p.id + '/edit" class="btn btn-sm btn-outline-warning" title="完整编辑（含图片）"><i class="bi bi-pencil"></i></a> ' +

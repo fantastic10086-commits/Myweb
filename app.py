@@ -4672,16 +4672,22 @@ def api_product_update(id):
     """Inline update product fields. Accepts JSON: {field: value}"""
     product = Product.query.get_or_404(id)
     data = request.get_json(silent=True) or {}
-    allowed = {'name', 'product_code', 'specification', 'chinese_name', 'unit_price', 'unit_price_rmb'}
+    allowed = {'name', 'product_code', 'specification', 'chinese_name', 'unit_price', 'unit_price_rmb', 'unit_weight_kg'}
     audit_fields = [
         'name', 'chinese_name', 'product_code', 'specification',
-        'unit_price', 'unit_price_rmb', 'notes', 'image', 'active',
+        'unit_price', 'unit_price_rmb', 'unit_weight_kg', 'notes', 'image', 'active',
     ]
     before = _snapshot(product, audit_fields)
     for field, value in data.items():
         if field not in allowed:
             continue
-        if field in ('unit_price', 'unit_price_rmb'):
+        if field == 'unit_weight_kg':
+            try:
+                raw = str(value).strip() if value is not None else ''
+                value = _nonnegative_float(raw, '每件净重（kg）') if raw else None
+            except ValueError as exc:
+                return jsonify({'success': False, 'error': str(exc)}), 400
+        elif field in ('unit_price', 'unit_price_rmb'):
             try:
                 value = float(str(value).replace(',', ''))
             except (ValueError, TypeError):
