@@ -1,8 +1,7 @@
-<div class="modal-header">
+<div class="mb-3">
     <h5 class="modal-title">水单／提前采购 · {{ pi.pi_number }}</h5>
-    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
 </div>
-<div class="modal-body">
+<div>
     <div class="alert alert-warning">水单不代表到账，不计入回款金额。管理员批准后允许采购；实际回款付清尾款后才允许发货。</div>
     {% if slip %}
     <p><strong>{{ {'pending':'待管理员审批', 'approved':'已批准提前采购', 'rejected':'申请已拒绝'}.get(slip.status, '') }}</strong>
