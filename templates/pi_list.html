@@ -95,8 +95,8 @@
                 </datalist>
             </div>
             <div class="col-md-3 col-xl-2">
-                <label class="form-label small mb-1" for="customerNameFilter">客户名称</label>
-                <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="完整或部分客户名称">
+                <label class="form-label small mb-1" for="customerNameFilter">客户／联系人</label>
+                <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
             </div>
             <div class="col-md-4 col-xl-2">
                 <label class="form-label small mb-1">业务员</label>
@@ -162,7 +162,7 @@
 <div class="alert alert-info py-2 small">
     共找到 <strong>{{ pis|length }}</strong> 份 PI
     {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
-    {% if customer_name_filter %}，客户名称：<strong>{{ customer_name_filter }}</strong>{% endif %}
+    {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
     {% if date_from %}，开始日期：<strong>{{ date_from }}</strong>{% endif %}
     {% if date_to %}，结束日期：<strong>{{ date_to }}</strong>{% endif %}

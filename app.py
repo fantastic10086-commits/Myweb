@@ -40,7 +40,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
-from sqlalchemy import event, func, case, or_
+from sqlalchemy import event, func, case, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
@@ -3016,6 +3016,24 @@ def customer_history_import():
             token = None
     return render_template('customer_history_import.html', entries=entries, errors=errors,
                            preview_token=token, default_cutoff=DEFAULT_CUTOFF)
+
+
+def _pi_customer_contact_filter(keyword):
+    """Match customer names, all current contact names and the PI contact snapshot."""
+    contacts = func.json_each(Customer.contacts).table_valued('key', 'value').alias('search_contacts')
+    contact_match = (
+        select(1).select_from(contacts)
+        .where(func.json_extract(contacts.c.value, '$.name').contains(keyword, autoescape=True))
+        .correlate(Customer).exists()
+    )
+    return or_(
+        PI.customer.has(or_(
+            Customer.name.contains(keyword, autoescape=True),
+            Customer.contact_person.contains(keyword, autoescape=True),
+            contact_match,
+        )),
+        func.json_extract(PI.contact_snapshot, '$.name').contains(keyword, autoescape=True),
+    )
 
 
 def _customer_contacts_from_form(customer):
@@ -6215,9 +6233,7 @@ def pi_list():
         query = query.filter(PI.customer.has(Customer.country == country_filter))
     customer_name_filter = request.args.get('customer_name', '').strip()
     if customer_name_filter:
-        query = query.filter(PI.customer.has(
-            Customer.name.contains(customer_name_filter, autoescape=True)
-        ))
+        query = query.filter(_pi_customer_contact_filter(customer_name_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
@@ -6603,9 +6619,7 @@ def packing_list_index():
         query = query.filter(PI.customer.has(Customer.country == country_filter))
     customer_name_filter = request.args.get('customer_name', '').strip()
     if customer_name_filter:
-        query = query.filter(PI.customer.has(
-            Customer.name.contains(customer_name_filter, autoescape=True)
-        ))
+        query = query.filter(_pi_customer_contact_filter(customer_name_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
@@ -8952,9 +8966,7 @@ def procurement_select():
         pi_query = pi_query.filter(PI.customer.has(Customer.country == country_filter))
     customer_name_filter = request.args.get('customer_name', '').strip()
     if customer_name_filter:
-        pi_query = pi_query.filter(PI.customer.has(
-            Customer.name.contains(customer_name_filter, autoescape=True)
-        ))
+        pi_query = pi_query.filter(_pi_customer_contact_filter(customer_name_filter))
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         pi_query = pi_query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
