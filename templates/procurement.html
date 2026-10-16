@@ -723,6 +723,11 @@ document.addEventListener('DOMContentLoaded', function() {
 {% endblock %}
 
 {% block content %}
+{% if pi.advance_payment_required %}
+<div class="alert {{ 'alert-warning' if pi.advance_shipping_blocked else 'alert-success' }}">
+    凭水单提前采购 · {{ '尾款未付清，禁止发货。必须累计实际回款达到订单总额后才可发货。' if pi.advance_shipping_blocked else '实际回款已付清，可按正常流程登记发货。' }}
+</div>
+{% endif %}
 <style>
 #itemsTable th, #itemsTable td { white-space: nowrap; }
 #itemsTable .proc-product { width: 210px; max-width: 210px; }

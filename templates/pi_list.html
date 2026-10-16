@@ -120,6 +120,7 @@
                 <select class="form-select form-select-sm" name="payment_status">
                     <option value="">— 全部 —</option>
                     <option value="unpaid" {% if payment_status == 'unpaid' %}selected{% endif %}>未回款</option>
+                    <option value="slip_pending" {% if payment_status == 'slip_pending' %}selected{% endif %}>有水单未到账</option>
                     <option value="received" {% if payment_status == 'received' %}selected{% endif %}>有回款（部分回款 + 已付清）</option>
                     <option value="partial" {% if payment_status == 'partial' %}selected{% endif %}>部分回款</option>
                     <option value="paid" {% if payment_status == 'paid' %}selected{% endif %}>已付清</option>
@@ -227,6 +228,7 @@
                             <div class="pi-list-workflow" role="list" aria-label="{{ pi.pi_number }} 订单流程">
                                 {% set payment_state = 'complete' if pi.paid else ('partial' if total_received > 0 else 'pending') %}
                                 {% set payment_text = '已付清' if pi.paid else ('部分回款' if total_received > 0 else '未回款') %}
+                                <div>
                                 <button type="button" role="listitem"
                                         class="pi-list-workflow-stage is-{{ payment_state }} is-action"
                                         {% if total_received > 0 or pi.paid %}onclick="viewPayments({{ pi.id }})"{% else %}onclick='confirmPayment({{ pi.id }}, {{ pi.grand_total }}, {{ (pi.currency or 'USD')|tojson }}, {{ payment_account_ids.get(pi.id)|tojson }})'{% endif %}
@@ -236,9 +238,12 @@
                                     <span class="pi-list-workflow-status">{{ payment_text }}</span>
                                 </button>
 
+                                <button type="button" class="btn btn-sm btn-outline-info mt-1 py-0 px-1 w-100"
+                                        style="font-size:.65rem" onclick="openAdvanceSlip({{ pi.id }})">{{ {'pending':'水单待审批', 'approved':'水单已批准', 'rejected':'水单被拒绝'}.get((pi.advance_slip or {}).get('status'), '有水单') }}</button>
+                                </div>
                                 {% set procurement_state = 'complete' if pi.procurement_is_complete else ('partial' if pi.procurements else 'pending') %}
                                 {% set procurement_text = '采购完成' if pi.procurement_is_complete else ('部分采购' if pi.procurements else '未采购') %}
-                                {% if is_admin and total_received > 0 %}
+                                {% if is_admin and pi.procurement_allowed %}
                                 <a role="listitem" href="{{ url_for('procurement_page', pi_id=pi.id, readonly=1 if pi.procurement_confirmed or pi.shipping_completed else 0) }}"
                                    class="pi-list-workflow-stage is-{{ procurement_state }} is-action"
                                    title="{{ procurement_text }}；点击{{ '查看' if pi.procurement_confirmed or pi.shipping_completed else '处理' }}采购单">
@@ -249,7 +254,7 @@
                                     <span class="pi-list-workflow-dot"><i class="bi bi-cart-check"></i></span>
                                     <span class="pi-list-workflow-label">采购</span>
                                     <span class="pi-list-workflow-status">{{ procurement_text }}</span>
-                                {% if is_admin and total_received > 0 %}</a>{% else %}</button>{% endif %}
+                                {% if is_admin and pi.procurement_allowed %}</a>{% else %}</button>{% endif %}
 
                                 {% set packing_state = 'complete' if pi.packing_list and pi.packing_list.is_completed else ('partial' if pi.packing_list else 'pending') %}
                                 {% set packing_text = '装箱完成' if packing_state == 'complete' else ('装箱草稿' if packing_state == 'partial' else '未装箱') %}
@@ -514,6 +519,9 @@
         </div>
     </div></div>
 </div>
+<div class="modal fade" id="advanceSlipModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content" id="advanceSlipContent"></div></div>
+</div>
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title" id="payModalTitle">登记回款</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -577,6 +585,37 @@ var expenseAttachmentPreviewUrl = '';
 var paymentAttachmentPreviewUrl = '';
 var canDeleteExpense = {{ is_admin|tojson }};
 var canRevertShipping = {{ is_admin|tojson }};
+var advanceSlipRequest = 0;
+async function openAdvanceSlip(id) {
+    var revision = ++advanceSlipRequest;
+    var content = document.getElementById('advanceSlipContent');
+    content.innerHTML = '<div class="p-4">正在加载水单……</div>';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('advanceSlipModal')).show();
+    try {
+        var response = await fetch('/pi/' + id + '/advance-slip');
+        if (!response.ok) throw new Error('无法读取水单，请关闭后重试。');
+        var html = await response.text();
+        if (revision === advanceSlipRequest) content.innerHTML = html;
+    } catch (error) {
+        if (revision === advanceSlipRequest) content.textContent = error.message;
+    }
+}
+document.getElementById('advanceSlipModal').addEventListener('paste', function(event) {
+    var input = document.getElementById('advanceSlipFile');
+    if (!input || !event.clipboardData) return;
+    var items = event.clipboardData.items;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image/') === 0) {
+            var file = items[i].getAsFile();
+            if (!file) return;
+            var transfer = new DataTransfer();
+            transfer.items.add(file);
+            input.files = transfer.files;
+            event.preventDefault();
+            return;
+        }
+    }
+});
 function shippingError(message) {
     var box = document.getElementById('shippingModalError');
     box.textContent = message;

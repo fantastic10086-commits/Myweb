@@ -405,7 +405,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -6146,6 +6146,7 @@ def pi_list():
     customs_status = request.args.get('customs_status', '').strip()
     payment_labels = {
         'unpaid': '未回款',
+        'slip_pending': '有水单未到账',
         'received': '有回款（部分回款 + 已付清）',
         'partial': '部分回款',
         'paid': '已付清',
@@ -6198,14 +6199,16 @@ def pi_list():
     if payment_status == 'paid':
         query = query.filter(PI.paid.is_(True))
     elif payment_status == 'received':
-        query = query.filter(or_(
-            PI.paid.is_(True),
-            func.coalesce(PI.received_amount, 0) > 0,
-        ))
+        query = query.filter(func.coalesce(PI.received_amount, 0) > 0)
     elif payment_status == 'partial':
         query = query.filter(
             PI.paid.is_not(True),
             func.coalesce(PI.received_amount, 0) > 0,
+        )
+    elif payment_status == 'slip_pending':
+        query = query.filter(
+            func.json_extract(PI.advance_slip, '$.attachment').isnot(None),
+            func.coalesce(PI.received_amount, 0) <= 0,
         )
     elif payment_status == 'unpaid':
         query = query.filter(
@@ -6769,6 +6772,9 @@ def packing_list_save(pi_id):
         tracking_no = _packing_text(payload.get('tracking_no'), '物流单号', 200)
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
+
+    if shipping_date and pi.advance_shipping_blocked:
+        return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能填写实际发货日期或完成发货批次。'}), 400
 
     user = get_current_user()
     before = _packing_list_payload(pi, packing_list) if packing_list else {}
@@ -7340,6 +7346,78 @@ def pi_excel_download(id):
             return redirect(url_for('pi_detail', id=id))
     filepath = os.path.join(app.config['PDF_DIR'], pi.excel_path)
     return send_file(filepath, as_attachment=True, download_name=pi.excel_path)
+
+
+@app.route('/pi/<int:pi_id>/advance-slip', methods=['GET', 'POST'])
+@login_required
+def advance_slip(pi_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    slip = pi.advance_slip or {}
+    if request.method == 'GET':
+        return render_template('_advance_slip.html', pi=pi, slip=slip)
+    if request.form.get('version', type=int) != pi.version:
+        abort(409, description='订单已更新，请重新打开水单窗口。')
+    action = request.form.get('action', '')
+    before = dict(slip)
+    attachment = ''
+    if action in ('approve', 'reject'):
+        if not is_admin():
+            abort(403)
+        if slip.get('status') != 'pending':
+            abort(409, description='该申请已处理，请重新打开查看。')
+        slip = dict(slip, status='approved' if action == 'approve' else 'rejected',
+                    reviewed_by=get_current_user().username,
+                    reviewed_at=datetime.utcnow().isoformat(timespec='seconds'))
+    elif action == 'upload':
+        if pi.shipping_completed or pi.actual_payment_complete or slip.get('status') in ('pending', 'approved'):
+            abort(409, description='订单已付清、已发货或已有待审/已批准水单，不能重复提交。')
+        note = request.form.get('note', '').strip()
+        if len(note) > 1000:
+            abort(400, description='备注不能超过1000字。')
+        file = request.files.get('attachment')
+        if not file or not file.filename:
+            abort(400, description='请上传水单图片。')
+        file.stream.seek(0, os.SEEK_END)
+        size = file.stream.tell()
+        file.stream.seek(0)
+        if size > 12 * 1024 * 1024:
+            abort(400, description='水单图片不能超过12MB。')
+        attachment = _save_upload(file)
+        if not attachment:
+            abort(400, description='请上传有效的 JPG、PNG、WebP 或 GIF 图片。')
+        slip = dict(status='pending', attachment=attachment, note=note,
+                    uploaded_by=get_current_user().username,
+                    uploaded_at=datetime.utcnow().isoformat(timespec='seconds'))
+        pi.advance_payment_required = True
+    else:
+        abort(400)
+    pi.advance_slip = slip
+    _audit('update', 'pi', pi.id, '提前采购水单：' + action, before=before, after=slip)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        if attachment:
+            _remove_upload(attachment)
+        raise
+    flash('水单已提交，等待管理员审批。' if action == 'upload' else
+          ('已批准提前采购；实际回款付清后才能发货。' if action == 'approve' else '申请已拒绝，可补充资料后重新提交。'), 'success')
+    return redirect(url_for('pi_list', payment_status='slip_pending') if action == 'upload' else url_for('pi_list'))
+
+
+@app.route('/pi/<int:pi_id>/advance-slip/image')
+@login_required
+def advance_slip_image(pi_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    filename = (pi.advance_slip or {}).get('attachment', '')
+    if not filename or secure_filename(filename) != filename:
+        abort(404)
+    path = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+    if not os.path.isfile(path):
+        abort(404)
+    return send_file(path, conditional=True)
 
 
 @app.route('/pi/<int:id>/toggle-paid', methods=['POST'])
@@ -8950,7 +9028,7 @@ def procurement_select():
         selectinload(PI.items).joinedload(PIItem.product),
         selectinload(PI.procurements),
     ).filter(
-        PI.received_amount > 0,
+        or_(PI.received_amount > 0, func.json_extract(PI.advance_slip, '$.status') == 'approved'),
         PI.deleted_at.is_(None),
     )
     pi_query = _apply_report_filters(
@@ -8970,7 +9048,7 @@ def procurement_select():
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         pi_query = pi_query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
-    pis = pi_query.order_by(PI.id.desc()).all()
+    pis = [pi for pi in pi_query.order_by(PI.id.desc()).all() if pi.procurement_allowed]
     order_labels = {'pending': '待采购', 'partial': '部分采购',
                     'purchased': '采购完成', 'shipped': '发货完成'}
     order_status = request.args.get('order_status', '').strip()
@@ -9004,6 +9082,8 @@ def procurement_page(pi_id):
     ).get_or_404(pi_id)
     if pi.deleted_at is not None:
         abort(404)
+    if not pi.procurement_allowed:
+        abort(403, description='请先登记实际回款或等待管理员批准提前采购。')
     suppliers = [s.to_dict() for s in Supplier.query.order_by(Supplier.name).all()]
     existing = {}
     procurement_records = {}
@@ -9110,8 +9190,8 @@ def procurement_supplier_orders_export(pi_id):
     ).filter_by(id=pi_id).first_or_404()
     if pi.deleted_at is not None:
         abort(404)
-    if (pi.received_amount or 0) <= 0:
-        return jsonify({'success': False, 'error': '该 PI 尚未回款，不能导出采购单。'}), 400
+    if not pi.procurement_allowed:
+        return jsonify({'success': False, 'error': '该 PI 尚未获准采购，请先登记实际回款或由管理员批准水单申请；不能导出采购单。'}), 400
     data = request.get_json(silent=True) or {}
     try:
         purchase_date, groups = _supplier_export_groups(pi, data)
@@ -9201,8 +9281,8 @@ def api_procurement_save():
     pi = PI.query.options(db.joinedload(PI.items).joinedload(PIItem.product)).filter_by(id=pi_id).first_or_404()
     if pi.deleted_at is not None:
         abort(404)
-    if (pi.received_amount or 0) <= 0:
-        return jsonify({'success': False, 'error': '该 PI 尚未回款，不能开始采购。'}), 400
+    if not pi.procurement_allowed:
+        return jsonify({'success': False, 'error': '该 PI 尚未获准采购，请先登记实际回款或由管理员批准水单申请；不能开始采购。'}), 400
     if pi.shipping_completed:
         return jsonify({
             'success': False,
@@ -9285,8 +9365,8 @@ def api_procurement_confirm(pi_id):
     pi = PI.query.options(db.joinedload(PI.items).joinedload(PIItem.product)).filter_by(id=pi_id).first_or_404()
     if pi.deleted_at is not None:
         abort(404)
-    if (pi.received_amount or 0) <= 0:
-        return jsonify({'success': False, 'error': '该 PI 尚未回款，不能确认采购。'}), 400
+    if not pi.procurement_allowed:
+        return jsonify({'success': False, 'error': '该 PI 尚未获准采购，请先登记实际回款或由管理员批准水单申请；不能确认采购。'}), 400
     action = request.args.get('action', 'confirm')
     if action == 'unconfirm':
         if pi.shipping_completed:
@@ -9325,7 +9405,9 @@ def api_procurement_confirm(pi_id):
 def _shipping_record_payload(pi):
     """Return a stable UI payload without exposing unrelated PI data."""
     unavailable_reason = ''
-    if (pi.received_amount or 0) <= 0:
+    if pi.advance_shipping_blocked:
+        unavailable_reason = '凭水单提前采购的订单，必须实际回款付清尾款后才能发货。'
+    elif (pi.received_amount or 0) <= 0:
         unavailable_reason = '该 PI 尚未回款，不能登记发货。'
     elif not pi.procurement_is_complete:
         unavailable_reason = '采购尚未完成，暂时不能登记发货。'
@@ -9378,6 +9460,8 @@ def api_pi_shipping_record(pi_id):
         return jsonify({'success': False, 'error': '该 PI 已登记发货，请直接查看发货记录。'}), 409
     if (pi.received_amount or 0) <= 0:
         return jsonify({'success': False, 'error': '该 PI 尚未回款，不能登记发货。'}), 400
+    if pi.advance_shipping_blocked:
+        return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能发货。'}), 400
     if not pi.procurement_is_complete or _procurement_gaps(pi):
         return jsonify({'success': False, 'error': '采购尚未完成，暂时不能登记发货。'}), 400
 
@@ -9466,6 +9550,8 @@ def api_pi_shipping_complete(pi_id):
             'preserved_records': ['回款', '采购', '装箱', '报关'],
         }), 409
     if completed:
+        if pi.advance_shipping_blocked:
+            return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能发货。'}), 400
         if not pi.procurement_confirmed:
             return jsonify({'success': False, 'error': '采购单尚未完整确认，不能标记发货完成。'}), 400
         gaps = _procurement_gaps(pi)

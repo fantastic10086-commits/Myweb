@@ -507,6 +507,8 @@ class PI(db.Model):
     # now means the RMB freight charged by the supplier for this purchase.
     actual_shipping_cost = db.Column(db.Float, default=0.0)
     procurement_confirmed = db.Column(db.Boolean, default=False)
+    advance_slip = db.Column(db.JSON, nullable=True)
+    advance_payment_required = db.Column(db.Boolean, default=False, nullable=False)
     shipping_completed = db.Column(db.Boolean, default=False)
     shipping_date = db.Column(db.Date, nullable=True)
     shipping_tracking_no = db.Column(db.String(200), default='')
@@ -539,6 +541,20 @@ class PI(db.Model):
         'PIItem', backref='pi', lazy=True, cascade='all, delete-orphan',
         order_by='(PIItem.sort_order, PIItem.id)',
     )
+
+    @property
+    def actual_payment_complete(self):
+        return round(sum(payment.amount or 0 for payment in self.active_payments), 2) >= round(self.grand_total, 2)
+
+    @property
+    def procurement_allowed(self):
+        if self.advance_payment_required:
+            return (self.advance_slip or {}).get('status') == 'approved' or self.actual_payment_complete
+        return (self.received_amount or 0) > 0
+
+    @property
+    def advance_shipping_blocked(self):
+        return self.advance_payment_required and not self.actual_payment_complete
 
     @property
     def active_payments(self):

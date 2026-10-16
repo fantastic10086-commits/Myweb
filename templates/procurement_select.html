@@ -114,7 +114,8 @@
                 <tbody>
                     {% for p in pis %}
                     <tr>
-                        <td data-label="PI 编号" class="proc-number-cell" title="{{ p.pi_number }}"><strong>{{ p.pi_number }}</strong></td>
+                        <td data-label="PI 编号" class="proc-number-cell" title="{{ p.pi_number }}"><strong>{{ p.pi_number }}</strong>
+                            {% if p.advance_payment_required %}<div class="small text-warning">{{ '水单采购 · 已付清' if p.actual_payment_complete else '凭水单采购 · 尾款未清' }}</div>{% endif %}</td>
                         <td data-label="客户" class="proc-customer-cell">{{ p.customer.name if p.customer else '—' }}</td>
                         <td data-label="国家" class="proc-country-cell"><small>{{ p.customer.country if p.customer else '-' }}</small></td>
                         <td data-label="日期">{{ p.issue_date }}</td>
@@ -131,8 +132,9 @@
                         <td data-label="回款" class="text-center">
                             {% if p.paid %}
                             <span class="badge bg-success" title="已全额回款">✓</span>
-                            {% else %}
+                            {% elif p.received_amount > 0 %}
                             <span class="badge bg-warning text-dark" title="部分回款：{{ p.currency }} {{ '%.2f'|format(p.received_amount) }} / {{ p.currency }} {{ '%.2f'|format(p.grand_total) }}">◐</span>
+                            {% else %}<span class="badge bg-secondary">未到账</span>
                             {% endif %}
                         </td>
                         <td data-label="订单进度">

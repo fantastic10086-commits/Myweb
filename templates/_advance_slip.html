@@ -1,0 +1,43 @@
+<div class="modal-header">
+    <h5 class="modal-title">水单／提前采购 · {{ pi.pi_number }}</h5>
+    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+</div>
+<div class="modal-body">
+    <div class="alert alert-warning">水单不代表到账，不计入回款金额。管理员批准后允许采购；实际回款付清尾款后才允许发货。</div>
+    {% if slip %}
+    <p><strong>{{ {'pending':'待管理员审批', 'approved':'已批准提前采购', 'rejected':'申请已拒绝'}.get(slip.status, '') }}</strong>
+    · {{ '实际款项已付清' if pi.actual_payment_complete else ('部分到账，尾款未付清' if pi.received_amount else '尚未到账') }}</p>
+    <p class="small text-muted">上传：{{ slip.uploaded_by }} · {{ slip.uploaded_at }} UTC
+    {% if slip.reviewed_by %}<br>审批：{{ slip.reviewed_by }} · {{ slip.reviewed_at }} UTC{% endif %}</p>
+    <p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ slip.note }}</p>
+    <img src="{{ url_for('advance_slip_image', pi_id=pi.id) }}" alt="水单图片" class="img-fluid rounded mb-3" style="max-height:420px;object-fit:contain">
+    {% if is_admin and slip.status == 'pending' %}
+    <form method="post" action="{{ url_for('advance_slip', pi_id=pi.id) }}" class="d-flex gap-2 mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="version" value="{{ pi.version }}">
+        <button class="btn btn-success" name="action" value="approve">允许提前采购</button>
+        <button class="btn btn-outline-danger" name="action" value="reject">拒绝申请</button>
+    </form>
+    {% endif %}
+    {% endif %}
+    {% if pi.active_payments %}
+    <div class="mb-3"><strong>本单实际回款记录</strong>
+        {% for payment in pi.active_payments %}
+        <div class="small">{{ payment.order_no }} · {{ pi.currency }} {{ '%.2f'|format(payment.amount) }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% if not pi.shipping_completed and not pi.actual_payment_complete and slip.get('status') not in ['pending', 'approved'] %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('advance_slip', pi_id=pi.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="version" value="{{ pi.version }}">
+        <input type="hidden" name="action" value="upload">
+        <label class="form-label" for="advanceSlipFile">水单图片 *</label>
+        <input id="advanceSlipFile" class="form-control mb-2" type="file" name="attachment" accept="image/jpeg,image/png,image/webp,image/gif" required>
+        <div class="form-text mb-3">支持 JPG、PNG、WebP、GIF，最大12MB；可在弹窗中直接粘贴图片。</div>
+        <label class="form-label" for="advanceSlipNote">备注（选填）</label>
+        <textarea id="advanceSlipNote" name="note" class="form-control mb-3" rows="3" maxlength="1000"></textarea>
+        <button class="btn btn-primary" type="submit">上传水单并申请提前采购</button>
+    </form>
+    {% endif %}
+</div>

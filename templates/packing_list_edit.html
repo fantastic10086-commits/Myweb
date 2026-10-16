@@ -76,6 +76,11 @@
 {% endblock %}
 
 {% block content %}
+{% if pi.advance_payment_required %}
+<div class="alert {{ 'alert-warning' if pi.advance_shipping_blocked else 'alert-success' }}">
+    凭水单提前采购 · {{ '尾款未付清，禁止发货。必须累计实际回款达到订单总额后才可发货。' if pi.advance_shipping_blocked else '实际回款已付清，可按正常流程登记发货。' }}
+</div>
+{% endif %}
 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
     <div>
         <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -165,7 +170,7 @@
         <div class="card-body">
             <div class="row g-2">
             <div class="col-md-4"><label class="form-label">计划发货日期</label><input type="date" id="plannedShippingDate" class="form-control form-control-sm" value="{{ packing_data.planned_shipping_date }}"></div>
-            <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" class="form-control form-control-sm" value="{{ packing_data.shipping_date }}"></div>
+            <div class="col-md-4"><label class="form-label">实际发货日期</label><input type="date" id="shippingDate" {% if pi.advance_shipping_blocked %}disabled{% endif %} class="form-control form-control-sm" value="{{ packing_data.shipping_date }}"></div>
             <div class="col-md-4"><label class="form-label">物流单号</label><input id="trackingNo" class="form-control form-control-sm" value="{{ packing_data.tracking_no }}"></div>
             <div class="col-md-6"><label class="form-label">本批收货地址</label><textarea id="shippingAddress" class="form-control form-control-sm" rows="1">{{ packing_data.shipping_address }}</textarea></div>
             <div class="col-md-3"><label class="form-label">联系人</label><input id="shippingContact" class="form-control form-control-sm" value="{{ packing_data.contact_name }}"></div>
