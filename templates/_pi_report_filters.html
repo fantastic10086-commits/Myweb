@@ -36,6 +36,21 @@
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
             {% if order_labels is defined %}
+            {% if filter_endpoint == 'procurement_select' %}
+            <div class="col-12 col-xl-auto">
+                <div class="form-label small mb-1" id="orderStatusLabel">订单进度</div>
+                <input type="hidden" name="order_status" value="{{ order_status or '' }}">
+                <div class="d-flex flex-wrap gap-2" role="group" aria-labelledby="orderStatusLabel">
+                    {% for value, label in order_labels.items() %}
+                    <button type="submit"
+                            class="btn btn-sm {{ 'btn-primary' if order_status == value else 'btn-outline-primary' }}"
+                            aria-pressed="{{ 'true' if order_status == value else 'false' }}"
+                            data-status="{{ '' if order_status == value else value }}"
+                            onclick="this.form.elements['order_status'].value = this.dataset.status;">{{ label }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+            {% else %}
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1" for="orderStatusFilter">订单进度</label>
                 <select id="orderStatusFilter" name="order_status" class="form-select form-select-sm">
@@ -45,6 +60,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
             {% endif %}
             <div class="col-md-3 col-xl-1">
                 <button type="submit" class="btn btn-sm btn-primary w-100" title="应用筛选">
