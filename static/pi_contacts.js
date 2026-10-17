@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let entries = [], revision = 0;
     function describe() {
         const contact = select.value === '__snapshot__' ? snapshot : entries.find(c => c.id === select.value);
-        summary.textContent = contact ? [contact.name, contact.position, contact.phone, contact.whatsapp && 'WhatsApp: ' + contact.whatsapp, contact.email].filter(Boolean).join(' · ') || '本单未填写联系信息' : '此客户暂无联系人，可在客户资料中添加。';
+        summary.textContent = contact ? [contact.name, contact.position, contact.phone, contact.whatsapp && 'WhatsApp: ' + contact.whatsapp, contact.email, contact.wechat && '微信: ' + contact.wechat].filter(Boolean).join(' · ') || '本单未填写联系信息' : '此客户暂无联系人，可在客户资料中添加。';
     }
     async function load(initial) {
         const current = ++revision;

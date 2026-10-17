@@ -1327,12 +1327,12 @@ def _migrate_contact_snapshots():
         if row['contact_person'] or row['email'] or row['phone']:
             entries = [{'id': 'legacy', 'name': row['contact_person'] or '',
                         'email': row['email'] or '', 'phone': row['phone'] or '',
-                        'position': '', 'whatsapp': '', 'note': '', 'is_default': True}]
+                        'position': '', 'whatsapp': '', 'wechat': '', 'note': '', 'is_default': True}]
         db.session.execute(text("UPDATE customers SET contacts=:value WHERE id=:id AND contacts IS NULL"),
                            {'id': row['id'], 'value': json.dumps(entries, ensure_ascii=False)})
     for row in db.session.execute(text("SELECT p.id, c.contact_person, c.email, c.phone FROM pis p LEFT JOIN customers c ON c.id=p.customer_id WHERE p.contact_snapshot IS NULL")).mappings().all():
         snapshot = {'name': row['contact_person'] or '', 'email': row['email'] or '',
-                    'phone': row['phone'] or '', 'position': '', 'whatsapp': '', 'note': ''}
+                    'phone': row['phone'] or '', 'position': '', 'whatsapp': '', 'wechat': '', 'note': ''}
         db.session.execute(text("UPDATE pis SET contact_snapshot=:value WHERE id=:id AND contact_snapshot IS NULL"),
                            {'id': row['id'], 'value': json.dumps(snapshot, ensure_ascii=False)})
     db.session.commit()
@@ -3046,7 +3046,7 @@ def _customer_contacts_from_form(customer):
         raise ValueError('联系人资料格式无效。')
     if not isinstance(entries, list) or len(entries) > 50:
         raise ValueError('每个客户最多保存 50 位联系人。')
-    limits = {'name': 100, 'position': 100, 'phone': 50, 'whatsapp': 50, 'email': 200, 'note': 1000}
+    limits = {'name': 100, 'position': 100, 'phone': 50, 'whatsapp': 50, 'email': 200, 'wechat': 100, 'note': 1000}
     result = []
     seen = set()
     for entry in entries:

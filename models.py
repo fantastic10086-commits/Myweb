@@ -48,7 +48,7 @@ class Customer(db.Model):
         if self.contact_person or self.email or self.phone:
             return [{'id': 'legacy', 'name': self.contact_person or '',
                      'email': self.email or '', 'phone': self.phone or '',
-                     'position': '', 'whatsapp': '', 'note': '', 'is_default': True}]
+                     'position': '', 'whatsapp': '', 'wechat': '', 'note': '', 'is_default': True}]
         return []
 
     address = db.Column(db.Text, default='')
@@ -472,7 +472,7 @@ class PI(db.Model):
             return self.contact_snapshot
         customer = self.customer
         return {'name': customer.contact_person or '', 'email': customer.email or '',
-                'phone': customer.phone or '', 'position': '', 'whatsapp': '', 'note': ''} if customer else {}
+                'phone': customer.phone or '', 'position': '', 'whatsapp': '', 'wechat': '', 'note': ''} if customer else {}
 
     issue_date = db.Column(db.Date, default=date.today)
     payment_terms = db.Column(db.Text, default='100% TT before shipment')

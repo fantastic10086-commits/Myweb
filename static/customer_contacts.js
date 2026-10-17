@@ -5,7 +5,7 @@
     try { contacts = JSON.parse(hidden.value); } catch (_) { contacts = []; }
     if (!Array.isArray(contacts)) contacts = [];
     const rows = document.getElementById('contactEditorRows');
-    const fields = [['name', '姓名', 100], ['position', '职位', 100], ['phone', '电话', 50], ['whatsapp', 'WhatsApp', 50], ['email', '邮箱', 200], ['note', '备注', 1000]];
+    const fields = [['name', '姓名', 100], ['position', '职位', 100], ['phone', '电话', 50], ['whatsapp', 'WhatsApp', 50], ['email', '邮箱', 200], ['wechat', '微信', 100], ['note', '备注', 1000]];
     function sync() { hidden.value = JSON.stringify(contacts); }
     function render() {
         rows.replaceChildren();
