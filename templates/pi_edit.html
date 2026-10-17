@@ -15,6 +15,7 @@
 .sel-price::-webkit-inner-spin-button, .sel-price::-webkit-outer-spin-button,
 .sel-qty::-webkit-inner-spin-button, .sel-qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='pi_order_layout.css') }}">
 {% endblock %}
 
 {% block extra_scripts %}
@@ -488,6 +489,7 @@
     }
 </script>
 <script src="{{ url_for('static', filename='pi_contacts.js') }}"></script>
+<script src="{{ url_for('static', filename='pi_order_layout.js') }}"></script>
 {% endblock %}
 
 {% block content %}

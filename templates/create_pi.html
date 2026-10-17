@@ -67,6 +67,7 @@ body > .container { max-width: 1320px; }
     #selected_products_table .pi-row-actions { justify-content: flex-end; }
 }
 </style>
+<link rel="stylesheet" href="{{ url_for('static', filename='pi_order_layout.css') }}">
 {% endblock %}
 
 {% block extra_scripts %}
@@ -741,6 +742,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <script src="{{ url_for('static', filename='pi_contacts.js') }}"></script>
+<script src="{{ url_for('static', filename='pi_order_layout.js') }}"></script>
 {% endblock %}
 
 {% block content %}

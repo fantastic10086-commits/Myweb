@@ -1,0 +1,20 @@
+.pi-order-grid.order-required-grid, .pi-order-grid.pi-edit-info {
+    display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:.55rem .75rem; align-items:start;
+}
+.pi-order-grid > .mb-3 { grid-column:span var(--field-span, 4); min-width:0; margin-bottom:0!important; position:relative; }
+#orderInformation .card-body, #editOrderInformation .card-body { padding:.75rem; }
+#orderInformation .form-label, #editOrderInformation .form-label { font-size:.875rem; margin-bottom:.2rem; }
+#orderInformation .form-control, #orderInformation .form-select, #orderInformation .input-group-text,
+#editOrderInformation .form-control, #editOrderInformation .form-select, #editOrderInformation .input-group-text { font-size:.875rem; min-height:34px; padding:.25rem .5rem; }
+#orderInformation .form-select, #editOrderInformation .form-select { padding-right:2rem; }
+#orderInformation textarea, #editOrderInformation textarea { height:3.5rem; min-height:3.5rem; resize:vertical; }
+#orderInformation #customer_notes_display, #editOrderInformation #customer_notes_display { height:3.5rem!important; min-height:3.5rem!important; max-height:none; overflow:auto; resize:vertical; white-space:pre-wrap; }
+.pi-field-help { display:inline-block; position:relative; margin-left:.3rem; font-weight:normal; }
+.pi-field-help > summary { cursor:pointer; color:#6c757d; list-style:none; }
+.pi-field-help > summary::-webkit-details-marker { display:none; }
+.pi-field-help[open] > .form-text, .pi-field-help[open] > small { display:block; position:absolute; top:1.5rem; left:0; z-index:1050; width:260px; max-width:75vw; padding:.6rem; background:white; color:#495057; border:1px solid #dee2e6; border-radius:.35rem; box-shadow:0 .2rem .6rem #0002; }
+#piContactSummary { font-size:.75rem; line-height:1.35; overflow-wrap:anywhere; }
+.pi-bank-details { grid-column:1/-1; font-size:.8rem; color:#6c757d; }
+.pi-bank-details > .mb-3 { margin-top:.5rem; }
+@media(max-width:991.98px) { .pi-order-grid.order-required-grid, .pi-order-grid.pi-edit-info { grid-template-columns:repeat(2,minmax(0,1fr)); } .pi-order-grid > .mb-3 { grid-column:span 1; } }
+@media(max-width:575.98px) { .pi-order-grid.order-required-grid, .pi-order-grid.pi-edit-info { grid-template-columns:1fr; } }
