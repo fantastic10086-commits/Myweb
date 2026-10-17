@@ -405,7 +405,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -6779,6 +6779,8 @@ def packing_list_save(pi_id):
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
+    if pi.shipping_paused:
+        return jsonify(success=False, error='发货记录已暂停，装箱资料暂不可修改；请先由管理员恢复原发货记录。'), 409
     if shipping_date and pi.advance_shipping_blocked:
         return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能填写实际发货日期或完成发货批次。'}), 400
 
@@ -9363,6 +9365,47 @@ def api_procurement_save():
     })
 
 
+@app.route('/api/procurement/<int:pi_id>/shipping-pause', methods=['POST'])
+@admin_required
+def api_procurement_shipping_pause(pi_id):
+    pi = PI.query.get_or_404(pi_id)
+    if pi.deleted_at is not None:
+        abort(404)
+    payload = request.get_json(silent=True) or {}
+    if payload.get('version') != pi.version:
+        return jsonify(success=False, error='订单已更新，请刷新页面后重试。'), 409
+    fields = ['shipping_paused', 'shipping_completed', 'procurement_confirmed', 'procurement_status']
+    before = _snapshot(pi, fields)
+    if payload.get('action') == 'pause':
+        if pi.shipping_paused or not pi.shipping_completed:
+            return jsonify(success=False, error='当前订单不能暂停发货，请刷新页面。'), 409
+        pi.shipping_paused = True
+        pi.shipping_completed = False
+        pi.procurement_confirmed = False
+        pi.procurement_status = '部分采购' if pi.procurements else '待采购'
+        description = '暂时撤销发货并修改采购；原发货资料保留'
+    elif payload.get('action') == 'restore':
+        if not pi.shipping_paused or pi.shipping_completed:
+            return jsonify(success=False, error='没有可恢复的暂停发货记录。'), 409
+        if not pi.procurement_is_complete or _procurement_gaps(pi):
+            return jsonify(success=False, error='请先保存并重新确认采购完成。'), 400
+        if not pi.actual_payment_complete:
+            return jsonify(success=False, error='必须实际回款付清尾款后才能恢复发货。'), 400
+        pi.shipping_paused = False
+        pi.shipping_completed = True
+        pi.procurement_status = '发货完成'
+        description = '恢复原发货记录'
+    else:
+        return jsonify(success=False, error='操作无效。'), 400
+    _audit('update', 'pi', pi.id, description, before=before, after=_snapshot(pi, fields))
+    try:
+        db.session.commit()
+    except StaleDataError:
+        db.session.rollback()
+        return jsonify(success=False, error='订单已被其他用户更新，请刷新后重试。'), 409
+    return jsonify(success=True)
+
+
 @app.route('/api/procurement/<int:pi_id>/confirm', methods=['POST'])
 @admin_required
 def api_procurement_confirm(pi_id):
@@ -9411,7 +9454,9 @@ def api_procurement_confirm(pi_id):
 def _shipping_record_payload(pi):
     """Return a stable UI payload without exposing unrelated PI data."""
     unavailable_reason = ''
-    if pi.advance_shipping_blocked:
+    if pi.shipping_paused:
+        unavailable_reason = '发货记录已暂停，请由管理员在采购页恢复原发货记录。'
+    elif pi.advance_shipping_blocked:
         unavailable_reason = '凭水单提前采购的订单，必须实际回款付清尾款后才能发货。'
     elif (pi.received_amount or 0) <= 0:
         unavailable_reason = '该 PI 尚未回款，不能登记发货。'
@@ -9462,6 +9507,8 @@ def api_pi_shipping_record(pi_id):
     if request.method == 'GET':
         return jsonify(_shipping_record_payload(pi))
 
+    if pi.shipping_paused:
+        return jsonify(success=False, error='发货记录已暂停，请在采购页恢复原记录。'), 409
     if pi.shipping_completed:
         return jsonify({'success': False, 'error': '该 PI 已登记发货，请直接查看发货记录。'}), 409
     if (pi.received_amount or 0) <= 0:
@@ -9539,6 +9586,8 @@ def api_pi_shipping_complete(pi_id):
     pi = PI.query.options(db.joinedload(PI.items).joinedload(PIItem.product)).filter_by(id=pi_id).first_or_404()
     if pi.deleted_at is not None:
         abort(404)
+    if pi.shipping_paused:
+        return jsonify(success=False, error='发货记录已暂停，请在采购页恢复原记录。'), 409
     if (pi.received_amount or 0) <= 0:
         return jsonify({'success': False, 'error': '该 PI 尚未回款，不能确认发货完成。'}), 400
     data = request.get_json(silent=True) or {}

@@ -140,6 +140,8 @@
                         <td data-label="订单进度">
                             {% set status = p.effective_procurement_status %}
                             {% set status_class = {'待采购':'warning', '部分采购':'info', '采购完成':'primary', '发货完成':'success'}.get(status, 'secondary') %}
+                            {% if p.shipping_paused %}<div><span class="badge bg-warning text-dark">发货已暂停，采购修改中</span></div>{% endif %}
+                            {% if p.zero_purchase_price_count %}<div><span class="badge bg-warning text-dark">进价为 0：{{ p.zero_purchase_price_count }} 项</span></div>{% endif %}
                             <span class="badge bg-{{ status_class }}{% if status in ['待采购', '部分采购'] %} text-dark{% endif %}">{{ status }}</span>
                         </td>
                         <td data-label="业务员" class="proc-salesperson-cell">{{ p.salesperson }}</td>

@@ -279,7 +279,7 @@
                                 </button>
 
                                 {% set shipping_state = 'complete' if pi.shipping_completed else 'pending' %}
-                                {% set shipping_text = '发货完成' if pi.shipping_completed else '未发货' %}
+                                {% set shipping_text = '发货已暂停' if pi.shipping_paused else ('发货完成' if pi.shipping_completed else '未发货') %}
                                 <button type="button" role="listitem" id="shippingBtn-{{ pi.id }}"
                                         class="pi-list-workflow-stage is-{{ shipping_state }} is-action"
                                         onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'

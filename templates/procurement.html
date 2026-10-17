@@ -153,6 +153,7 @@ function procurementRiskState(row) {
         missing: supplierMissing || priceMissing,
         supplierMissing: supplierMissing,
         priceMissing: priceMissing,
+        zeroPrice: !priceMissing && Number.isFinite(purchasePrice) && purchasePrice === 0,
         highPrice: highPrice,
         difference: difference,
         percentage: highPrice && piPriceRmb > 0 ? difference / piPriceRmb * 100 : null
@@ -163,10 +164,11 @@ function applyProcurementFilter() {
     document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
         var visible = activeProcurementFilter === 'all'
             || (activeProcurementFilter === 'missing' && row.dataset.procMissing === '1')
+            || (activeProcurementFilter === 'zero' && row.dataset.procZero === '1')
             || (activeProcurementFilter === 'high' && row.dataset.procHigh === '1');
         row.classList.toggle('d-none', !visible);
     });
-    ['all', 'missing', 'high'].forEach(function(filterName) {
+    ['all', 'missing', 'high', 'zero'].forEach(function(filterName) {
         var button = document.getElementById('procFilter-' + filterName);
         if (button) button.classList.toggle('active', activeProcurementFilter === filterName);
     });
@@ -233,6 +235,7 @@ function applyBulkSupplier() {
 function updateProcurementHighlights() {
     var missingCount = 0;
     var highCount = 0;
+    var zeroCount = 0;
     document.querySelectorAll('#itemsTable tbody tr').forEach(function(row) {
         var risk = procurementRiskState(row);
         var supplier = row.querySelector('.proc-supplier');
@@ -240,23 +243,28 @@ function updateProcurementHighlights() {
         var supplierWarning = row.querySelector('.proc-supplier-warning');
         var priceWarning = row.querySelector('.proc-price-warning');
         row.dataset.procMissing = risk.missing ? '1' : '0';
+        row.dataset.procZero = risk.zeroPrice ? '1' : '0';
+        if (risk.zeroPrice) zeroCount += 1;
         row.dataset.procHigh = risk.highPrice ? '1' : '0';
         if (risk.missing) missingCount += 1;
         if (risk.highPrice) highCount += 1;
         supplier.classList.toggle('proc-missing-field', risk.supplierMissing);
         if (supplier.supplierSearchInput) supplier.supplierSearchInput.classList.toggle('proc-missing-field', risk.supplierMissing);
-        price.classList.toggle('proc-missing-field', risk.priceMissing);
+        price.classList.toggle('proc-missing-field', risk.priceMissing || risk.zeroPrice);
         price.classList.toggle('proc-high-price-field', risk.highPrice);
         supplierWarning.textContent = risk.supplierMissing ? '缺少供应商' : '';
         priceWarning.textContent = risk.priceMissing
             ? '缺少采购价格'
-            : (risk.highPrice
+            : risk.zeroPrice ? '进价为 0' : (risk.highPrice
                 ? '高于 PI ¥' + risk.difference.toFixed(2)
                     + (risk.percentage == null ? '' : ' / ' + risk.percentage.toFixed(1) + '%')
                 : '');
         priceWarning.className = 'proc-price-warning small mt-1 text-end '
             + (risk.highPrice ? 'text-danger fw-semibold' : 'proc-warning-orange');
     });
+    document.getElementById('procZeroCount').textContent = zeroCount;
+    document.getElementById('procZeroBadge').textContent = zeroCount ? '进价为 0：' + zeroCount + ' 项' : '';
+    document.getElementById('procZeroBadge').classList.toggle('d-none', zeroCount === 0);
     document.getElementById('procMissingCount').textContent = missingCount;
     document.getElementById('procHighCount').textContent = highCount;
     document.getElementById('procFilter-missing').disabled = missingCount === 0;
@@ -414,6 +422,8 @@ function confirmProcurement() {
     updateProcurementHighlights();
     var highPriceCount = document.querySelectorAll('#itemsTable tbody tr[data-proc-high="1"]').length;
     var message = '确定采购已完成吗？\n\n系统会先保存采购明细、业务汇率和供应商运费，再确认采购完成。';
+    var zeroPriceCount = document.querySelectorAll('#itemsTable tbody tr[data-proc-zero="1"]').length;
+    if (zeroPriceCount > 0) message += '\n\n注意：有 ' + zeroPriceCount + ' 项产品进价为 0，确认完成后仍会保留提醒。';
     if (highPriceCount > 0) {
         message += '\n\n注意：有 ' + highPriceCount + ' 项产品的采购单价高于 PI 单价，请确认后再继续。';
     }
@@ -436,6 +446,17 @@ function confirmProcurement() {
             button.innerHTML = '<i class="bi bi-check-lg"></i> 确认采购完成';
             updateConfirmState();
         });
+}
+
+function changeShippingPause(action) {
+    if (!confirm(action === 'pause' ? '暂停发货并修改采购？原发货日期、物流单号、备注和图片全部保留。' : '确认恢复原发货记录？')) return;
+    fetch('/api/procurement/' + piId + '/shipping-pause', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:action, version:{{ pi.version or 1 }}})
+    }).then(function(response) { return response.json().then(function(data) {
+        if (!response.ok || !data.success) throw new Error(data.error || '操作失败');
+        window.location.reload();
+    }); }).catch(function(error) { alert(error.message); });
 }
 
 function enableEditing() {
@@ -784,6 +805,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 {% if pi.customer and pi.customer.country %}<span class="text-muted">{{ pi.customer.country }}</span>{% endif %}
                 <span class="text-muted">业务员：{{ pi.salesperson }}</span>
                 <span class="badge bg-{{ order_status_class }}">{{ order_status }}</span>
+                <span id="procZeroBadge" class="badge bg-warning text-dark d-none"></span>
+                {% if pi.shipping_paused %}<span class="badge bg-warning text-dark">发货记录已暂停，采购修改中</span>{% endif %}
             </div>
             <button type="button" class="btn btn-outline-primary btn-sm" onclick="openProcurementPreview()">
                 <i class="bi bi-eye me-1"></i>预览采购汇总
@@ -822,6 +845,7 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
     <div class="card-body p-0">
         <div class="d-flex align-items-center flex-wrap gap-2 px-3 py-2 border-bottom bg-light" id="procurementRiskSummary">
+            <button type="button" class="btn btn-sm btn-outline-warning" id="procFilter-zero" onclick="setProcurementFilter('zero')">进价为 0 <span id="procZeroCount">0</span></button>
             <span class="small fw-semibold text-muted me-1"><i class="bi bi-exclamation-triangle me-1"></i>重点检查</span>
             <button type="button" class="btn btn-sm btn-outline-secondary active" id="procFilter-all" onclick="setProcurementFilter('all')">显示全部</button>
             <button type="button" class="btn btn-sm proc-risk-filter-missing" id="procFilter-missing" onclick="setProcurementFilter('missing')">
@@ -967,9 +991,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <div class="card mt-3">
     <div class="card-body py-2 text-center">
+        {% if pi.shipping_paused %}
+        <div class="alert alert-warning py-2">发货记录已暂停，采购修改中。原发货资料已保留。
+        <button type="button" class="btn btn-success btn-sm" onclick="changeShippingPause('restore')" {% if not pi.procurement_is_complete %}disabled{% endif %}>恢复原发货记录</button></div>
+        {% endif %}
         {% if pi.shipping_completed and pi.procurement_confirmed %}
         <span class="badge bg-success fs-6 me-2"><i class="bi bi-truck me-1"></i>发货完成</span>
-        <small class="text-muted">发货记录请在 PI 列表查看。</small>
+        <button type="button" class="btn btn-outline-warning" onclick="changeShippingPause('pause')">暂时撤销发货并修改采购</button>
         {% elif pi.procurement_confirmed %}
         <span class="badge bg-primary fs-6 me-2"><i class="bi bi-check-lg me-1"></i>采购完成</span>
         <small class="text-muted me-2">发货由业务员在 PI 列表登记。</small>

@@ -509,6 +509,7 @@ class PI(db.Model):
     procurement_confirmed = db.Column(db.Boolean, default=False)
     advance_slip = db.Column(db.JSON, nullable=True)
     advance_payment_required = db.Column(db.Boolean, default=False, nullable=False)
+    shipping_paused = db.Column(db.Boolean, default=False, nullable=False)
     shipping_completed = db.Column(db.Boolean, default=False)
     shipping_date = db.Column(db.Date, nullable=True)
     shipping_tracking_no = db.Column(db.String(200), default='')
@@ -599,6 +600,11 @@ class PI(db.Model):
             and purchased.get(item.id, 0) >= int(item.quantity or 0)
             for item in self.items
         )
+
+    @property
+    def zero_purchase_price_count(self):
+        return len({p.pi_item_id for p in self.procurements
+                    if p.unit_price is not None and p.unit_price == 0 and (p.quantity or 0) > 0})
 
     @property
     def effective_procurement_status(self):
