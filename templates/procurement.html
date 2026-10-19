@@ -808,9 +808,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span id="procZeroBadge" class="badge bg-warning text-dark d-none"></span>
                 {% if pi.shipping_paused %}<span class="badge bg-warning text-dark">发货记录已暂停，采购修改中</span>{% endif %}
             </div>
+            <div class="d-flex gap-2 flex-wrap">
+            {% if is_admin %}<a href="{{ url_for('supplier_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck me-1"></i>供应商管理</a>{% endif %}
             <button type="button" class="btn btn-outline-primary btn-sm" onclick="openProcurementPreview()">
                 <i class="bi bi-eye me-1"></i>预览采购汇总
             </button>
+            </div>
         </div>
     </div>
 </div>

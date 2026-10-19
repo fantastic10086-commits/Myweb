@@ -2528,6 +2528,12 @@ def profile():
     return render_template('profile.html', sp=sp, stats=stats, pi_list=pi_list)
 
 
+@app.route('/admin/center')
+@admin_required
+def admin_center():
+    return render_template('admin_center.html')
+
+
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings_page():
