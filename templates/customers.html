@@ -113,7 +113,15 @@
                     {% for c in customers %}
                     {% set list_return = url_for('customer_list', search=search, sp=sp_filter, customer_type=customer_type, follow=follow_filter, deal_min=deal_min, deal_max=deal_max, date_from=date_from, date_to=date_to, sort=sort, page=page, _anchor='customer-row-' ~ c.id) %}
                     <tr id="customer-row-{{ c.id }}">
-                        <td style="max-width:160px;" class="text-truncate"><strong><a href="{{ url_for('customer_detail', id=c.id, return_to=list_return) }}" class="text-decoration-none">{{ c.name }}</a></strong></td>
+                        <td style="max-width:210px;">
+                            <a href="{{ url_for('customer_detail', id=c.id, return_to=list_return) }}" class="d-flex align-items-center gap-2 text-decoration-none" title="{{ c.name }}">
+                                <span class="d-inline-flex align-items-center justify-content-center border rounded bg-light text-muted flex-shrink-0" style="width:40px;height:40px;overflow:hidden;">
+                                    {% if c.image %}<img src="{{ url_for('uploaded_file', filename=c.image) }}" alt="{{ c.name }}标志" width="40" height="40" loading="lazy" decoding="async" style="object-fit:contain;" onerror="this.hidden=true;this.nextElementSibling.hidden=false;"><span hidden><i class="bi bi-building" aria-hidden="true"></i></span>
+                                    {% else %}<i class="bi bi-building" aria-hidden="true"></i>{% endif %}
+                                </span>
+                                <strong class="text-truncate" style="min-width:0;">{{ c.name }}</strong>
+                            </a>
+                        </td>
                         <td>{{ c.country }}</td>
                         <td style="max-width:150px;"><span class="text-truncate d-block">{{ c.contact_person or '-' }}</span><small class="text-muted">共 {{ c.contact_entries|length }} 位联系人</small><small class="text-muted text-truncate d-block">{{ c.email or c.phone or '' }}</small></td>
                         <td>{{ c.salesperson }}</td>
