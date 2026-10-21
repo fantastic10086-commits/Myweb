@@ -93,7 +93,7 @@
     }
     function showHideEmpty() { noProductMsg.style.display = selectedProductOrder.length === 0 ? '' : 'none'; }
 
-    function imgTag(img, size) { size = size || 36; return img ? '<img src="/uploads/thumb/' + encodeURIComponent(img) + '" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:3px;margin-right:4px;">' : ''; }
+    function imgTag(img, size) { size = size || 36; return img ? '<img src="/uploads/thumb/' + encodeURIComponent(img) + '" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:contain;object-position:center;background-color:#fff;border-radius:3px;margin-right:4px;">' : ''; }
     function normalizeProduct(p) {
         var currentPrice = Number(p.price) || 0;
         var usdPrice = Number(p.priceUsd != null ? p.priceUsd : p.price_usd);

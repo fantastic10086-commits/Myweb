@@ -83,7 +83,7 @@
                     <tr>
                         <td>
                             {% if p.pi_item and p.pi_item.product and p.pi_item.product.image %}
-                            <img src="{{ url_for('uploaded_product_thumbnail', filename=p.pi_item.product.image) }}" loading="lazy" decoding="async" style="width:32px;height:32px;object-fit:cover;border-radius:3px;">
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=p.pi_item.product.image) }}" loading="lazy" decoding="async" style="width:32px;height:32px;object-fit:contain;object-position:center;background-color:#fff;border-radius:3px;">
                             {% endif %}
                         </td>
                         <td>

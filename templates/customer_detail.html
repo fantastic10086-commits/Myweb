@@ -6,7 +6,7 @@
 <div class="d-flex align-items-center gap-3 border-bottom py-2">
     {% if file.mime_type.startswith('image/') %}
     <a href="{{ url_for('customer_file_view', id=file.id) }}" target="_blank" class="flex-shrink-0" title="预览原图">
-        <img src="{{ url_for('customer_file_thumbnail', id=file.id) }}" alt="{{ file.original_name }}" loading="lazy" style="width:56px;height:56px;object-fit:cover;border:1px solid #dee2e6;border-radius:6px;background:#f8f9fa;">
+        <img src="{{ url_for('customer_file_thumbnail', id=file.id) }}" alt="{{ file.original_name }}" loading="lazy" style="width:56px;height:56px;object-fit:contain;object-position:center;background-color:#fff;border:1px solid #dee2e6;border-radius:6px;background:#fff;">
     </a>
     {% else %}
     <div class="fs-3 text-primary flex-shrink-0 d-inline-flex align-items-center justify-content-center" style="width:56px;height:56px;">
@@ -351,7 +351,7 @@ if (productInput) productInput.addEventListener('input', function() {
                 for (var i = 0; i < data.length; i++) {
                     html += '<div class="dropdown-item small py-1" style="cursor:pointer;" onmousedown="selectProduct(\'' + escAttr(data[i].name) + '\')">';
                     if (data[i].img) {
-                        html += '<img src="/uploads/thumb/' + encodeURIComponent(data[i].img) + '" loading="lazy" decoding="async" style="width:28px;height:28px;object-fit:cover;border-radius:3px;margin-right:6px;vertical-align:middle;">';
+                        html += '<img src="/uploads/thumb/' + encodeURIComponent(data[i].img) + '" loading="lazy" decoding="async" style="width:28px;height:28px;object-fit:contain;object-position:center;background-color:#fff;border-radius:3px;margin-right:6px;vertical-align:middle;">';
                     }
                     html += escHtml(data[i].name);
                     if (data[i].chinese_name) html += ' <small class=\"text-muted\">' + escHtml(data[i].chinese_name) + '</small>';

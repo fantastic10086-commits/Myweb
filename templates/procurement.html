@@ -673,7 +673,7 @@ function openProcurementPreview() {
             var productImage = row ? row.querySelector('.proc-image-cell img') : null;
             var productPreview = '';
             if (productImage) {
-                productPreview = '<img class="preview-product-image" src="' + escHtml(productImage.getAttribute('src')) + '" alt="产品照片" style="width:48px;height:48px;object-fit:cover;border-radius:4px;">';
+                productPreview = '<img class="preview-product-image" src="' + escHtml(productImage.getAttribute('src')) + '" alt="产品照片" style="width:48px;height:48px;object-fit:contain;object-position:center;background-color:#fff;border-radius:4px;">';
             } else {
                 productPreview = '<span class="text-muted">—</span>';
             }
@@ -922,7 +922,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <td class="text-center proc-sequence">{{ loop.index }}</td>
                         <td class="proc-image-cell">
                             {% if display_image %}
-                            <img src="{{ url_for('uploaded_product_thumbnail', filename=display_image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:cover;border-radius:4px;">
+                            <img src="{{ url_for('uploaded_product_thumbnail', filename=display_image) }}" loading="lazy" decoding="async" style="width:38px;height:38px;object-fit:contain;object-position:center;background-color:#fff;border-radius:4px;">
                             {% endif %}
                         </td>
                         <td class="proc-product" title="{{ display_name|e }}{% if display_cn %} / {{ display_cn|e }}{% endif %}">

@@ -176,7 +176,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     function imgTag(img, size) {
         if (!img) return '';
         size = size || 36;
-        return '<img src="/uploads/thumb/' + encodeURIComponent(String(img)) + '" alt="" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:cover;border-radius:4px;">';
+        return '<img src="/uploads/thumb/' + encodeURIComponent(String(img)) + '" alt="" loading="lazy" decoding="async" style="width:' + size + 'px;height:' + size + 'px;object-fit:contain;object-position:center;background-color:#fff;border-radius:4px;">';
     }
     function normalizeProduct(p) {
         var currentPrice = Number(p.price) || 0;

@@ -127,7 +127,7 @@
                         {% for p in products %}
                         <tr id="row-{{ p.id }}" class="{% if not p.active %}table-secondary{% endif %}">
                             <td><input type="checkbox" class="form-check-input product-check" value="{{ p.id }}" onchange="updateBatchBar()"></td>
-                            <td>{% if p.image %}<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="{{ url_for('uploaded_file', filename=p.image) }}" aria-label="放大产品图片" title="点击放大图片"><img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" alt="{{ p.name }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:zoom-in;"></button>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                            <td>{% if p.image %}<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="{{ url_for('uploaded_file', filename=p.image) }}" aria-label="放大产品图片" title="点击放大图片"><img src="{{ url_for('uploaded_product_thumbnail', filename=p.image) }}" alt="{{ p.name }}" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:contain;object-position:center;background-color:#fff;border-radius:4px;cursor:zoom-in;"></button>{% else %}<span class="text-muted">—</span>{% endif %}</td>
                             <td><span class="editable" data-id="{{ p.id }}" data-field="name">{{ p.name }}</span>{% if not p.active %} <span class="badge text-bg-secondary">已停用</span>{% endif %}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="chinese_name">{{ p.chinese_name }}</td>
                             <td class="editable" data-id="{{ p.id }}" data-field="product_code">{{ p.product_code }}</td>
@@ -667,7 +667,7 @@ function copyProduct(id) {
                 tr.id = 'row-' + p.id;
                 tr.innerHTML =
                     '<td><input type="checkbox" class="form-check-input product-check" value="' + p.id + '" onchange="updateBatchBar()"></td>' +
-                    '<td>' + (p.image ? '<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="/uploads/' + encodeURIComponent(p.image) + '" aria-label="放大产品图片" title="点击放大图片"><img src="/uploads/thumb/' + encodeURIComponent(p.image) + '" alt="产品图片" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:zoom-in;"></button>' : '<span class="text-muted">—</span>') + '</td>' +
+                    '<td>' + (p.image ? '<button type="button" class="btn p-0 border-0 product-image-preview" data-image-url="/uploads/' + encodeURIComponent(p.image) + '" aria-label="放大产品图片" title="点击放大图片"><img src="/uploads/thumb/' + encodeURIComponent(p.image) + '" alt="产品图片" loading="lazy" decoding="async" style="width:40px;height:40px;object-fit:contain;object-position:center;background-color:#fff;border-radius:4px;cursor:zoom-in;"></button>' : '<span class="text-muted">—</span>') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="name">' + escHtml(p.name) + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="chinese_name">' + escHtml(p.chinese_name || '') + '</td>' +
                     '<td class="editable" data-id="' + p.id + '" data-field="product_code">' + escHtml(p.product_code || '') + '</td>' +
