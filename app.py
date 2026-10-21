@@ -7434,6 +7434,22 @@ def advance_slip_image(pi_id):
     return send_file(path, conditional=True)
 
 
+@app.route('/api/pi/<int:id>/payment-check', methods=['POST'])
+@login_required
+def payment_precheck(id):
+    pi = PI.query.get_or_404(id)
+    require_pi_access(pi)
+    payload = request.get_json(silent=True) or {}
+    reference = _normalize_payment_reference(payload.get('order_no', ''))
+    duplicate = bool(reference and Payment.query.filter(
+        Payment.deleted_at.is_(None), Payment.order_no_normalized == reference
+    ).first())
+    remaining = max(0, round(pi.grand_total - sum(p.amount for p in _active_payments(pi.id)), 2))
+    response = jsonify(duplicate=duplicate, remaining=remaining)
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.route('/pi/<int:id>/toggle-paid', methods=['POST'])
 @login_required
 def pi_toggle_paid(id):

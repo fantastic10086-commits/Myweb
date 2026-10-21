@@ -1129,6 +1129,7 @@ function populatePaymentAccounts(currency, preferredAccountId) {
     help.className = eligible.length ? 'text-muted' : 'text-danger';
 }
 function preparePaymentSubmit(form) {
+    if (window.paymentLiveCheck && !window.paymentLiveCheck.valid()) return false;
     var select = document.getElementById('payAccount');
     if (!select.value) {
         alert('请选择并确认实际到账账户。');
@@ -1229,6 +1230,7 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     document.getElementById('payHistory').innerHTML = '';
     populatePaymentAccounts(currency, preferredAccountId);
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
+    if (window.paymentLiveCheck) window.paymentLiveCheck.reset(id);
     var usdRow = document.getElementById('usdEquivRow');
     if (currency === 'RMB') {
         usdRow.style.display = '';
@@ -1239,6 +1241,7 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     new bootstrap.Modal(document.getElementById('paymentModal')).show();
 }
 function updateUsdEquiv() {
+    if (window.paymentLiveCheck) window.paymentLiveCheck.amount();
     var amt = parseFloat(document.getElementById('payAmount').value) || 0;
     document.getElementById('usdEquiv').textContent = '$' + (amt / {{ performance_exchange_rate }}).toFixed(2);
 }
@@ -1266,6 +1269,7 @@ function viewPayments(id) {
             document.getElementById('usdEquivRow').style.display = 'none';
         }
         document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
+    if (window.paymentLiveCheck) window.paymentLiveCheck.reset(id);
         // Build history with DOM nodes.  Payment references are user input and
         // must never be concatenated into HTML.
         var history = document.getElementById('payHistory');
@@ -1393,4 +1397,8 @@ function previewPI(id) {
     });
 }
 </script>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='payment_live_check.js') }}"></script>
 {% endblock %}
