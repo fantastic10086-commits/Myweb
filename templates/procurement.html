@@ -711,6 +711,21 @@ function openProcurementPreview() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('itemsTable').addEventListener('keydown', function(event) {
+        if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229
+                || event.ctrlKey || event.altKey || event.metaKey
+                || !event.target.matches('.proc-price')) return;
+        event.preventDefault();
+        const fields = Array.from(document.querySelectorAll('#itemsTable .proc-price'))
+            .filter(input => !input.disabled && !input.readOnly && input.getClientRects().length);
+        const index = fields.indexOf(event.target);
+        const next = fields[index + (event.shiftKey ? -1 : 1)];
+        if (index >= 0 && next) {
+            next.focus();
+            next.select();
+        }
+    });
+
     Object.keys(existing).forEach(function(itemId) {
         var row = document.querySelector('tr[data-item-id="' + itemId + '"]');
         if (!row) return;
