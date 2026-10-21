@@ -38,15 +38,15 @@
             {% if order_labels is defined %}
             {% if filter_endpoint == 'procurement_select' %}
             <div class="col-12 col-xl-auto">
-                <div class="form-label small mb-1" id="orderStatusLabel">订单进度</div>
+                <div class="form-label small mb-1" id="orderStatusLabel">订单进度（可多选）</div>
                 <input type="hidden" name="order_status" value="{{ order_status or '' }}">
                 <div class="d-flex flex-wrap gap-2" role="group" aria-labelledby="orderStatusLabel">
                     {% for value, label in order_labels.items() %}
                     <button type="submit"
-                            class="btn btn-sm {{ 'btn-primary' if order_status == value else 'btn-outline-primary' }}"
-                            aria-pressed="{{ 'true' if order_status == value else 'false' }}"
-                            data-status="{{ '' if order_status == value else value }}"
-                            onclick="this.form.elements['order_status'].value = this.dataset.status;">{{ label }}</button>
+                            class="btn btn-sm {{ 'btn-primary' if value in selected_statuses else 'btn-outline-primary' }}"
+                            aria-pressed="{{ 'true' if value in selected_statuses else 'false' }}"
+                            data-status="{{ value }}"
+                            onclick="var field=this.form.elements['order_status']; var values=field.value.split(',').filter(Boolean); var index=values.indexOf(this.dataset.status); if(index === -1) values.push(this.dataset.status); else values.splice(index,1); field.value=values.join(',');">{{ label }}</button>
                     {% endfor %}
                 </div>
             </div>
@@ -84,7 +84,7 @@
         <div class="border-top mt-2 pt-2 small text-muted">
             当前结果：<strong>{{ filtered_count }}</strong> 份 PI
             {% if customer_name_filter %} · 客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
-            {% if order_status %} · 订单进度：<strong>{{ order_labels[order_status] }}</strong>{% endif %}
+            {% if order_status %} · 订单进度：<strong>{% if filter_endpoint == 'procurement_select' %}{% for key in selected_statuses %}{{ '、' if not loop.first else '' }}{{ order_labels[key] }}{% endfor %}{% else %}{{ order_labels[order_status] }}{% endif %}</strong>{% endif %}
             {% if salesperson_filter %} · 业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
             {% if date_from or date_to %} · 开单日期：<strong>{{ date_from or '不限' }}</strong> 至 <strong>{{ date_to or '不限' }}</strong>{% endif %}
         </div>

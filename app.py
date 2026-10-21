@@ -9081,15 +9081,18 @@ def procurement_select():
     pis = [pi for pi in pi_query.order_by(PI.id.desc()).all() if pi.procurement_allowed]
     order_labels = {'pending': '待采购', 'partial': '部分采购',
                     'purchased': '采购完成', 'shipped': '发货完成'}
-    order_status = request.args.get('order_status', '').strip()
-    if order_status not in order_labels:
-        order_status = ''
-    if order_status:
-        pis = [pi for pi in pis if pi.effective_procurement_status == order_labels[order_status]]
+    requested_statuses = {value.strip() for raw in request.args.getlist('order_status')
+                          for value in raw.split(',')}
+    selected_statuses = [key for key in order_labels if key in requested_statuses]
+    order_status = ','.join(selected_statuses)
+    if selected_statuses:
+        selected_labels = {order_labels[key] for key in selected_statuses}
+        pis = [pi for pi in pis if pi.effective_procurement_status in selected_labels]
     pi_complete = {pi.id for pi in pis if pi.procurement_is_complete}
     resp = make_response(render_template(
         'procurement_select.html', customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options,
         pis=pis, order_status=order_status, order_labels=order_labels,
+        selected_statuses=selected_statuses,
         pi_complete=pi_complete,
         salesperson_filter=salesperson_filter,
         date_from=date_from,
