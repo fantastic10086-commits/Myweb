@@ -49,6 +49,7 @@ rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'stati
     --include 'assets/packing_compact_100x150.xlsx' \
     --include 'assets/customs_declaration_template.xlsx' \
     --include 'assets/customer_history_template.xlsx' \
+    --include 'assets/trade_contract_template.xlsx' \
     --exclude '*.xlsx' \
     --exclude '__pycache__' --exclude '.DS_Store' \
     --exclude 'auth*' --exclude 'tmp' "$SOURCE_DIR/" "$RELEASE/"
