@@ -6220,7 +6220,7 @@ def pi_list():
     transition_labels = {
         'procurement': ('payment', '待流转到采购', '回款已付清，采购未完成'),
         'packing': ('procurement', '待流转到装箱', '采购已完成，装箱未完成'),
-        'customs': ('packing', '待流转到报关', '装箱已完成，报关尚未登记'),
+        'customs': ('procurement', '待流转到报关', '采购已完成，报关/费用未完成（尚未登记）'),
         'shipping': ('customs', '待流转到发货', '报关已登记（含无需报关），发货未完成'),
     }
     transition = request.args.get('transition', '').strip()
