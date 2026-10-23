@@ -134,20 +134,14 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='pi_pdf_preview.js') }}" defer></script>
 <div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl"><div class="modal-content">
-        <div class="modal-header"><h5 class="modal-title">PI 预览</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <div class="modal-header"><h5 class="modal-title">PI PDF 查看</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
         <div class="modal-body" id="piPreviewBody"><div class="text-center py-5"><div class="spinner-border text-primary"></div></div></div>
     </div></div>
 </div>
 <script>
-function previewPI(id) {
-    var modal = new bootstrap.Modal(document.getElementById('piPreviewModal'));
-    modal.show();
-    document.getElementById('piPreviewBody').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
-    fetch('/pi/' + id + '/preview').then(function(r){return r.text();}).then(function(html){
-        document.getElementById('piPreviewBody').innerHTML = html;
-    });
-}
+
 </script>
 {% endblock %}

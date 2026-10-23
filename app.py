@@ -7420,6 +7420,7 @@ def pi_download(id):
         joinedload(PI.items).joinedload(PIItem.product),
     ).get_or_404(id)
     require_pi_access(pi)
+    inline = request.args.get('inline') == '1'
     work_dir = tempfile.mkdtemp(prefix='pi-direct-download-')
     try:
         template = _export_template()
@@ -7430,11 +7431,15 @@ def pi_download(id):
         )
     except (TemplateError, ValueError) as exc:
         shutil.rmtree(work_dir, ignore_errors=True)
+        if inline:
+            return jsonify(error=f'生成 PDF 失败：{exc}'), 400
         flash(f'生成 PDF 失败：{exc}', 'danger')
         return redirect(url_for('pi_detail', id=id))
     except Exception:
         shutil.rmtree(work_dir, ignore_errors=True)
         current_app.logger.exception('Direct PI PDF download failed')
+        if inline:
+            return jsonify(error='生成 PDF 失败，请联系管理员查看日志。'), 500
         flash('生成 PDF 失败，请联系管理员查看日志。', 'danger')
         return redirect(url_for('pi_detail', id=id))
 
@@ -7445,7 +7450,7 @@ def pi_download(id):
     response = send_file(
         output_path,
         mimetype=mimetype,
-        as_attachment=True,
+        as_attachment=not inline,
         download_name=download_name,
         conditional=False,
         max_age=0,
