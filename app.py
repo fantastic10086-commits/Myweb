@@ -47,7 +47,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
-    FieldOption, Payment, Expense, Supplier, Procurement, AuditLog,
+    FieldOption, Payment, Expense, Supplier, Procurement, AuditLog, DispatchSubmission,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
@@ -9652,6 +9652,8 @@ def _shipping_record_payload(pi):
         'pi_number': pi.pi_number,
         'procurement_status': pi.effective_procurement_status,
         'shipping_completed': bool(pi.shipping_completed),
+        'shipping_paused': bool(pi.shipping_paused),
+        'version': pi.version,
         'can_ship': bool(not pi.shipping_completed and not unavailable_reason),
         'unavailable_reason': unavailable_reason,
         'shipping_date': pi.shipping_date.isoformat() if pi.shipping_date else '',
@@ -9678,6 +9680,153 @@ def shipping_attachment(pi_id):
     if not os.path.isfile(filepath):
         abort(404)
     return send_file(filepath, conditional=True)
+
+
+@app.route('/api/pi/<int:pi_id>/dispatch', methods=['POST'])
+@login_required
+def api_pi_dispatch(pi_id):
+    """Save arrangements, costs and shipment in one versioned transaction."""
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    uploaded = []
+    try:
+        data = json.loads(request.form.get('payload', '{}'))
+        if not isinstance(data, dict):
+            raise ValueError('保存参数无效。')
+        token = str(data.get('token') or '')
+        if not re.fullmatch(r'[a-zA-Z0-9-]{16,64}', token):
+            raise ValueError('请求标识无效，请重新打开窗口。')
+        previous = db.session.get(DispatchSubmission, token)
+        if previous:
+            if previous.pi_id != pi.id:
+                raise ValueError('请求标识不匹配。')
+            return jsonify(_shipping_record_payload(pi))
+        if data.get('version') != pi.version:
+            return jsonify(success=False, error='此订单已被更新，请关闭窗口刷新后重试；当前输入尚未保存。'), 409
+        complete = data.get('action') == 'complete'
+        if data.get('action') not in ('save', 'complete'):
+            raise ValueError('保存操作无效。')
+        if complete:
+            if pi.shipping_completed or pi.shipping_paused:
+                raise ValueError('订单已发货或已暂停，不能重复确认发货。')
+            if not pi.actual_payment_complete or (pi.received_amount or 0) <= 0:
+                raise ValueError('必须实际回款付清尾款后才能发货。')
+            if not pi.procurement_is_complete or _procurement_gaps(pi):
+                raise ValueError('采购尚未完成，暂时不能登记发货。')
+        forwarder = _managed_field_value('freight_forwarder', data.get('freight_forwarder'), pi.freight_forwarder)
+        required = data.get('customs_required')
+        if required is not None and not isinstance(required, bool):
+            raise ValueError('报关选项无效。')
+        if len(forwarder) > 200 or (complete and (not forwarder or required is None)):
+            raise ValueError('确认发货前请选择货代和是否正式报关。')
+        customs_note = str(data.get('customs_note') or '').strip()
+        if len(customs_note) > 500:
+            raise ValueError('补充说明不能超过 500 字。')
+        rows = data.get('expenses', [])
+        if not isinstance(rows, list) or len(rows) > 50:
+            raise ValueError('一次最多登记 50 笔费用。')
+        expenses = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError('费用参数无效。')
+            category = _managed_field_value('expense_category', row.get('category'))
+            amount = round(_nonnegative_float(row.get('amount'), '费用金额'), 2)
+            note = str(row.get('note') or '').strip()
+            if not category or len(category) > 200 or amount <= 0 or len(note) > 500:
+                raise ValueError('请完整填写费用类别、正数金额，备注最多 500 字。')
+            expenses.append(Expense(pi_id=pi.id, category=category, amount=amount, currency='RMB', note=note))
+        no_expenses = data.get('no_expenses') is True
+        if no_expenses and (pi.expenses or expenses):
+            raise ValueError('已有或正在新增费用，不能同时勾选无费用。')
+        edit_shipping = complete or data.get('edit_shipping') is True
+        if edit_shipping and pi.shipping_paused:
+            raise ValueError('发货已暂停，请管理员先恢复原发货记录。')
+        shipping_date = None
+        if edit_shipping:
+            raw_date = str(data.get('shipping_date') or '').strip()
+            if raw_date:
+                shipping_date = date.fromisoformat(raw_date)
+            if (complete or pi.shipping_completed) and not shipping_date:
+                raise ValueError('请选择发货日期。')
+            tracking = str(data.get('tracking_no') or '').strip()
+            shipping_note = str(data.get('shipping_note') or '').strip()
+            if len(tracking) > 200 or len(shipping_note) > 1000:
+                raise ValueError('物流单号最多 200 字，发货备注最多 1000 字。')
+
+        def save_image(key):
+            file = request.files.get(key)
+            if not file or not file.filename:
+                return ''
+            file.stream.seek(0, os.SEEK_END)
+            size = file.stream.tell()
+            file.stream.seek(0)
+            if size > 12 * 1024 * 1024:
+                raise ValueError('每张图片最大 12 MB。')
+            filename = _save_upload(file)
+            if not filename:
+                raise ValueError('图片必须是有效的 JPG、PNG、WebP 或 GIF。')
+            uploaded.append(filename)
+            return filename
+
+        fields = ['freight_forwarder', 'customs_required', 'customs_note', 'dispatch_no_expenses',
+                  'shipping_completed', 'shipping_date', 'shipping_tracking_no', 'shipping_record_note',
+                  'shipping_attachment', 'shipping_recorded_at', 'shipping_recorded_by']
+        before = _snapshot(pi, fields)
+        pi.freight_forwarder = forwarder
+        pi.customs_required = required
+        pi.customs_note = customs_note
+        pi.dispatch_no_expenses = no_expenses
+        # Always update a PI column so expense-only submissions also take the version lock.
+        pi.customs_recorded_at = datetime.utcnow()
+        pi.customs_recorded_by = get_current_user().username
+        if edit_shipping:
+            pi.shipping_date = shipping_date
+            pi.shipping_tracking_no = tracking
+            pi.shipping_record_note = shipping_note
+            attachment = save_image('shipping_attachment')
+            if attachment:
+                pi.shipping_attachment = attachment
+        if complete:
+            pi.shipping_completed = True
+            pi.shipping_recorded_at = datetime.utcnow()
+            pi.shipping_recorded_by = get_current_user().username
+            pi.procurement_status = '发货完成'
+        for i, expense in enumerate(expenses):
+            expense.attachment = save_image('expense_attachment_' + str(i))
+            db.session.add(expense)
+        db.session.add(DispatchSubmission(token=token, pi_id=pi.id))
+        db.session.flush()
+        for expense in expenses:
+            _audit('create', 'expense', expense.id, f'登记 PI {pi.pi_number} 真实成本', after=expense.to_dict())
+        _audit('update', 'pi', pi.id, '确认发货完成' if complete else '保存报关/发货信息',
+               before=before, after=_snapshot(pi, fields))
+        db.session.commit()
+        return jsonify(_shipping_record_payload(pi))
+    except (ValueError, TypeError) as exc:
+        db.session.rollback()
+        error, status = str(exc), 400
+    except (StaleDataError, IntegrityError):
+        db.session.rollback()
+        previous = db.session.get(DispatchSubmission, token)
+        if previous and previous.pi_id == pi_id:
+            for filename in uploaded:
+                path = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+                if os.path.isfile(path):
+                    os.remove(path)
+            return jsonify(_shipping_record_payload(db.session.get(PI, pi_id)))
+        error, status = '订单已被其他操作更新，请刷新后重试。', 409
+    except Exception:
+        db.session.rollback()
+        for filename in uploaded:
+            path = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+            if os.path.isfile(path):
+                os.remove(path)
+        raise
+    for filename in uploaded:
+        path = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+        if os.path.isfile(path):
+            os.remove(path)
+    return jsonify(success=False, error=error), status
 
 
 @app.route('/api/pi/<int:pi_id>/shipping-record', methods=['GET', 'POST'])
@@ -9790,7 +9939,7 @@ def api_pi_shipping_complete(pi_id):
             'preserved_records': ['回款', '采购', '装箱', '报关'],
         }), 409
     if completed:
-        if pi.advance_shipping_blocked:
+        if not pi.actual_payment_complete:
             return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能发货。'}), 400
         if not pi.procurement_confirmed:
             return jsonify({'success': False, 'error': '采购单尚未完整确认，不能标记发货完成。'}), 400

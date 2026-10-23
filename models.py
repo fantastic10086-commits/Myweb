@@ -917,6 +917,14 @@ class CustomsRevision(db.Model):
     )
 
 
+class DispatchSubmission(db.Model):
+    """Committed request keys prevent expense duplication after network retries."""
+    __tablename__ = 'dispatch_submissions'
+    token = db.Column(db.String(64), primary_key=True)
+    pi_id = db.Column(db.Integer, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Expense(db.Model):
     __tablename__ = 'expenses'
 
