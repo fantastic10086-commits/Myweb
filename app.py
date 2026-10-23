@@ -1272,6 +1272,30 @@ def _ensure_qisuo_legacy_template(app_instance):
     return template
 
 
+def _ensure_trade_contract_template(app_instance):
+    """Install the optional contract once, preserving administrator replacements."""
+    source = os.path.join(APP_ROOT, 'assets', 'trade_contract_template.xlsx')
+    validate_template(source)
+    template = DocumentTemplate.query.filter_by(code='trade-contract').first()
+    filename = 'trade-contract.xlsx'
+    if template:
+        # Preserve template activation/default decisions and custom uploads.
+        if template.filename != filename:
+            return template
+    destination = os.path.join(app_instance.config['DOCUMENT_TEMPLATE_DIR'], filename)
+    shutil.copy2(source, destination)
+    if not template:
+        template = DocumentTemplate(
+            name='进出口贸易合同（中英双语）', code='trade-contract',
+            template_type='xlsx', filename=filename, active=True,
+            is_default=False, created_by='system',
+            notes='合同号使用 PI 编号；保险固定由卖方承担。',
+        )
+        db.session.add(template)
+    db.session.commit()
+    return template
+
+
 def _validate_packing_template(path, compact=False):
     """Validate a packing master without accepting macros or arbitrary files."""
     from openpyxl import load_workbook
@@ -1399,6 +1423,7 @@ def create_app():
         # and PDF conversion both use this same file, so their layouts match.
         _ensure_system_default_template(app)
         _ensure_qisuo_legacy_template(app)
+        _ensure_trade_contract_template(app)
         _ensure_packing_templates(app)
 
         # Seed default salespersons
@@ -8514,6 +8539,11 @@ def _apply_export_form(form, export_pi):
         except ValueError as exc:
             raise ValueError('日期格式不正确。') from exc
     export_pi.payment_terms = form.get('payment_terms', '').strip()
+    for field in ('contract_loading_port', 'contract_destination_port'):
+        value = form.get(field, '').strip()
+        if len(value) > 200:
+            raise ValueError('合同口岸信息不能超过 200 字。')
+        setattr(export_pi, field, value)
     export_pi.price_terms = _selectable_or_manual_field(
         'price_terms', form.get('price_terms', export_pi.price_terms or '')
     )
@@ -8589,6 +8619,8 @@ def _export_copy_snapshot(export_pi):
         'payment_terms': export_pi.payment_terms,
         'price_terms': export_pi.price_terms,
         'delivery_time': export_pi.delivery_time,
+        'contract_loading_port': getattr(export_pi, 'contract_loading_port', ''),
+        'contract_destination_port': getattr(export_pi, 'contract_destination_port', ''),
         'bank_info': export_pi.bank_info,
         'bank_receiving_account_id': export_pi.bank_receiving_account_id,
         'bank_snapshot': {
@@ -8642,6 +8674,7 @@ def _render_pi_export(export_pi, template, output_format, work_dir, preview=Fals
         template_path, export_pi, excel_path,
         salesperson_info=salesperson_info,
         upload_dir=app.config['UPLOAD_DIR'],
+        fit_contract_text=(template.code == 'trade-contract'),
     )
     if template.code == 'system-default':
         apply_system_default_page_setup(excel_path)

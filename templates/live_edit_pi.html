@@ -91,11 +91,16 @@
         <div class="card-header bg-primary text-white"><strong><i class="bi bi-sliders me-1"></i>导出设置</strong></div>
         <div class="card-body">
             <div class="row g-3 align-items-end">
-                <div class="col-lg-3"><label class="form-label fw-bold" for="template_id">PI 模板</label><select class="form-select" name="template_id" id="template_id" required>{% for template in templates %}<option value="{{ template.id }}" {% if template.id == selected_template.id %}selected{% endif %}>{{ template.name }}{% if template.is_default %}（默认）{% endif %}</option>{% endfor %}</select></div>
+                <div class="col-lg-3"><label class="form-label fw-bold" for="template_id">单据模板</label><select class="form-select" name="template_id" id="template_id" required>{% for template in templates %}<option data-code="{{ template.code }}" value="{{ template.id }}" {% if template.id == selected_template.id %}selected{% endif %}>{{ template.name }}{% if template.is_default %}（默认）{% endif %}</option>{% endfor %}</select></div>
                 <div class="col-lg-3"><label class="form-label fw-bold" for="company_header">公司抬头</label><select class="form-select" name="company_header" id="company_header" onchange="onCompanyHeaderChange()"><option value="klista" {% if pi.company != 'qisuo' %}selected{% endif %}>KLISTA</option><option value="qisuo" {% if pi.company == 'qisuo' %}selected{% endif %}>QISUO</option></select></div>
                 <div class="col-lg-2"><label class="form-label fw-bold" for="output_format">下载格式</label><select class="form-select" name="output_format" id="output_format"><option value="pdf">PDF 文件</option><option value="xlsx">Excel 文件</option></select></div>
                 {% if is_admin %}<div class="col-lg-4"><label class="form-label fw-bold" for="export_account_select">收款账户</label><select class="form-select" name="account_id" id="export_account_select" onchange="onExportAccountChange()"><option value="" selected>— 使用原 PI 收款信息{% if current_receiving_account %}：{{ current_receiving_account.name }}{% endif %} —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-bank="{{ a.bank_info() }}" data-brands="{{ a.brand }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %} / {{ a.brand_label }}</option>{% endfor %}</select></div>{% endif %}
                 <div class="{% if is_admin %}col-lg-12{% else %}col-lg-4{% endif %} text-lg-end"><button type="button" class="btn btn-outline-primary" id="previewButton" onclick="exportDocument('preview')"><i class="bi bi-eye"></i> 预览</button> <button type="button" class="btn btn-primary" id="downloadButton" onclick="exportDocument('download')"><i class="bi bi-download"></i> 导出下载</button> <button type="button" class="btn btn-outline-secondary" onclick="restoreOriginal()"><i class="bi bi-arrow-counterclockwise"></i> 恢复原始数据</button></div>
+            </div>
+            <div id="contractFields" class="row g-3 mt-2 d-none">
+                <div class="col-md-6"><label class="form-label" for="contract_loading_port">装运口岸</label><input class="form-control" id="contract_loading_port" name="contract_loading_port" maxlength="200" placeholder="填写本次合同的装运口岸"></div>
+                <div class="col-md-6"><label class="form-label" for="contract_destination_port">目的口岸</label><input class="form-control" id="contract_destination_port" name="contract_destination_port" maxlength="200" placeholder="填写本次合同的目的口岸"></div>
+                <div class="col-12 small text-muted">合同编号：{{ pi.pi_number }}。保险固定由卖方承担；付款条款和交货期取下方编辑内容，口岸信息仅用于本次导出。</div>
             </div>
             <div id="exportStatus" class="small mt-3" aria-live="polite"></div>
         </div>
@@ -189,6 +194,12 @@ function invalidatePreview(event) {
     exportRevision++;
     clearPdfPreview('内容或导出设置已更改，请点击“预览”生成最新 PDF。', false);
 }
+function updateContractFields() {
+    const contract = document.getElementById('template_id').selectedOptions[0]?.dataset.code === 'trade-contract';
+    document.getElementById('contractFields').classList.toggle('d-none', !contract);
+}
+document.getElementById('template_id').addEventListener('change', updateContractFields);
+updateContractFields();
 document.getElementById('exportForm').addEventListener('input', invalidatePreview);
 document.getElementById('exportForm').addEventListener('change', invalidatePreview);
 

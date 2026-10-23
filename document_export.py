@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+import math
+import unicodedata
 from datetime import date, datetime
 
 from openpyxl import Workbook, load_workbook
@@ -38,6 +40,8 @@ PLACEHOLDER_GROUPS = {
         ('payment_terms', '付款条款'),
         ('price_terms', '贸易条款'),
         ('delivery_time', '交货期'),
+        ('contract_loading_port', '合同装运口岸'),
+        ('contract_destination_port', '合同目的口岸'),
         ('bank_info', '银行信息'),
         ('bank_beneficiary_name', '收款人名称'),
         ('bank_account_no', '收款账号'),
@@ -174,6 +178,8 @@ def _fixed_values(pi, salesperson_info):
         'payment_terms': getattr(pi, 'payment_terms', '') or '',
         'price_terms': getattr(pi, 'price_terms', '') or '',
         'delivery_time': getattr(pi, 'delivery_time', '') or '',
+        'contract_loading_port': getattr(pi, 'contract_loading_port', '') or '',
+        'contract_destination_port': getattr(pi, 'contract_destination_port', '') or '',
         'bank_info': getattr(pi, 'bank_info', '') or '',
         'bank_beneficiary_name': _bank_snapshot_value(
             pi, 'bank_beneficiary_name', ('Beneficiary', 'Company')
@@ -636,7 +642,35 @@ def _replace_cell(sheet, cell, values, upload_dir):
     _set_safe_excel_text(cell, result)
 
 
-def render_excel_template(template_path, pi, output_path, salesperson_info=None, upload_dir=''):
+def _fit_contract_text(sheet):
+    """Grow wrapped contract rows to accommodate PI text and merged paragraphs."""
+    merges = list(sheet.merged_cells.ranges)
+    for row in sheet:
+        for cell in row:
+            if not isinstance(cell.value, str) or not cell.value:
+                continue
+            merged = next((area for area in merges if cell.coordinate in area), None)
+            first_col, last_col = (merged.min_col, merged.max_col) if merged else (cell.column, cell.column)
+            first_row, last_row = (merged.min_row, merged.max_row) if merged else (cell.row, cell.row)
+            width = sum(_column_width_to_pixels(sheet.column_dimensions[get_column_letter(col)].width or 8.43)
+                        for col in range(first_col, last_col + 1)) - 12
+            size = float(cell.font.sz or 11)
+            capacity = max(1, width / (size * 0.78))
+            lines = sum(max(1, math.ceil(sum(2 if unicodedata.east_asian_width(ch) in 'WF' else 1
+                                           for ch in part) / capacity))
+                        for part in cell.value.split('\n'))
+            needed = lines * size * 1.35 + 8
+            current = sum(sheet.row_dimensions[index].height or sheet.sheet_format.defaultRowHeight or 15
+                          for index in range(first_row, last_row + 1))
+            if needed > current:
+                height = sheet.row_dimensions[last_row].height or sheet.sheet_format.defaultRowHeight or 15
+                sheet.row_dimensions[last_row].height = min(409, height + needed - current)
+            alignment = copy.copy(cell.alignment)
+            alignment.wrap_text = True
+            cell.alignment = alignment
+
+
+def render_excel_template(template_path, pi, output_path, salesperson_info=None, upload_dir='', fit_contract_text=False):
     """Fill a trusted .xlsx layout without modifying the source workbook."""
     validate_template(template_path)
     workbook = load_workbook(template_path, data_only=False, read_only=False, keep_links=False)
@@ -675,6 +709,9 @@ def render_excel_template(template_path, pi, output_path, salesperson_info=None,
                     continue
                 for cell in row:
                     _replace_cell(sheet, cell, fixed_values, upload_dir)
+
+            if fit_contract_text:
+                _fit_contract_text(sheet)
 
             # Some workbooks created by WPS store print metadata that is lost
             # when openpyxl saves the populated copy.  Re-apply a stable print
