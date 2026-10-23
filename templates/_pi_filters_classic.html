@@ -1,0 +1,115 @@
+{% set advanced_active = date_from or date_to or tracking_no_filter or payment_status or order_status or customs_status %}
+<div class="card mb-3">
+<form method="get" id="piFilters">
+    <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
+    <input type="hidden" name="filter_version" value="classic">
+    <input type="hidden" name="stage" value="{{ stage }}">
+    <div class="pi-filter-grid">
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
+                <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="customerNameFilter">客户／联系人</label>
+                <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="countryFilter">国家</label>
+                <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家">
+                <datalist id="countryFilterOptions">
+                    {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
+                </datalist>
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">业务员</label>
+                <select class="form-select form-select-sm" name="salesperson">
+                    <option value="">— 全部 —</option>
+                    {% for sp in all_salespersons %}
+                    <option value="{{ sp.name }}" {% if salesperson_filter == sp.name %}selected{% endif %}>{{ sp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        <div class="pi-filter-actions">
+            <button type="submit" class="btn btn-sm btn-primary px-3"><i class="bi bi-funnel"></i> 筛选</button>
+            <a href="{{ url_for('pi_list', filter_version='classic') }}" class="btn btn-sm btn-outline-secondary">重置</a>
+            <button type="button" class="btn btn-sm btn-light text-secondary" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters"><i class="bi bi-sliders"></i> 更多筛选{{ ' · 已设置' if advanced_active else '' }}</button>
+        </div>
+    </div>
+    <div class="pi-stage-filter">
+        <span class="small text-muted">业务阶段</span>
+        <div class="pi-stage-buttons" role="group" aria-label="按业务记录筛选">
+            <button type="submit" class="pi-stage-button {{ 'is-selected' if not stage else '' }}" aria-pressed="{{ 'true' if not stage else 'false' }}" title="全部阶段，保留其他筛选条件" onclick="this.form.elements.stage.value = '';">全部</button>
+            {% for key, info in stage_labels.items() %}
+            <button type="submit" class="pi-stage-button {{ 'is-selected' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="this.form.elements.stage.value = this.form.elements.stage.value === '{{ key }}' ? '' : '{{ key }}';">
+                <i class="bi bi-{{ info[1] }}" aria-hidden="true"></i><span>{{ info[0] }}</span>
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="collapse {{ 'show' if advanced_active else '' }}" id="piAdvancedFilters">
+        <div class="pi-advanced-grid border-top p-3">
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">开始日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">结束日期</label>
+                <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="trackingNoFilter">物流单号</label>
+                <input id="trackingNoFilter" type="text" class="form-control form-control-sm" name="tracking_no" value="{{ tracking_no_filter }}" placeholder="完整或部分物流单号">
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">回款状态</label>
+                <select class="form-select form-select-sm" name="payment_status">
+                    <option value="">— 全部 —</option>
+                    <option value="unpaid" {% if payment_status == 'unpaid' %}selected{% endif %}>未回款</option>
+                    <option value="slip_pending" {% if payment_status == 'slip_pending' %}selected{% endif %}>有水单未到账</option>
+                    <option value="received" {% if payment_status == 'received' %}selected{% endif %}>有回款（部分回款 + 已付清）</option>
+                    <option value="partial" {% if payment_status == 'partial' %}selected{% endif %}>部分回款</option>
+                    <option value="paid" {% if payment_status == 'paid' %}selected{% endif %}>已付清</option>
+                </select>
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">订单进度</label>
+                <select class="form-select form-select-sm" name="order_status">
+                    <option value="">— 全部 —</option>
+                    <option value="pending" {% if order_status == 'pending' %}selected{% endif %}>待采购</option>
+                    <option value="partial" {% if order_status == 'partial' %}selected{% endif %}>部分采购</option>
+                    <option value="purchased" {% if order_status == 'purchased' %}selected{% endif %}>采购完成</option>
+                    <option value="shipped" {% if order_status == 'shipped' %}selected{% endif %}>发货完成</option>
+                </select>
+            </div>
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1">报关登记情况</label>
+                <select class="form-select form-select-sm" name="customs_status">
+                    <option value="">— 全部 —</option>
+                    <option value="unregistered" {% if customs_status == 'unregistered' %}selected{% endif %}>未登记</option>
+                    <option value="required" {% if customs_status == 'required' %}selected{% endif %}>需要报关</option>
+                    <option value="not_required" {% if customs_status == 'not_required' %}selected{% endif %}>无需报关</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</form>
+</div>
+
+{% if stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+<div class="pi-filter-results" role="status">
+    共找到 <strong>{{ pis|length }}</strong> 份 PI
+    {% if stage %} · 当前筛选：<strong>有{{ stage_labels[stage][0] }}记录</strong>{% endif %}
+    {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
+    {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
+    {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
+    {% if date_from %}，开始日期：<strong>{{ date_from }}</strong>{% endif %}
+    {% if date_to %}，结束日期：<strong>{{ date_to }}</strong>{% endif %}
+    {% if payment_status %}，回款状态：<strong>{{ payment_status_label }}</strong>{% endif %}
+    {% if order_status %}，订单进度：<strong>{{ order_status_label }}</strong>{% endif %}
+    {% if customs_status %}，报关登记：<strong>{{ customs_status_label }}</strong>{% endif %}
+    &nbsp;|&nbsp; 订单总金额：
+    {% if filtered_totals.USD %}<strong>${{ '%.2f'|format(filtered_totals.USD) }}</strong>{% endif %}
+    {% if filtered_totals.USD and filtered_totals.RMB %} + {% endif %}
+    {% if filtered_totals.RMB %}<strong>¥{{ '%.2f'|format(filtered_totals.RMB) }}</strong>{% endif %}
+</div>
+{% endif %}

@@ -6217,6 +6217,25 @@ def pi_list():
     if stage not in stage_labels:
         stage = ''
 
+    record_filters = {
+        key: request.args.get('record_' + key, '')
+        for key in stage_labels
+    }
+    record_filters = {key: value if value in {'yes', 'no'} else ''
+                      for key, value in record_filters.items()}
+    filter_version = 'classic' if request.args.get('filter_version') == 'classic' else 'new'
+    if filter_version == 'classic':
+        record_filters = {key: '' for key in stage_labels}
+    active_record_filters = {key: value for key, value in record_filters.items() if value}
+    todo = ('paid_pending' if active_record_filters == {'payment': 'yes', 'procurement': 'no'}
+            else 'purchased_pending' if active_record_filters == {'procurement': 'yes', 'packing': 'no'}
+            else '')
+    version_args = request.args.to_dict()
+    version_urls = {}
+    for version in ('classic', 'new'):
+        version_args['filter_version'] = version
+        version_urls[version] = url_for('pi_list', **version_args)
+
     query = filter_by_user(
         PI.query.options(
             joinedload(PI.customer),
@@ -6229,18 +6248,19 @@ def pi_list():
         'salesperson',
     )
 
-    # Record existence is independent of the order's latest workflow status.
-    if stage == 'payment':
-        query = query.filter(PI.payments.any(and_(Payment.deleted_at.is_(None), Payment.amount > 0)))
-    elif stage == 'procurement':
-        query = query.filter(PI.procurements.any())
-    elif stage == 'packing':
-        query = query.filter(PI.packing_list.has())
-    elif stage == 'customs':
-        query = query.filter(or_(PI.customs_required.isnot(None), PI.expenses.any()))
-    elif stage == 'shipping':
-        query = query.filter(or_(PI.shipping_completed.is_(True), PI.shipping_paused.is_(True),
-                                 PI.shipping_recorded_at.isnot(None)))
+    # All selected record conditions must hold, regardless of the latest stage.
+    record_conditions = {
+        'payment': PI.payments.any(and_(Payment.deleted_at.is_(None), Payment.amount > 0)),
+        'procurement': PI.procurements.any(),
+        'packing': PI.packing_list.has(),
+        'customs': or_(PI.customs_required.isnot(None), PI.expenses.any()),
+        'shipping': or_(PI.shipping_completed.is_(True), PI.shipping_paused.is_(True),
+                        PI.shipping_recorded_at.isnot(None)),
+    }
+    if stage:
+        query = query.filter(record_conditions[stage])
+    for key, value in active_record_filters.items():
+        query = query.filter(record_conditions[key] if value == 'yes' else ~record_conditions[key])
 
     if salesperson_filter:
         query = query.filter(PI.salesperson == salesperson_filter)
@@ -6325,6 +6345,8 @@ def pi_list():
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
+                           record_filters=record_filters, active_record_filters=active_record_filters,
+                           todo=todo, filter_version=filter_version, version_urls=version_urls,
                            stage=stage, stage_labels=stage_labels,
                            payment_status=payment_status,
                            order_status=order_status,
