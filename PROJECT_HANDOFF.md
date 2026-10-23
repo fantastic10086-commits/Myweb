@@ -6,6 +6,11 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-10-23 最近PI查看与编辑）
+
+- 首页最近PI保留查看预览按钮，将PDF快捷按钮替换为编辑，链接既有pi_edit，沿用编辑权限校验。
+- 代码 `d4768ea`；备份 `/var/lib/pi-manager/backups/pi-manager_20261023_154355.tar.gz`；发布 `/opt/pi-manager/releases/20261023154543`，服务active、维护off。Jinja/diff及部署健康检查通过，未运行浏览器测试。
+
 ## 最新接续（2026-10-23 管理员首页最近PI业务员）
 
 - 首页最近PI表格在客户后新增业务员列，仅admin显示，使用PI.salesperson，空值为破折号。
