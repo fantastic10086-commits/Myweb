@@ -9073,6 +9073,7 @@ def pi_export(id):
         return render_template(
             'live_edit_pi.html', pi=pi, templates=templates,
             selected_template=selected_template,
+            export_customer_country=english_country(pi.customer.country) if pi.customer else '',
             current_receiving_account=_matching_account_for_pi(pi),
             company_headers={brand: {
                 'name': _company_name(SimpleNamespace(company=brand)),
