@@ -2046,7 +2046,7 @@ def _recalculate_pi_payments(pi):
     payments = _active_payments(pi.id)
     total_paid = sum(p.amount + (p.fee or 0) for p in payments)
     pi.received_amount = round(sum(p.amount for p in payments), 2)
-    pi.paid = total_paid >= pi.grand_total
+    pi.paid = round(total_paid, 2) >= round(pi.grand_total, 2)
     pi.version = (pi.version or 1) + 1
     return total_paid
 
@@ -8434,7 +8434,7 @@ def pi_edit(id):
         pi.received_amount = round(sum(
             payment.amount or 0 for payment in active_payments
         ), 2)
-        pi.paid = paid_with_fee >= pi.grand_total
+        pi.paid = round(paid_with_fee, 2) >= round(pi.grand_total, 2)
         customer_ids_to_recalculate = {old_customer_id, customer_id}
         for affected_customer_id in customer_ids_to_recalculate:
             affected_customer = db.session.get(Customer, affected_customer_id)

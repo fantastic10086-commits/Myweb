@@ -547,7 +547,10 @@ class PI(db.Model):
 
     @property
     def actual_payment_complete(self):
-        return round(sum(payment.amount or 0 for payment in self.active_payments), 2) >= round(self.grand_total, 2)
+        # Bank fees are part of the settled customer payment, not an unpaid balance.
+        settled = sum((payment.amount or 0) + (payment.fee or 0)
+                      for payment in self.active_payments)
+        return round(settled, 2) >= round(self.grand_total, 2)
 
     @property
     def procurement_allowed(self):
