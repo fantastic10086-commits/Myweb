@@ -88,7 +88,7 @@
             {% endif %}
             {% if customer_name_filter or order_status or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset or profit_status %}
             <div class="col-md-3 col-xl-auto">
-                <a href="{{ url_for(filter_endpoint) }}" class="btn btn-sm btn-outline-danger">清除</a>
+                <a href="{{ url_for(filter_endpoint, clear_filters=1) if filter_endpoint == 'procurement_select' else url_for(filter_endpoint) }}" class="btn btn-sm btn-outline-danger">清除</a>
             </div>
             {% endif %}
         </form>
