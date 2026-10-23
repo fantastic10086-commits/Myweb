@@ -26,7 +26,7 @@
     .pi-list-actions { white-space: nowrap; }
     .pi-list-actions .dropdown-menu { min-width: 13rem; }
     .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
-    .pi-list-workflow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(180px, 2fr); width: 100%; }
+    .pi-list-workflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
     .pi-list-workflow-stage {
         position: relative; display: flex; flex-direction: column; align-items: center;
         min-width: 0; color: #6c757d; text-decoration: none;
@@ -56,6 +56,9 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
+    .dispatch-summary { color:#6c757d; font-size:.68rem; line-height:1.2; margin-top:.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:420px; text-align:center; }
+    .pi-list-workflow-label { margin-top:.18rem; }
+    .pi-list-workflow-status { margin-top:.12rem; }
     #shippingFields { display:grid; grid-template-columns:1fr 1fr; gap:.5rem .75rem; }
     #shippingFields > div { margin-bottom:.25rem !important; min-width:0; }
     #shippingFields .form-label { font-size:.85rem; margin-bottom:.25rem; }
@@ -213,10 +216,11 @@
                                         onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
                                         title="{{ dispatch_status }} · {{ details }}">
                                     <span class="pi-list-workflow-dot"><i class="bi bi-truck"></i></span>
-                                    <span class="pi-list-workflow-label">报关 / 发货 · {{ dispatch_status }}</span>
-                                    <span class="pi-list-workflow-status dispatch-summary" style="display:block;width:100%;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ details or '待安排' }}</span>
+                                    <span class="pi-list-workflow-label">报关 / 发货</span>
+                                    <span class="pi-list-workflow-status">{{ dispatch_status }}</span>
                                 </button>
                             </div>
+                            {% if details %}<div class="dispatch-summary" title="{{ details }}">{{ details }}</div>{% endif %}
                         </td>
                         <td class="text-end pi-list-actions">
                             <a href="{{ url_for('pi_detail', id=pi.id) }}" class="btn btn-sm btn-outline-warning">

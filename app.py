@@ -6373,12 +6373,12 @@ def pi_list():
             continue
         expense_total = sum((expense.amount or 0) * (_pi_exchange_rate(pi) if expense.currency == 'USD' else 1)
                             for expense in pi.expenses)
-        dispatch_summaries[pi.id] = ' · '.join([
-            pi.freight_forwarder or '货代待补',
-            ('正式报关' if pi.customs_required else '无需报关') if pi.customs_required is not None else '报关待登记',
-            ('RMB %.2f' % expense_total) if pi.expenses else ('无费用' if pi.dispatch_no_expenses else '费用待登记'),
-            ('运单 ' + pi.shipping_tracking_no) if pi.shipping_tracking_no else '运单待补',
-        ])
+        dispatch_summaries[pi.id] = ' · '.join(part for part in [
+            pi.freight_forwarder or '',
+            ('正式报关' if pi.customs_required else '无需报关') if pi.customs_required is not None else '',
+            ('RMB %.2f' % expense_total) if pi.expenses else ('无费用' if pi.dispatch_no_expenses else ''),
+            ('运单 ' + pi.shipping_tracking_no) if pi.shipping_tracking_no else '',
+        ] if part)
     payment_account_ids = {}
     for pi in pis:
         matching_account = _matching_account_for_pi(pi)

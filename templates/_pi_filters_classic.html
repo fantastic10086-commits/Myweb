@@ -36,21 +36,22 @@
         </div>
     </div>
     <div class="pi-stage-filter">
-        <span class="small text-muted">业务阶段</span>
+        <span class="small text-muted">阶段</span>
         <div class="pi-stage-buttons" role="group" aria-label="按业务记录筛选">
             <button type="submit" class="pi-stage-button {{ 'is-selected' if not stage and not transition else '' }}" aria-pressed="{{ 'true' if not stage and not transition else 'false' }}" title="全部阶段，保留其他筛选条件" onclick="setPiStageFilter(this.form, '', '');">全部</button>
             {% for key, info in stage_labels.items() %}
-            {% if key in transition_labels %}
-            <button type="submit" class="pi-stage-button pi-transition-button {{ 'is-selected' if transition == key else '' }}" aria-pressed="{{ 'true' if transition == key else 'false' }}" title="{{ transition_labels[key][2] }}" onclick="setPiStageFilter(this.form, '', '{{ key }}');">
-                <span>{{ transition_labels[key][1] }}</span><i class="bi bi-arrow-right" aria-hidden="true"></i>
-            </button>
-            {% endif %}
             {% if key != 'shipping' %}
             <button type="submit" class="pi-stage-button {{ 'is-selected' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="setPiStageFilter(this.form, '{{ key }}', '');">
                 <i class="bi bi-{{ info[1] }}" aria-hidden="true"></i><span>{{ info[0] }}</span>
             </button>
             {% endif %}
             {% endfor %}
+        </div>
+        <span class="small text-muted ms-md-2">待处理</span>
+        <div class="pi-stage-buttons" role="group" aria-label="待处理订单">
+        {% for key, label in [('procurement','待采购'),('packing','待装箱'),('customs','待安排'),('shipping','待发货')] %}
+            <button type="submit" class="pi-stage-button pi-transition-button {{ 'is-selected' if transition == key else '' }}" aria-pressed="{{ 'true' if transition == key else 'false' }}" title="{{ transition_labels[key][2] }}" onclick="setPiStageFilter(this.form, '', '{{ key }}');">{{ label }}</button>
+        {% endfor %}
         </div>
     </div>
     <div class="collapse {{ 'show' if advanced_active else '' }}" id="piAdvancedFilters">
