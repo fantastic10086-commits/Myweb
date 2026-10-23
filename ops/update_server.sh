@@ -39,6 +39,16 @@ require_static_assets() {
 # Fail before making a release if the staging directory lost its static/ tree.
 require_static_assets "$SOURCE_DIR"
 
+# Every deployment must create an off-server backup before changing the release.
+# Use the installed configuration; do not disable OSS for deployment backups.
+if [ -n "$PREVIOUS" ] && [ -f "$PREVIOUS/ops/backup.sh" ]; then
+    if [ ! -x "${OSSUTIL_BIN:-/usr/local/bin/ossutil2}" ] || [ ! -f "${OSSUTIL_CONFIG:-/root/.ossutilconfig-pi-manager}" ]; then
+        echo "Deployment requires a configured OSS backup; current release unchanged." >&2
+        exit 1
+    fi
+    bash "$PREVIOUS/ops/backup.sh"
+fi
+
 mkdir -p "$RELEASE"
 rsync -a --exclude '.git' --exclude 'venv' --exclude 'instance' --exclude 'static/uploads' \
     --exclude 'pdf' --exclude 'backups' --exclude 'settings.json' --exclude '*.log' \
@@ -98,3 +108,13 @@ if [ -f /etc/pi-manager/webpush.env ]; then
     sleep 3
     systemctl is-active --quiet pi-manager-webpush
 fi
+
+# Keep ten recent code releases, plus the active and immediate rollback release.
+# Business data lives outside this directory and is never included in this prune.
+mapfile -t releases < <(find "$APP_DIR/releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]{14}$' | sort -r)
+for old in "${releases[@]:10}"; do
+    candidate="$APP_DIR/releases/$old"
+    if [ "$candidate" != "$RELEASE" ] && [ "$candidate" != "$PREVIOUS" ]; then
+        rm -rf -- "$candidate"
+    fi
+done
