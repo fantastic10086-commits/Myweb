@@ -101,6 +101,7 @@
                         <tr>
                             <th>PI 编号</th>
                             <th>客户</th>
+                            {% if current_user.role == 'admin' %}<th class="text-nowrap">业务员</th>{% endif %}
                             <th>日期</th>
                             <th class="text-end">订单总金额</th>
                             <th></th>
@@ -111,6 +112,7 @@
                         <tr>
                             <td><strong>{{ pi.pi_number }}</strong></td>
                             <td>{{ pi.customer.name }}</td>
+                            {% if current_user.role == 'admin' %}<td class="text-nowrap">{{ pi.salesperson or '—' }}</td>{% endif %}
                             <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
                             <td class="text-end fw-bold"><span translate="no" class="notranslate">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</span></td>
                             <td class="text-end">
