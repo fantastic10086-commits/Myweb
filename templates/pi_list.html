@@ -56,19 +56,27 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
-    .pi-filter-grid { display:grid; grid-template-columns:165px minmax(150px,1fr) 100px 85px 105px 120px 340px 150px; align-items:end; padding:.65rem 0; }
-    .pi-filter-cell { min-width:0; padding:0 .65rem; }
-    .pi-filter-cell .form-control, .pi-filter-cell .form-select { min-width:0; padding-left:.4rem; padding-right:.4rem; }
-    .pi-stage-filter { padding-bottom:.25rem; }
+    .pi-filter-grid { display:grid; grid-template-columns:minmax(140px,1fr) minmax(200px,1.45fr) minmax(130px,.9fr) minmax(130px,.9fr) auto; gap:.85rem; align-items:end; padding:1rem 1.1rem; }
+    .pi-filter-cell { min-width:0; }
+    .pi-filter-cell .form-control, .pi-filter-cell .form-select { min-width:0; min-height:36px; }
+    .pi-filter-actions { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .pi-filter-actions .btn { min-height:36px; white-space:nowrap; }
+    .pi-stage-filter { display:flex; align-items:center; gap:.8rem; padding:.8rem 1.1rem; border-top:1px solid #edf0f3; }
+    .pi-stage-buttons { display:flex; gap:.5rem; flex-wrap:wrap; }
+    .pi-stage-button { display:inline-flex; gap:.4rem; align-items:center; justify-content:center; min-height:36px; padding:.4rem .85rem; border:1px solid transparent; border-radius:7px; background:#f1f3f5; color:#56616e; font-size:.85rem; font-weight:500; white-space:nowrap; }
+    .pi-stage-button:hover { background:#e5eaf0; color:#263646; }
+    .pi-stage-button.is-selected { background:#0d6efd; color:#fff; }
+    .pi-stage-button:focus-visible { outline:3px solid #9ec5fe; outline-offset:2px; }
     .pi-advanced-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
-    @media (max-width:1399.98px) {
-        .pi-filter-grid { grid-template-columns:repeat(4,minmax(0,1fr)); row-gap:1rem; }
-        .pi-stage-filter { grid-column:span 2; }
+    .pi-filter-results { color:#6c757d; font-size:.82rem; line-height:1.7; margin:0 .2rem .75rem; }
+    .pi-filter-results strong { color:#495057; font-weight:600; }
+    @media (max-width:1199.98px) {
+        .pi-filter-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+        .pi-filter-actions { grid-column:1 / -1; justify-content:flex-end; }
     }
     @media (max-width:767.98px) {
-        .pi-filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-        .pi-stage-filter { grid-column:1 / -1; }
-        .pi-advanced-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .pi-filter-grid, .pi-advanced-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .pi-stage-filter { align-items:flex-start; flex-direction:column; gap:.5rem; }
     }
     @media (max-width: 1399.98px) {
         .pi-list-table-wrap { overflow-x: auto; overflow-y: visible; }
@@ -109,7 +117,7 @@
             </div>
 <div class="pi-filter-cell">
                 <label class="form-label small mb-1" for="countryFilter">国家</label>
-                <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家；留空为全部">
+                <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家">
                 <datalist id="countryFilterOptions">
                     {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
                 </datalist>
@@ -123,20 +131,22 @@
                     {% endfor %}
                 </select>
             </div>
-        <div class="pi-filter-cell"><label class="form-label small mb-1">日期</label><button type="button" class="btn btn-sm btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters">{{ '已设范围' if date_from or date_to else '不限日期' }}</button></div>
-        <div class="pi-filter-cell"><button type="button" class="btn btn-sm btn-link text-secondary w-100" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters">更多筛选{{ ' · 已设置' if advanced_active else '' }}</button></div>
-        <div class="pi-filter-cell pi-stage-filter">
-            <div class="form-label small mb-2 text-center">有记录的阶段</div>
-            <div class="pi-list-workflow" role="group" aria-label="按业务记录筛选">
-            {% for key, info in stage_labels.items() %}
-                <button type="submit" class="pi-list-workflow-stage is-action {{ 'is-partial' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="this.form.elements.stage.value = this.form.elements.stage.value === '{{ key }}' ? '' : '{{ key }}';">
-                    <span class="pi-list-workflow-dot"><i class="bi bi-{{ info[1] }}" aria-hidden="true"></i></span>
-                    <span class="pi-list-workflow-label">{{ info[0] }}</span>
-                </button>
-            {% endfor %}
-            </div>
+        <div class="pi-filter-actions">
+            <button type="submit" class="btn btn-sm btn-primary px-3"><i class="bi bi-funnel"></i> 筛选</button>
+            <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">重置</a>
+            <button type="button" class="btn btn-sm btn-light text-secondary" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters"><i class="bi bi-sliders"></i> 更多筛选{{ ' · 已设置' if advanced_active else '' }}</button>
         </div>
-        <div class="pi-filter-cell d-flex gap-1 justify-content-end"><button type="submit" class="btn btn-sm btn-primary" title="应用筛选"><i class="bi bi-funnel"></i> 筛选</button><a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary" title="清除全部筛选" aria-label="清除全部筛选"><i class="bi bi-arrow-counterclockwise"></i></a></div>
+    </div>
+    <div class="pi-stage-filter">
+        <span class="small text-muted">业务阶段</span>
+        <div class="pi-stage-buttons" role="group" aria-label="按业务记录筛选">
+            <button type="submit" class="pi-stage-button {{ 'is-selected' if not stage else '' }}" aria-pressed="{{ 'true' if not stage else 'false' }}" title="全部阶段，保留其他筛选条件" onclick="this.form.elements.stage.value = '';">全部</button>
+            {% for key, info in stage_labels.items() %}
+            <button type="submit" class="pi-stage-button {{ 'is-selected' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="this.form.elements.stage.value = this.form.elements.stage.value === '{{ key }}' ? '' : '{{ key }}';">
+                <i class="bi bi-{{ info[1] }}" aria-hidden="true"></i><span>{{ info[0] }}</span>
+            </button>
+            {% endfor %}
+        </div>
     </div>
     <div class="collapse {{ 'show' if advanced_active else '' }}" id="piAdvancedFilters">
         <div class="pi-advanced-grid border-top p-3">
@@ -188,9 +198,9 @@
 </div>
 
 {% if stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
-<div class="alert alert-info py-2 small">
+<div class="pi-filter-results" role="status">
     共找到 <strong>{{ pis|length }}</strong> 份 PI
-    {% if stage %}，有记录的阶段：<strong>{{ stage_labels[stage][0] }}</strong>{% endif %}
+    {% if stage %} · 当前筛选：<strong>有{{ stage_labels[stage][0] }}记录</strong>{% endif %}
     {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
     {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
