@@ -301,17 +301,26 @@
             <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关 / 发货</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
+        <nav class="px-3 pt-2 border-bottom" aria-label="报关发货分页">
+            <div class="nav nav-tabs border-0" role="tablist">
+                <button class="nav-link active" id="dispatchForwarderTab" data-bs-toggle="tab" data-bs-target="#dispatchForwarderPane" type="button" role="tab" aria-controls="dispatchForwarderPane" aria-selected="true">货代</button>
+                <button class="nav-link" id="dispatchExpensesTab" data-bs-toggle="tab" data-bs-target="#dispatchExpensesPane" type="button" role="tab" aria-controls="dispatchExpensesPane" aria-selected="false">费用</button>
+                <button class="nav-link" id="dispatchShippingTab" data-bs-toggle="tab" data-bs-target="#dispatchShippingPane" type="button" role="tab" aria-controls="dispatchShippingPane" aria-selected="false">发货</button>
+            </div>
+        </nav>
         <div class="modal-body">
             <div class="small text-muted mb-3">PI：<strong id="customsPINumber"></strong></div>
             <div id="customsModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <div class="tab-content">
+            <div class="tab-pane show active" id="dispatchForwarderPane" role="tabpanel" aria-labelledby="dispatchForwarderTab">
             <fieldset id="customsFields" disabled>
                 <div class="row g-3 mb-2"><div class="col-md-6">
-                <label class="form-label fw-bold" for="customsForwarder">1. 货代 <span class="text-danger">*</span></label>
+                <label class="form-label fw-bold" for="customsForwarder">货代 <span class="text-danger">*</span></label>
                 <select class="form-select form-select-sm" id="customsForwarder">
                     <option value="">— 请选择货代 —</option>
                     {% for option in freight_forwarder_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
                 </select></div><div class="col-md-6">
-                <div class="form-label fw-bold mb-2">2. 是否正式报关 <span class="text-danger">*</span></div>
+                <div class="form-label fw-bold mb-2">是否正式报关 <span class="text-danger">*</span></div>
                 <div class="d-flex gap-4 mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredYes" value="true">
@@ -325,7 +334,7 @@
                 </div></div>
                 <div class="mb-2">
                     <div class="d-flex justify-content-between"><label class="form-label small" for="customsNote">补充说明</label>
-                    <label class="small"><input type="checkbox" id="dispatchNoExpenses"> 确认无费用（有费用时不勾选）</label></div>
+                    </div>
                     <textarea class="form-control" id="customsNote" rows="2" maxlength="500"
                               placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
                 </div>
@@ -336,8 +345,12 @@
                 <i class="bi bi-file-earmark-spreadsheet me-1"></i>制作报关资料
             </a>
             </div>
-            <hr>
-            <h6 class="fw-bold">3. 报关及发货费用（RMB）</h6>
+            </div>
+            <div class="tab-pane" id="dispatchExpensesPane" role="tabpanel" aria-labelledby="dispatchExpensesTab">
+            <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+                <h6 class="fw-bold mb-0">报关及发货费用（RMB）</h6>
+                <label class="small"><input type="checkbox" id="dispatchNoExpenses"> 确认无费用</label>
+            </div>
 
             <p class="small text-muted mb-2">费用计入本单实际成本，用于利润核算。<span id="expensePINumber" class="d-none"></span></p>
             <div id="expenseModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
@@ -387,7 +400,7 @@
             </div>
             <div id="extraExpenseRows"></div>
             <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addDispatchExpenseRow()">＋ 添加一笔费用</button>
-<hr><section id="shippingSection"><h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+</div><div class="tab-pane" id="dispatchShippingPane" role="tabpanel" aria-labelledby="dispatchShippingTab"><section id="shippingSection"><h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
             <fieldset id="shippingFields" disabled>
                 <div class="mb-3">
                     <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
@@ -417,7 +430,7 @@
             {% if is_admin %}
             <button type="button" class="btn btn-sm btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">撤销发货登记</button>
             {% endif %}
-</div></section></div>
+</div></section></div></div></div>
         <div class="modal-footer">
             <span id="dispatchSaveMessage" class="small text-muted me-auto" role="status">保存信息不会改变发货状态</span>
             <button type="button" class="btn btn-primary" id="dispatchInfoBtn" disabled onclick="saveDispatch(false)">保存信息</button>
@@ -552,7 +565,8 @@ async function saveDispatch(complete) {
                 tracking_no: document.getElementById('shippingTrackingNo').value.trim(),
                 shipping_note: document.getElementById('shippingRecordNote').value.trim(), expenses: []
             };
-            if (complete && (!data.freight_forwarder || data.customs_required === null || !data.shipping_date)) throw new Error('确认发货前请填写货代、报关选项和发货日期。');
+            if (complete && (!data.freight_forwarder || data.customs_required === null)) { showDispatchTab('Forwarder'); throw new Error('确认发货前请选择货代和报关选项。'); }
+            if (complete && !data.shipping_date) { showDispatchTab('Shipping'); throw new Error('确认发货前请填写发货日期。'); }
             form = new FormData();
             var rows = [{category: document.getElementById('exp_category'), amount: document.getElementById('exp_amount'), note: document.getElementById('exp_note'), attachment: document.getElementById('exp_attachment')}];
             document.querySelectorAll('.dispatch-expense').forEach(function(row) {
@@ -561,7 +575,7 @@ async function saveDispatch(complete) {
             rows.forEach(function(row) {
                 var file = row.attachment.files[0];
                 if (!row.category.value && !row.amount.value && !row.note.value.trim() && !file) return;
-                if (!row.category.value || !(Number(row.amount.value) > 0)) throw new Error('请完整填写每笔费用的类别和金额。');
+                if (!row.category.value || !(Number(row.amount.value) > 0)) { showDispatchTab('Expenses'); throw new Error('请完整填写每笔费用的类别和金额。'); }
                 if (file && file.size > 12 * 1024 * 1024) throw new Error('每张费用图片最大 12 MB。');
                 if (file) form.append('expense_attachment_' + data.expenses.length, file);
                 data.expenses.push({category: row.category.value, amount: row.amount.value, note: row.note.value.trim()});
@@ -820,7 +834,12 @@ function customsError(message) {
     box.textContent = message;
     box.classList.remove('d-none');
 }
+function showDispatchTab(name) {
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('dispatch' + name + 'Tab')).show();
+    document.querySelector('#customsModal .modal-body').scrollTop = 0;
+}
 function openCustomsRecord(piId, piNumber) {
+    showDispatchTab('Forwarder');
     dispatchLock(false);
     dispatchDirty = false;
     dispatchBusy = false;
