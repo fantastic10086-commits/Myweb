@@ -353,13 +353,16 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
-            <div class="alert alert-info py-2">
-                PI：<strong id="customsPINumber"></strong><br>
-                <small>此处只记录该订单是否需要报关，不会改变订单进度或金额。</small>
-            </div>
+            <div class="small text-muted mb-3">PI：<strong id="customsPINumber"></strong></div>
             <div id="customsModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
             <fieldset id="customsFields" disabled>
-                <legend class="form-label fs-6 mb-2">是否需要报关 <span class="text-danger">*</span></legend>
+                <div class="row g-3 mb-2"><div class="col-md-6">
+                <label class="form-label fw-bold" for="customsForwarder">1. 货代 <span class="text-danger">*</span></label>
+                <select class="form-select form-select-sm" id="customsForwarder">
+                    <option value="">— 请选择货代 —</option>
+                    {% for option in freight_forwarder_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
+                </select></div><div class="col-md-6">
+                <div class="form-label fw-bold mb-2">2. 是否正式报关 <span class="text-danger">*</span></div>
                 <div class="d-flex gap-4 mb-3">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredYes" value="true">
@@ -370,9 +373,10 @@
                         <label class="form-check-label" for="customsRequiredNo">无需报关</label>
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label" for="customsNote">备注</label>
-                    <textarea class="form-control" id="customsNote" rows="3" maxlength="500"
+                </div></div>
+                <div class="mb-2">
+                    <label class="form-label small" for="customsNote">补充说明</label>
+                    <textarea class="form-control" id="customsNote" rows="2" maxlength="500"
                               placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
                 </div>
             </fieldset>
@@ -383,16 +387,13 @@
                 <i class="bi bi-file-earmark-spreadsheet me-1"></i>制作报关资料
             </a>
             <button type="button" class="btn btn-primary" id="customsSaveBtn" disabled onclick="saveCustomsRecord()">
-                <i class="bi bi-check-lg"></i> 保存报关记录
+                <i class="bi bi-check-lg"></i> 保存安排
             </button>
             </div>
             <hr>
-            <h5>费用记录</h5>
+            <h6 class="fw-bold">3. 报关及发货费用</h6>
 
-            <div class="alert alert-info py-2 mb-3">
-                真实成本将记入 PI：<strong id="expensePINumber"></strong><br>
-                <small>用于报关费、实际运费等订单后续支出；不改变客户订单总金额，只在利润核算中扣除。</small>
-            </div>
+            <p class="small text-muted mb-2">费用计入本单实际成本，用于利润核算。<span id="expensePINumber" class="d-none"></span></p>
             <div id="expenseModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
             <div id="expenseModalSuccess" class="alert alert-success py-2 d-none" role="alert"></div>
             <div class="mb-3">
@@ -405,7 +406,7 @@
                 </div>
             </div>
             <hr>
-            <h6 class="mb-3"><i class="bi bi-plus-circle me-1"></i>继续新增真实成本</h6>
+            <details id="expenseEntry"><summary class="text-primary mb-2">＋ 新增费用</summary>
             <div class="mb-3">
                 <label class="form-label" for="exp_category">真实成本类别 <span class="text-danger">*</span></label>
                 <select class="form-select" id="exp_category">
@@ -444,7 +445,7 @@
             </div>
             <button type="button" class="btn btn-danger" id="expSubmitBtn" onclick="addExpenseFromPIList()">
                 <i class="bi bi-check-lg"></i> 保存真实成本
-            </button>
+            </button></details>
         </div>
     </div></div>
 </div>
@@ -769,6 +770,9 @@ function openCustomsRecord(piId, piNumber) {
     document.getElementById('customsRequiredYes').checked = false;
     document.getElementById('customsRequiredNo').checked = false;
     document.getElementById('customsNote').value = '';
+    document.getElementById('customsForwarder').value = '';
+    document.querySelectorAll('#customsForwarder option[data-historical]').forEach(option => option.remove());
+    document.getElementById('expenseEntry').open = false;
     document.getElementById('customsFields').disabled = true;
     document.getElementById('customsSaveBtn').disabled = true;
     document.getElementById('customsDocumentsBtn').classList.add('d-none');
@@ -785,6 +789,14 @@ function openCustomsRecord(piId, piNumber) {
             document.getElementById('customsRequiredYes').checked = result.data.customs_required === true;
             document.getElementById('customsRequiredNo').checked = result.data.customs_required === false;
             document.getElementById('customsNote').value = result.data.note || '';
+            var forwarderSelect = document.getElementById('customsForwarder');
+            var forwarder = result.data.freight_forwarder || '';
+            if (forwarder && !Array.from(forwarderSelect.options).some(option => option.value === forwarder)) {
+                var option = new Option(forwarder + '（历史选项）', forwarder);
+                option.dataset.historical = '1';
+                forwarderSelect.add(option);
+            }
+            forwarderSelect.value = forwarder;
             document.getElementById('customsDocumentsBtn').classList.toggle(
                 'd-none', result.data.customs_required !== true
             );
@@ -805,6 +817,7 @@ function updateCustomsButton(piId, required) {
     if (status) status.textContent = required ? '需要报关' : '无需报关';
 }
 function saveCustomsRecord() {
+    if (!document.getElementById('customsForwarder').value) { customsError('请先选择货代。'); return; }
     var selected = document.querySelector('input[name="customs_required"]:checked');
     if (!selected) { customsError('请选择需要报关或无需报关。'); return; }
     var button = document.getElementById('customsSaveBtn');
@@ -816,6 +829,7 @@ function saveCustomsRecord() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             customs_required: selected.value === 'true',
+            freight_forwarder: document.getElementById('customsForwarder').value,
             note: document.getElementById('customsNote').value.trim()
         })
     })
@@ -823,7 +837,7 @@ function saveCustomsRecord() {
             return response.json().then(function(data) { return {ok: response.ok, data: data}; });
         })
         .then(function(result) {
-            if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存报关记录失败。');
+            if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存安排失败。');
             updateCustomsButton(currentCustomsPiId, result.data.customs_required);
             document.getElementById('customsDocumentsBtn').classList.toggle(
                 'd-none', result.data.customs_required !== true
@@ -832,10 +846,10 @@ function saveCustomsRecord() {
                 '最近登记：' + result.data.recorded_by + ' · ' + result.data.recorded_at;
 
         })
-        .catch(function(error) { customsError(error.message || '保存报关记录失败。'); })
+        .catch(function(error) { customsError(error.message || '保存安排失败。'); })
         .finally(function() {
             button.disabled = false;
-            button.innerHTML = '<i class="bi bi-check-lg"></i> 保存报关记录';
+            button.innerHTML = '<i class="bi bi-check-lg"></i> 保存安排';
         });
 }
 function clearExpenseAttachment() {

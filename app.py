@@ -352,6 +352,7 @@ MANAGED_FIELD_LABELS = {
     'expense_category': '订单真实成本类别',
     'price_terms': '贸易条款',
     'delivery_time': '交货期',
+    'freight_forwarder': '货代',
 }
 MANAGED_FIELDS_WITH_ENGLISH = {'shipping_note'}
 
@@ -405,7 +406,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -1492,6 +1493,12 @@ def create_app():
                 db.session.add(option)
             elif not (option.english_value or '').strip():
                 option.english_value = shipping_note_english.get(value, value)
+
+        if not FieldOption.query.filter_by(field_key='_seed', value='freight_forwarder').first():
+            for position, value in enumerate(['客户货代', '上海夏梅', '深圳彭女士'], 1):
+                db.session.add(FieldOption(field_key='freight_forwarder', value=value, sort_order=position * 10))
+
+            db.session.add(FieldOption(field_key='_seed', value='freight_forwarder'))
 
         default_expense_categories = [
             '实际运费', '报关费', '保险费', '平台服务费',
@@ -6217,6 +6224,11 @@ def pi_list():
     if customs_status not in customs_labels:
         customs_status = ''
 
+    forwarder_filter = request.args.get('freight_forwarder', '').strip()
+    forwarder_filter_options = sorted({option.value for option in _field_options('freight_forwarder')} | {
+        row[0] for row in filter_by_user(PI.query, PI, 'salesperson')
+        .with_entities(PI.freight_forwarder).distinct().all() if row[0]
+    })
     stage_labels = {
         'payment': ('回款', 'cash-coin'),
         'procurement': ('采购', 'cart-check'),
@@ -6261,6 +6273,8 @@ def pi_list():
         'shipping': or_(PI.shipping_completed.is_(True), PI.shipping_paused.is_(True),
                         PI.shipping_recorded_at.isnot(None)),
     }
+    if forwarder_filter:
+        query = query.filter(PI.freight_forwarder == forwarder_filter)
     if stage:
         query = query.filter(record_conditions[stage])
 
@@ -6363,6 +6377,7 @@ def pi_list():
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
+                           forwarder_filter=forwarder_filter, forwarder_filter_options=forwarder_filter_options,
                            transition=transition, transition_labels=transition_labels,
                            stage=stage, stage_labels=stage_labels,
                            payment_status=payment_status,
@@ -7825,6 +7840,7 @@ def api_pi_customs_declaration(id):
             'success': True,
             'pi_number': pi.pi_number,
             'customs_required': pi.customs_required,
+            'freight_forwarder': pi.freight_forwarder or '',
             'note': pi.customs_note or '',
             'recorded_at': (
                 pi.customs_recorded_at.strftime('%Y-%m-%d %H:%M')
@@ -7842,15 +7858,23 @@ def api_pi_customs_declaration(id):
     else:
         return jsonify({'success': False, 'error': '请选择需要报关或无需报关。'}), 400
 
+    try:
+        forwarder = _managed_field_value('freight_forwarder', payload.get('freight_forwarder'), pi.freight_forwarder)
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    if not forwarder or len(forwarder) > 200:
+        return jsonify({'success': False, 'error': '请选择货代。'}), 400
+
     note = str(payload.get('note') or '').strip()
     if len(note) > 500:
         return jsonify({'success': False, 'error': '备注不能超过 500 个字符。'}), 400
 
     fields = [
-        'customs_required', 'customs_note',
+        'customs_required', 'customs_note', 'freight_forwarder',
         'customs_recorded_at', 'customs_recorded_by',
     ]
     before = _snapshot(pi, fields)
+    pi.freight_forwarder = forwarder
     pi.customs_required = customs_required
     pi.customs_note = note
     pi.customs_recorded_at = datetime.utcnow()
@@ -7875,6 +7899,7 @@ def api_pi_customs_declaration(id):
         'success': True,
         'pi_number': pi.pi_number,
         'customs_required': pi.customs_required,
+            'freight_forwarder': pi.freight_forwarder or '',
         'note': pi.customs_note or '',
         'recorded_at': pi.customs_recorded_at.strftime('%Y-%m-%d %H:%M'),
         'recorded_by': pi.customs_recorded_by,
@@ -9956,6 +9981,7 @@ def inject_globals():
         'all_accounts': Account.query.order_by(Account.name).all(),
         'shipping_note_options': _field_options('shipping_note'),
         'expense_category_options': _field_options('expense_category'),
+        'freight_forwarder_options': _field_options('freight_forwarder'),
         'price_terms_options': _field_options('price_terms'),
         'delivery_time_options': _field_options('delivery_time'),
         'current_user': user,

@@ -1,4 +1,4 @@
-{% set advanced_active = date_from or date_to or tracking_no_filter or payment_status or order_status or customs_status %}
+{% set advanced_active = forwarder_filter or date_from or date_to or tracking_no_filter or payment_status or order_status or customs_status %}
 <div class="card mb-3">
 <form method="get" id="piFilters">
     <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
@@ -53,6 +53,13 @@
     </div>
     <div class="collapse {{ 'show' if advanced_active else '' }}" id="piAdvancedFilters">
         <div class="pi-advanced-grid border-top p-3">
+            <div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="forwarderFilter">货代</label>
+                <select id="forwarderFilter" class="form-select form-select-sm" name="freight_forwarder">
+                    <option value="">— 全部 —</option>
+                    {% for name in forwarder_filter_options %}<option value="{{ name }}" {{ 'selected' if name == forwarder_filter else '' }}>{{ name }}</option>{% endfor %}
+                </select>
+            </div>
 <div class="pi-filter-cell">
                 <label class="form-label small mb-1">开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
@@ -100,8 +107,9 @@
 </form>
 </div>
 
-{% if transition or stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+{% if forwarder_filter or transition or stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
 <div class="pi-filter-results" role="status">
+    {% if forwarder_filter %}货代：<strong>{{ forwarder_filter }}</strong> · {% endif %}
     共找到 <strong>{{ pis|length }}</strong> 份 PI
     {% if transition %} · <strong>{{ transition_labels[transition][1] }}</strong>（{{ transition_labels[transition][2] }}）{% endif %}
     {% if stage %} · 当前筛选：<strong>有{{ stage_labels[stage][0] }}记录</strong>{% endif %}
