@@ -6,6 +6,11 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-10-23 客户详情溢出修复）
+
+- 左侧客户信息表固定布局和宽度，标签列6.5rem；单元格overflow-wrap:anywhere，长公司名称/联系人/邮箱/地址完整换行，历史成交额按钮允许换行，页面客户标题同步断行。
+- 代码 `34b1bea`；Jinja/diff检查通过，未运行浏览器验证。备份 `/var/lib/pi-manager/backups/pi-manager_20261023_221431.tar.gz`；发布 `/opt/pi-manager/releases/20261023221534`，服务active、维护off、部署健康检查通过。
+
 ## 最新接续（2026-10-23 导出编辑页英文国家）
 
 - pi_export GET传入english_country转换值，live_edit_pi的cust_country显示英文，与导出规则一致；不回写档案。
