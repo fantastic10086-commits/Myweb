@@ -6,6 +6,13 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-10-23 筛选V2与原版对比）
+
+- 用户要求先保存原版再开发新版。原版基准 `f08b451`、发布 `/opt/pi-manager/releases/20261023141805`，已推送Git标签 `pi-filters-v1-20261023`。PI列表提供原版/新版切换，`filter_version=classic`使用原版局部模板，新版为默认。
+- 新版提供已回款待采购(payment=yes,procurement=no)、已采购待装箱(procurement=yes,packing=no)；更多筛选支持五阶段不限/有记录/无记录，AND组合。真实回款只含未删除amount>0；草稿/部分记录视为有记录。快捷按钮清除stage和回款/订单/报关详细状态，保留客户、国家、业务员、日期、物流单号；全部清除阶段条件。
+- 新增 `_pi_filters_classic.html` 和 `_pi_filters_new.html`，原版忽略V2 record参数；现有stage URL兼容。代码 `af7ed4e`。
+- 备份 `/var/lib/pi-manager/backups/pi-manager_20261023_145558.tar.gz`；发布 `/opt/pi-manager/releases/20261023145755`，服务active、维护off。AST/Jinja/diff及部署健康检查通过，未运行功能测试/浏览器操作测试。
+
 ## 最新接续（2026-10-23 PI筛选视觉简化）
 
 - 按用户确认方案取消筛选与表格逐列对齐：基础四字段（编号、客户/联系人、国家、业务员）+筛选/重置/更多；第二排独立阶段按钮，增加全部、图标配文字、浅灰未选/蓝白选中，去掉筛选连接线。详细筛选仍折叠；结果提示改小字。底层筛选逻辑及表格业务流程不变。
