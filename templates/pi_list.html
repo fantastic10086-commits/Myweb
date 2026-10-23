@@ -68,7 +68,13 @@
     .pi-stage-button.is-selected { background:#0d6efd; color:#fff; }
     .pi-stage-button:focus-visible { outline:3px solid #9ec5fe; outline-offset:2px; }
     .pi-advanced-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
-    .pi-record-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.75rem; }
+    .pi-stage-buttons { flex-wrap:nowrap; overflow-x:auto; align-items:center; padding:3px; min-width:0; }
+    .pi-stage-buttons > button { flex-shrink:0; }
+    .pi-stage-filter { min-width:0; }
+    .pi-stage-filter > span { white-space:nowrap; }
+    .pi-transition-button { background:transparent; color:#66788a; font-size:.75rem; padding:.35rem .3rem; }
+    .pi-transition-button.is-selected { background:#e7f1ff; color:#0759bd; border-color:#9ec5fe; }
+    @media (max-width:767.98px) { .pi-stage-buttons { max-width:100%; } }
     .pi-filter-results { color:#6c757d; font-size:.82rem; line-height:1.7; margin:0 .2rem .75rem; }
     .pi-filter-results strong { color:#495057; font-weight:600; }
     @media (max-width:1199.98px) {
@@ -102,12 +108,7 @@
     <button type="button" class="btn-close" aria-label="关闭" onclick="this.parentElement.classList.add('d-none')"></button>
 </div>
 
-<div class="d-flex justify-content-end align-items-center gap-2 mb-2 small">
-    <span class="text-muted">筛选版本对比</span>
-    <a href="{{ version_urls['classic'] }}" class="btn btn-sm {{ 'btn-secondary' if filter_version == 'classic' else 'btn-outline-secondary' }}">原版</a>
-    <a href="{{ version_urls['new'] }}" class="btn btn-sm {{ 'btn-primary' if filter_version == 'new' else 'btn-outline-primary' }}">新版</a>
-</div>
-{% if filter_version == 'classic' %}{% include '_pi_filters_classic.html' %}{% else %}{% include '_pi_filters_new.html' %}{% endif %}
+{% include '_pi_filters_classic.html' %}
 
 <div class="card">
     <div class="card-body p-0">

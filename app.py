@@ -6217,24 +6217,17 @@ def pi_list():
     if stage not in stage_labels:
         stage = ''
 
-    record_filters = {
-        key: request.args.get('record_' + key, '')
-        for key in stage_labels
+    transition_labels = {
+        'procurement': ('payment', '待流转到采购', '回款已付清，采购未完成'),
+        'packing': ('procurement', '待流转到装箱', '采购已完成，装箱未完成'),
+        'customs': ('packing', '待流转到报关', '装箱已完成，报关尚未登记'),
+        'shipping': ('customs', '待流转到发货', '报关已登记（含无需报关），发货未完成'),
     }
-    record_filters = {key: value if value in {'yes', 'no'} else ''
-                      for key, value in record_filters.items()}
-    filter_version = 'classic' if request.args.get('filter_version') == 'classic' else 'new'
-    if filter_version == 'classic':
-        record_filters = {key: '' for key in stage_labels}
-    active_record_filters = {key: value for key, value in record_filters.items() if value}
-    todo = ('paid_pending' if active_record_filters == {'payment': 'yes', 'procurement': 'no'}
-            else 'purchased_pending' if active_record_filters == {'procurement': 'yes', 'packing': 'no'}
-            else '')
-    version_args = request.args.to_dict()
-    version_urls = {}
-    for version in ('classic', 'new'):
-        version_args['filter_version'] = version
-        version_urls[version] = url_for('pi_list', **version_args)
+    transition = request.args.get('transition', '').strip()
+    if transition not in transition_labels:
+        transition = ''
+    if transition:
+        stage = ''
 
     query = filter_by_user(
         PI.query.options(
@@ -6259,8 +6252,6 @@ def pi_list():
     }
     if stage:
         query = query.filter(record_conditions[stage])
-    for key, value in active_record_filters.items():
-        query = query.filter(record_conditions[key] if value == 'yes' else ~record_conditions[key])
 
     if salesperson_filter:
         query = query.filter(PI.salesperson == salesperson_filter)
@@ -6331,6 +6322,22 @@ def pi_list():
             pi for pi in pis
             if pi.effective_procurement_status == expected_order_status
         ]
+    if transition:
+        # Match the same completion rules used by the workflow indicators.
+        def stage_completed(pi, key):
+            if key == 'payment':
+                return bool(pi.paid)
+            if key == 'procurement':
+                return pi.procurement_is_complete
+            if key == 'packing':
+                return bool(pi.packing_list and pi.packing_list.is_completed)
+            if key == 'customs':
+                return pi.customs_required is not None
+            return bool(pi.shipping_completed)
+
+        previous_stage = transition_labels[transition][0]
+        pis = [pi for pi in pis if stage_completed(pi, previous_stage)
+               and not stage_completed(pi, transition)]
     payment_account_ids = {}
     for pi in pis:
         matching_account = _matching_account_for_pi(pi)
@@ -6345,8 +6352,7 @@ def pi_list():
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
-                           record_filters=record_filters, active_record_filters=active_record_filters,
-                           todo=todo, filter_version=filter_version, version_urls=version_urls,
+                           transition=transition, transition_labels=transition_labels,
                            stage=stage, stage_labels=stage_labels,
                            payment_status=payment_status,
                            order_status=order_status,
