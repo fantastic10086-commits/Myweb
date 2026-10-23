@@ -56,6 +56,20 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
+    .pi-filter-grid { display:grid; grid-template-columns:165px minmax(150px,1fr) 100px 85px 105px 120px 340px 150px; align-items:end; padding:.65rem 0; }
+    .pi-filter-cell { min-width:0; padding:0 .65rem; }
+    .pi-filter-cell .form-control, .pi-filter-cell .form-select { min-width:0; padding-left:.4rem; padding-right:.4rem; }
+    .pi-stage-filter { padding-bottom:.25rem; }
+    .pi-advanced-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+    @media (max-width:1399.98px) {
+        .pi-filter-grid { grid-template-columns:repeat(4,minmax(0,1fr)); row-gap:1rem; }
+        .pi-stage-filter { grid-column:span 2; }
+    }
+    @media (max-width:767.98px) {
+        .pi-filter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        .pi-stage-filter { grid-column:1 / -1; }
+        .pi-advanced-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
     @media (max-width: 1399.98px) {
         .pi-list-table-wrap { overflow-x: auto; overflow-y: visible; }
     }
@@ -79,26 +93,28 @@
     <button type="button" class="btn-close" aria-label="关闭" onclick="this.parentElement.classList.add('d-none')"></button>
 </div>
 
-<!-- 筛选 Bar -->
+{% set advanced_active = date_from or date_to or tracking_no_filter or payment_status or order_status or customs_status %}
 <div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="get" class="row g-2 align-items-end">
-            <div class="col-md-3 col-xl-2">
+<form method="get" id="piFilters">
+    <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
+    <input type="hidden" name="stage" value="{{ stage }}">
+    <div class="pi-filter-grid">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
                 <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
             </div>
-            <div class="col-md-3 col-xl-2">
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="customerNameFilter">客户／联系人</label>
+                <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
+            </div>
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1" for="countryFilter">国家</label>
                 <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家；留空为全部">
                 <datalist id="countryFilterOptions">
                     {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
                 </datalist>
             </div>
-            <div class="col-md-3 col-xl-2">
-                <label class="form-label small mb-1" for="customerNameFilter">客户／联系人</label>
-                <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
-            </div>
-            <div class="col-md-4 col-xl-2">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">业务员</label>
                 <select class="form-select form-select-sm" name="salesperson">
                     <option value="">— 全部 —</option>
@@ -107,15 +123,36 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4 col-xl-2">
+        <div class="pi-filter-cell"><label class="form-label small mb-1">日期</label><button type="button" class="btn btn-sm btn-outline-secondary w-100" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters">{{ '已设范围' if date_from or date_to else '不限日期' }}</button></div>
+        <div class="pi-filter-cell"><button type="button" class="btn btn-sm btn-link text-secondary w-100" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters">更多筛选{{ ' · 已设置' if advanced_active else '' }}</button></div>
+        <div class="pi-filter-cell pi-stage-filter">
+            <div class="form-label small mb-2 text-center">有记录的阶段</div>
+            <div class="pi-list-workflow" role="group" aria-label="按业务记录筛选">
+            {% for key, info in stage_labels.items() %}
+                <button type="submit" class="pi-list-workflow-stage is-action {{ 'is-partial' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="this.form.elements.stage.value = this.form.elements.stage.value === '{{ key }}' ? '' : '{{ key }}';">
+                    <span class="pi-list-workflow-dot"><i class="bi bi-{{ info[1] }}" aria-hidden="true"></i></span>
+                    <span class="pi-list-workflow-label">{{ info[0] }}</span>
+                </button>
+            {% endfor %}
+            </div>
+        </div>
+        <div class="pi-filter-cell d-flex gap-1 justify-content-end"><button type="submit" class="btn btn-sm btn-primary" title="应用筛选"><i class="bi bi-funnel"></i> 筛选</button><a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary" title="清除全部筛选" aria-label="清除全部筛选"><i class="bi bi-arrow-counterclockwise"></i></a></div>
+    </div>
+    <div class="collapse {{ 'show' if advanced_active else '' }}" id="piAdvancedFilters">
+        <div class="pi-advanced-grid border-top p-3">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
-            <div class="col-md-4 col-xl-2">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
-            <div class="col-md-4 col-xl-2">
+<div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="trackingNoFilter">物流单号</label>
+                <input id="trackingNoFilter" type="text" class="form-control form-control-sm" name="tracking_no" value="{{ tracking_no_filter }}" placeholder="完整或部分物流单号">
+            </div>
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">回款状态</label>
                 <select class="form-select form-select-sm" name="payment_status">
                     <option value="">— 全部 —</option>
@@ -126,7 +163,7 @@
                     <option value="paid" {% if payment_status == 'paid' %}selected{% endif %}>已付清</option>
                 </select>
             </div>
-            <div class="col-md-4 col-xl-2">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">订单进度</label>
                 <select class="form-select form-select-sm" name="order_status">
                     <option value="">— 全部 —</option>
@@ -136,7 +173,7 @@
                     <option value="shipped" {% if order_status == 'shipped' %}selected{% endif %}>发货完成</option>
                 </select>
             </div>
-            <div class="col-md-4 col-xl-2">
+<div class="pi-filter-cell">
                 <label class="form-label small mb-1">报关登记情况</label>
                 <select class="form-select form-select-sm" name="customs_status">
                     <option value="">— 全部 —</option>
@@ -145,23 +182,15 @@
                     <option value="not_required" {% if customs_status == 'not_required' %}selected{% endif %}>无需报关</option>
                 </select>
             </div>
-            <div class="col-md-4 col-xl-2">
-                <label class="form-label small mb-1" for="trackingNoFilter">物流单号</label>
-                <input id="trackingNoFilter" type="text" class="form-control form-control-sm" name="tracking_no" value="{{ tracking_no_filter }}" placeholder="完整或部分物流单号">
-            </div>
-            <div class="col-12 d-flex justify-content-end gap-2">
-                {% if tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
-                <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">清除筛选</a>
-                {% endif %}
-                <button type="submit" class="btn btn-sm btn-primary px-4"><i class="bi bi-funnel"></i> 筛选</button>
-            </div>
-        </form>
+        </div>
     </div>
+</form>
 </div>
 
-{% if tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+{% if stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
 <div class="alert alert-info py-2 small">
     共找到 <strong>{{ pis|length }}</strong> 份 PI
+    {% if stage %}，有记录的阶段：<strong>{{ stage_labels[stage][0] }}</strong>{% endif %}
     {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
     {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}

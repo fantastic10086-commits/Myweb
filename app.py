@@ -40,7 +40,7 @@ from flask import (
 )
 from flask_wtf.csrf import CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
-from sqlalchemy import event, func, case, or_, select
+from sqlalchemy import event, func, case, or_, and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
@@ -6206,6 +6206,17 @@ def pi_list():
     if customs_status not in customs_labels:
         customs_status = ''
 
+    stage_labels = {
+        'payment': ('回款', 'cash-coin'),
+        'procurement': ('采购', 'cart-check'),
+        'packing': ('装箱', 'box-seam'),
+        'customs': ('报关/费用', 'file-earmark-check'),
+        'shipping': ('发货', 'truck'),
+    }
+    stage = request.args.get('stage', '').strip()
+    if stage not in stage_labels:
+        stage = ''
+
     query = filter_by_user(
         PI.query.options(
             joinedload(PI.customer),
@@ -6217,6 +6228,19 @@ def pi_list():
         PI,
         'salesperson',
     )
+
+    # Record existence is independent of the order's latest workflow status.
+    if stage == 'payment':
+        query = query.filter(PI.payments.any(and_(Payment.deleted_at.is_(None), Payment.amount > 0)))
+    elif stage == 'procurement':
+        query = query.filter(PI.procurements.any())
+    elif stage == 'packing':
+        query = query.filter(PI.packing_list.has())
+    elif stage == 'customs':
+        query = query.filter(or_(PI.customs_required.isnot(None), PI.expenses.any()))
+    elif stage == 'shipping':
+        query = query.filter(or_(PI.shipping_completed.is_(True), PI.shipping_paused.is_(True),
+                                 PI.shipping_recorded_at.isnot(None)))
 
     if salesperson_filter:
         query = query.filter(PI.salesperson == salesperson_filter)
@@ -6301,6 +6325,7 @@ def pi_list():
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
+                           stage=stage, stage_labels=stage_labels,
                            payment_status=payment_status,
                            order_status=order_status,
                            customs_status=customs_status,
