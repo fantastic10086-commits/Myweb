@@ -642,11 +642,13 @@ def _replace_cell(sheet, cell, values, upload_dir):
     _set_safe_excel_text(cell, result)
 
 
-def _fit_contract_text(sheet):
+def _fit_contract_text(sheet, cells=None):
     """Grow wrapped contract rows to accommodate PI text and merged paragraphs."""
     merges = list(sheet.merged_cells.ranges)
     for row in sheet:
         for cell in row:
+            if cells is not None and cell.coordinate not in cells:
+                continue
             if not isinstance(cell.value, str) or not cell.value:
                 continue
             merged = next((area for area in merges if cell.coordinate in area), None)
@@ -703,15 +705,20 @@ def render_excel_template(template_path, pi, output_path, salesperson_info=None,
                 for cell in sheet[row_number]:
                     _replace_cell(sheet, cell, values, upload_dir)
 
+            address_cells = set()
             expanded_set = set(expanded_rows)
             for row in sheet.iter_rows():
                 if row and row[0].row in expanded_set:
                     continue
                 for cell in row:
+                    if isinstance(cell.value, str) and re.search(r'{{\s*(customer_address|shipping_address)\s*}}', cell.value):
+                        address_cells.add(cell.coordinate)
                     _replace_cell(sheet, cell, fixed_values, upload_dir)
 
             if fit_contract_text:
                 _fit_contract_text(sheet)
+            elif address_cells:
+                _fit_contract_text(sheet, cells=address_cells)
 
             # Some workbooks created by WPS store print metadata that is lost
             # when openpyxl saves the populated copy.  Re-apply a stable print

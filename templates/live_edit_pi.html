@@ -136,7 +136,7 @@
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">Country:</span><input class="pi-paper-input" type="text" name="cust_country" value="{{ pi.customer.country if pi.customer else '' }}" {% if not is_admin %}readonly{% endif %}></div>
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">Email:</span><input class="pi-paper-input" type="email" name="cust_email" value="{{ pi.contact_info.get('email', '') if pi.customer else '' }}"></div>
                     <div class="pi-paper-info-row"><span class="pi-paper-info-label">Phone:</span><input class="pi-paper-input" type="text" name="cust_phone" value="{{ pi.contact_info.get('phone', '') if pi.customer else '' }}"></div>
-                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Address:</span><input class="pi-paper-input" type="text" name="cust_address" value="{{ pi.customer.address if pi.customer else '' }}"></div>
+                    <div class="pi-paper-info-row"><span class="pi-paper-info-label">Address:</span><textarea class="pi-paper-textarea pi-auto-height" name="cust_address" rows="1" style="white-space:pre-wrap;overflow-wrap:anywhere;">{{ pi.customer.address if pi.customer else '' }}</textarea></div>
                 </div>
             </section>
             <section>
@@ -255,6 +255,7 @@ async function exportDocument(mode) {
     } finally { exportBusy = false; }
 }
 document.querySelectorAll('.pi-auto-height').forEach(function(field) { field.addEventListener('input', resizeDocumentTextareas); });
+window.addEventListener('resize', resizeDocumentTextareas);
 resizeDocumentTextareas(); recalculateExport();
 </script>
 {% endblock %}
