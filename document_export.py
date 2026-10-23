@@ -705,20 +705,20 @@ def render_excel_template(template_path, pi, output_path, salesperson_info=None,
                 for cell in sheet[row_number]:
                     _replace_cell(sheet, cell, values, upload_dir)
 
-            address_cells = set()
+            text_cells = set()
             expanded_set = set(expanded_rows)
             for row in sheet.iter_rows():
                 if row and row[0].row in expanded_set:
                     continue
                 for cell in row:
-                    if isinstance(cell.value, str) and re.search(r'{{\s*(customer_address|shipping_address)\s*}}', cell.value):
-                        address_cells.add(cell.coordinate)
+                    if isinstance(cell.value, str) and re.search(r'{{\s*(customer_\w+|bank_\w+|shipping_address|payment_terms|price_terms|delivery_time|notes)\s*}}', cell.value):
+                        text_cells.add(cell.coordinate)
                     _replace_cell(sheet, cell, fixed_values, upload_dir)
 
             if fit_contract_text:
                 _fit_contract_text(sheet)
-            elif address_cells:
-                _fit_contract_text(sheet, cells=address_cells)
+            elif text_cells:
+                _fit_contract_text(sheet, cells=text_cells)
 
             # Some workbooks created by WPS store print metadata that is lost
             # when openpyxl saves the populated copy.  Re-apply a stable print
