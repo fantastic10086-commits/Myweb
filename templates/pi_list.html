@@ -26,7 +26,7 @@
     .pi-list-actions { white-space: nowrap; }
     .pi-list-actions .dropdown-menu { min-width: 13rem; }
     .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
-    .pi-list-workflow { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); width: 100%; }
+    .pi-list-workflow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(180px, 2fr); width: 100%; }
     .pi-list-workflow-stage {
         position: relative; display: flex; flex-direction: column; align-items: center;
         min-width: 0; color: #6c757d; text-decoration: none;
@@ -56,6 +56,11 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
+    #shippingFields { display:grid; grid-template-columns:1fr 1fr; gap:.5rem .75rem; }
+    #shippingFields > div { margin-bottom:.25rem !important; min-width:0; }
+    #shippingFields .form-label { font-size:.85rem; margin-bottom:.25rem; }
+    #shippingFields .form-control { font-size:.875rem; padding:.3rem .5rem; }
+    @media(max-width:575px) { #shippingFields { grid-template-columns:1fr; } }
     .pi-filter-grid { display:grid; grid-template-columns:minmax(140px,1fr) minmax(200px,1.45fr) minmax(130px,.9fr) minmax(130px,.9fr) auto; gap:.85rem; align-items:end; padding:1rem 1.1rem; }
     .pi-filter-cell { min-width:0; }
     .pi-filter-cell .form-control, .pi-filter-cell .form-select { min-width:0; min-height:36px; }
@@ -122,7 +127,7 @@
                     <col style="width:85px;">
                     <col style="width:105px;">
                     <col style="width:120px;">
-                    <col style="width:340px;">
+                    <col style="width:440px;">
                     <col style="width:150px;">
                 </colgroup>
                 <thead class="table-light">
@@ -200,26 +205,16 @@
                                     <span class="pi-list-workflow-status">{{ packing_text }}</span>
                                 {% if pi.packing_list or (total_received > 0) %}</a>{% else %}</span>{% endif %}
 
-                                {% set customs_state = 'complete' if pi.customs_required is not none else 'pending' %}
-                                {% set customs_text = ('需要报关' if pi.customs_required else '无需报关') if pi.customs_required is not none else '未登记' %}
-                                <button type="button" role="listitem" id="customsBtn-{{ pi.id }}"
-                                        class="pi-list-workflow-stage is-{{ customs_state }} is-action"
-                                        onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                        title="{{ customs_text }}；点击查看或登记报关要求及费用">
-                                    <span class="pi-list-workflow-dot"><i class="bi bi-file-earmark-check"></i></span>
-                                    <span class="pi-list-workflow-label">报关/费用</span>
-                                    <span class="pi-list-workflow-status">{{ customs_text }}</span>
-                                </button>
-
-                                {% set shipping_state = 'complete' if pi.shipping_completed else 'pending' %}
-                                {% set shipping_text = '发货已暂停' if pi.shipping_paused else ('发货完成' if pi.shipping_completed else '未发货') %}
+                                {% set dispatch_state = 'complete' if pi.shipping_completed else ('partial' if pi.customs_required is not none or pi.shipping_paused else 'pending') %}
+                                {% set dispatch_status = '发货已暂停' if pi.shipping_paused else ('已发货' if pi.shipping_completed else ('待发货' if pi.customs_required is not none else '待安排')) %}
+                                {% set details = dispatch_summaries[pi.id] %}
                                 <button type="button" role="listitem" id="shippingBtn-{{ pi.id }}"
-                                        class="pi-list-workflow-stage is-{{ shipping_state }} is-action"
-                                        onclick='openShippingRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
-                                        title="{{ shipping_text }}；点击{{ '查看发货记录' if pi.shipping_completed else '登记或查看条件' }}">
+                                        class="pi-list-workflow-stage is-{{ dispatch_state }} is-action"
+                                        onclick='openCustomsRecord({{ pi.id }}, {{ pi.pi_number|tojson }})'
+                                        title="{{ dispatch_status }} · {{ details }}">
                                     <span class="pi-list-workflow-dot"><i class="bi bi-truck"></i></span>
-                                    <span class="pi-list-workflow-label">发货</span>
-                                    <span class="pi-list-workflow-status">{{ shipping_text }}</span>
+                                    <span class="pi-list-workflow-label">报关 / 发货 · {{ dispatch_status }}</span>
+                                    <span class="pi-list-workflow-status dispatch-summary" style="display:block;width:100%;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ details or '待安排' }}</span>
                                 </button>
                             </div>
                         </td>
@@ -296,60 +291,10 @@
         <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
     </div></div>
 </div>
-<div class="modal fade" id="shippingModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog"><div class="modal-content">
-        <div class="modal-header">
-            <h5 class="modal-title" id="shippingModalTitle"><i class="bi bi-truck me-1"></i>登记发货</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
-        </div>
-        <div class="modal-body">
-            <div class="alert alert-info py-2 mb-3">
-                PI：<strong id="shippingPINumber"></strong><br>
-                <small>采购完成后才能登记发货。发货记录不会修改采购数据。</small>
-            </div>
-            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
-            <fieldset id="shippingFields" disabled>
-                <div class="mb-3">
-                    <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" id="shippingDate" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="shippingTrackingNo">物流单号</label>
-                    <input type="text" class="form-control" id="shippingTrackingNo" maxlength="200"
-                           placeholder="选填，例如快递单号、提单号">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="shippingAttachment">发货图片（选填）</label>
-                    <input type="file" id="shippingAttachment" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
-                    <div class="form-text">选择图片，或在此弹窗内按 Ctrl+V / ⌘V 粘贴。单张最大 12 MB。</div>
-                    <button type="button" id="shippingImageClear" class="btn btn-sm btn-outline-secondary mt-2" onclick="setShippingImage(null)">移除待上传图片</button>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label" for="shippingRecordNote">备注</label>
-                    <textarea class="form-control" id="shippingRecordNote" rows="3" maxlength="1000"
-                              placeholder="选填，例如物流公司、发货说明"></textarea>
-                </div>
-            </fieldset>
-            <img id="shippingImagePreview" class="img-fluid rounded mb-3 d-none" alt="发货图片" style="max-height:420px;object-fit:contain">
-            <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" id="shippingCloseBtn" data-bs-dismiss="modal">取消</button>
-            {% if is_admin %}
-            <button type="button" class="btn btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">
-                <i class="bi bi-arrow-counterclockwise"></i> 撤销发货登记
-            </button>
-            {% endif %}
-            <button type="button" class="btn btn-success" id="shippingSaveBtn" disabled onclick="saveShippingRecord()">
-                <i class="bi bi-check-lg"></i> 确认发货完成
-            </button>
-        </div>
-    </div></div>
-</div>
 <div class="modal fade" id="customsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable"><div class="modal-content">
         <div class="modal-header">
-            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关/费用</h5>
+            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关 / 发货</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
         </div>
         <div class="modal-body">
@@ -375,7 +320,8 @@
                 </div>
                 </div></div>
                 <div class="mb-2">
-                    <label class="form-label small" for="customsNote">补充说明</label>
+                    <div class="d-flex justify-content-between"><label class="form-label small" for="customsNote">补充说明</label>
+                    <label class="small"><input type="checkbox" id="dispatchNoExpenses"> 确认无费用（有费用时不勾选）</label></div>
                     <textarea class="form-control" id="customsNote" rows="2" maxlength="500"
                               placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
                 </div>
@@ -441,7 +387,41 @@
             <button type="button" class="btn btn-sm btn-primary mt-2" id="expSubmitBtn" onclick="addExpenseFromPIList()">
                 <i class="bi bi-check-lg"></i> 保存真实成本
             </button></div>
-        </div>
+<hr><section id="shippingSection"><h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <fieldset id="shippingFields" disabled>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" id="shippingDate" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingTrackingNo">物流单号</label>
+                    <input type="text" class="form-control" id="shippingTrackingNo" maxlength="200"
+                           placeholder="选填，例如快递单号、提单号">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingAttachment">发货图片（选填）</label>
+                    <input type="file" id="shippingAttachment" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                    <div class="form-text">选择图片，或在发货区域内按 Ctrl+V / ⌘V 粘贴。单张最大 12 MB。</div>
+                    <button type="button" id="shippingImageClear" class="btn btn-sm btn-outline-secondary mt-2" onclick="setShippingImage(null)">移除待上传图片</button>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingRecordNote">备注</label>
+                    <textarea class="form-control" id="shippingRecordNote" rows="2" maxlength="1000"
+                              placeholder="选填，例如物流公司、发货说明"></textarea>
+                </div>
+            </fieldset>
+            <img id="shippingImagePreview" class="img-fluid rounded mb-3 d-none" alt="发货图片" style="max-height:420px;object-fit:contain">
+            <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
+<div class="d-flex justify-content-end gap-2 mt-2">            <button type="button" class="btn btn-outline-secondary" id="shippingCloseBtn" data-bs-dismiss="modal">取消</button>
+            {% if is_admin %}
+            <button type="button" class="btn btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">
+                <i class="bi bi-arrow-counterclockwise"></i> 撤销发货登记
+            </button>
+            {% endif %}
+            <button type="button" class="btn btn-success" id="shippingSaveBtn" disabled onclick="saveShippingRecord()">
+                <i class="bi bi-check-lg"></i> 确认发货完成
+            </button>
+</div></section>        </div>
     </div></div>
 </div>
 <div class="modal fade" id="paymentModal" tabindex="-1" aria-hidden="true">
@@ -510,6 +490,10 @@ var currentExpensePiId = null;
 var currentExpensePiNumber = '';
 var currentCustomsPiId = null;
 var currentShippingPiId = null;
+var dispatchChanged = false;
+document.getElementById('customsModal').addEventListener('hidden.bs.modal', function() {
+    if (dispatchChanged) window.location.reload();
+});
 var expenseAttachmentPreviewUrl = '';
 var paymentAttachmentPreviewUrl = '';
 var canDeleteExpense = {{ is_admin|tojson }};
@@ -584,7 +568,7 @@ function setShippingImage(file) {
 document.getElementById('shippingAttachment').addEventListener('change', function() {
     setShippingImage(this.files[0] || null);
 });
-document.getElementById('shippingModal').addEventListener('paste', function(event) {
+document.getElementById('shippingSection').addEventListener('paste', function(event) {
     if (document.getElementById('shippingFields').disabled) return;
     var items = (event.clipboardData || {}).items || [];
     for (var i = 0; i < items.length; i++) {
@@ -677,24 +661,16 @@ function openShippingRecord(piId, piNumber) {
     if (revertButton) revertButton.classList.add('d-none');
     document.getElementById('shippingRecordMeta').textContent = '正在读取记录……';
     document.getElementById('shippingModalError').classList.add('d-none');
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('shippingModal')).show();
     fetch('/api/pi/' + piId + '/shipping-record')
         .then(function(response) {
             return response.json().then(function(data) { return {ok: response.ok, data: data}; });
         })
         .then(function(result) {
+            if (currentShippingPiId !== piId) return;
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '读取发货记录失败。');
             renderShippingRecord(result.data);
         })
         .catch(function(error) { shippingError(error.message || '读取发货记录失败。'); });
-}
-function updateShippingButton(piId) {
-    var button = document.getElementById('shippingBtn-' + piId);
-    if (!button) return;
-    button.className = 'pi-list-workflow-stage is-complete is-action';
-    button.title = '点击查看发货记录';
-    var status = button.querySelector('.pi-list-workflow-status');
-    if (status) status.textContent = '发货完成';
 }
 function saveShippingRecord() {
     if (!currentShippingPiId) { shippingError('没有识别到对应的 PI，请关闭后重试。'); return; }
@@ -718,7 +694,7 @@ function saveShippingRecord() {
         })
         .then(function(result) {
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存发货记录失败。');
-            updateShippingButton(currentShippingPiId);
+            dispatchChanged = true;
             renderShippingRecord(result.data);
         })
         .catch(function(error) { shippingError(error.message || '保存发货记录失败。'); })
@@ -760,12 +736,14 @@ function customsError(message) {
 }
 function openCustomsRecord(piId, piNumber) {
     currentCustomsPiId = piId;
+    openShippingRecord(piId, piNumber);
     openExpense(piId, piNumber);
     document.getElementById('customsPINumber').textContent = piNumber;
     document.getElementById('customsRequiredYes').checked = false;
     document.getElementById('customsRequiredNo').checked = false;
     document.getElementById('customsNote').value = '';
     document.getElementById('customsForwarder').value = '';
+    document.getElementById('dispatchNoExpenses').checked = false;
     document.querySelectorAll('#customsForwarder option[data-historical]').forEach(option => option.remove());
     document.getElementById('customsFields').disabled = true;
     document.getElementById('customsSaveBtn').disabled = true;
@@ -779,6 +757,7 @@ function openCustomsRecord(piId, piNumber) {
             return response.json().then(function(data) { return {ok: response.ok, data: data}; });
         })
         .then(function(result) {
+            if (currentCustomsPiId !== piId) return;
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '读取报关记录失败。');
             document.getElementById('customsRequiredYes').checked = result.data.customs_required === true;
             document.getElementById('customsRequiredNo').checked = result.data.customs_required === false;
@@ -791,6 +770,7 @@ function openCustomsRecord(piId, piNumber) {
                 forwarderSelect.add(option);
             }
             forwarderSelect.value = forwarder;
+            document.getElementById('dispatchNoExpenses').checked = result.data.no_expenses === true;
             document.getElementById('customsDocumentsBtn').classList.toggle(
                 'd-none', result.data.customs_required !== true
             );
@@ -801,14 +781,6 @@ function openCustomsRecord(piId, piNumber) {
             document.getElementById('customsSaveBtn').disabled = false;
         })
         .catch(function(error) { customsError(error.message || '读取报关记录失败。'); });
-}
-function updateCustomsButton(piId, required) {
-    var button = document.getElementById('customsBtn-' + piId);
-    if (!button) return;
-    button.className = 'pi-list-workflow-stage is-complete is-action';
-    button.title = (required ? '需要报关' : '无需报关') + '；点击查看或修改报关要求及费用';
-    var status = button.querySelector('.pi-list-workflow-status');
-    if (status) status.textContent = required ? '需要报关' : '无需报关';
 }
 function saveCustomsRecord() {
     if (!document.getElementById('customsForwarder').value) { customsError('请先选择货代。'); return; }
@@ -824,6 +796,7 @@ function saveCustomsRecord() {
         body: JSON.stringify({
             customs_required: selected.value === 'true',
             freight_forwarder: document.getElementById('customsForwarder').value,
+            no_expenses: document.getElementById('dispatchNoExpenses').checked,
             note: document.getElementById('customsNote').value.trim()
         })
     })
@@ -832,7 +805,8 @@ function saveCustomsRecord() {
         })
         .then(function(result) {
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '保存安排失败。');
-            updateCustomsButton(currentCustomsPiId, result.data.customs_required);
+            dispatchChanged = true;
+            openShippingRecord(currentCustomsPiId, document.getElementById('customsPINumber').textContent);
             document.getElementById('customsDocumentsBtn').classList.toggle(
                 'd-none', result.data.customs_required !== true
             );
@@ -978,6 +952,8 @@ function deleteExpenseFromPIList(expenseId) {
             if (!result.ok || !result.data.success) throw new Error(result.data.error || '删除失败。');
             document.getElementById('expenseModalSuccess').textContent = '真实成本记录已删除。';
             document.getElementById('expenseModalSuccess').classList.remove('d-none');
+            dispatchChanged = true;
+            document.getElementById('dispatchNoExpenses').checked = false;
             loadExpenseHistory(currentExpensePiId);
         })
         .catch(function(error) { expenseError(error.message || '删除失败。'); });
@@ -1022,6 +998,8 @@ function addExpenseFromPIList() {
             clearExpenseAttachment();
             button.disabled = false;
             button.innerHTML = '<i class="bi bi-check-lg"></i> 保存真实成本';
+            dispatchChanged = true;
+            document.getElementById('dispatchNoExpenses').checked = false;
             loadExpenseHistory(currentExpensePiId);
         })
         .catch(function(error) {

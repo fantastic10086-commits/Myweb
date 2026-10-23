@@ -406,7 +406,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -4063,6 +4063,7 @@ def api_expenses():
             attachment=attachment_name,
         )
         try:
+            pi.dispatch_no_expenses = False
             db.session.add(exp)
             db.session.flush()
             _audit(
@@ -6233,7 +6234,7 @@ def pi_list():
         'payment': ('回款', 'cash-coin'),
         'procurement': ('采购', 'cart-check'),
         'packing': ('装箱', 'box-seam'),
-        'customs': ('报关/费用', 'file-earmark-check'),
+        'customs': ('报关 / 发货', 'truck'),
         'shipping': ('发货', 'truck'),
     }
     stage = request.args.get('stage', '').strip()
@@ -6243,8 +6244,8 @@ def pi_list():
     transition_labels = {
         'procurement': ('payment', '待流转到采购', '回款已付清，采购未完成'),
         'packing': ('procurement', '待流转到装箱', '采购已完成，装箱未完成'),
-        'customs': ('procurement', '待流转到报关', '采购已完成，报关/费用未完成（尚未登记）'),
-        'shipping': ('customs', '待流转到发货', '报关已登记（含无需报关），发货未完成'),
+        'customs': ('procurement', '采购完成待安排', '采购已完成，报关安排尚未登记'),
+        'shipping': ('customs', '已安排待发货', '报关已登记（含无需报关），发货未完成'),
     }
     transition = request.args.get('transition', '').strip()
     if transition not in transition_labels:
@@ -6269,7 +6270,7 @@ def pi_list():
         'payment': PI.payments.any(and_(Payment.deleted_at.is_(None), Payment.amount > 0)),
         'procurement': PI.procurements.any(),
         'packing': PI.packing_list.has(),
-        'customs': or_(PI.customs_required.isnot(None), PI.expenses.any()),
+        'customs': or_(PI.customs_required.isnot(None), PI.expenses.any(), PI.freight_forwarder != '', PI.shipping_completed.is_(True), PI.shipping_paused.is_(True)),
         'shipping': or_(PI.shipping_completed.is_(True), PI.shipping_paused.is_(True),
                         PI.shipping_recorded_at.isnot(None)),
     }
@@ -6363,6 +6364,21 @@ def pi_list():
         previous_stage = transition_labels[transition][0]
         pis = [pi for pi in pis if stage_completed(pi, previous_stage)
                and not stage_completed(pi, transition)]
+    dispatch_summaries = {}
+    for pi in pis:
+        has_record = bool(pi.freight_forwarder or pi.customs_required is not None or pi.expenses
+                          or pi.shipping_completed or pi.shipping_paused or pi.shipping_tracking_no)
+        if not has_record:
+            dispatch_summaries[pi.id] = ''
+            continue
+        expense_total = sum((expense.amount or 0) * (_pi_exchange_rate(pi) if expense.currency == 'USD' else 1)
+                            for expense in pi.expenses)
+        dispatch_summaries[pi.id] = ' · '.join([
+            pi.freight_forwarder or '货代待补',
+            ('正式报关' if pi.customs_required else '无需报关') if pi.customs_required is not None else '报关待登记',
+            ('RMB %.2f' % expense_total) if pi.expenses else ('无费用' if pi.dispatch_no_expenses else '费用待登记'),
+            ('运单 ' + pi.shipping_tracking_no) if pi.shipping_tracking_no else '运单待补',
+        ])
     payment_account_ids = {}
     for pi in pis:
         matching_account = _matching_account_for_pi(pi)
@@ -6377,6 +6393,7 @@ def pi_list():
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
+                           dispatch_summaries=dispatch_summaries,
                            forwarder_filter=forwarder_filter, forwarder_filter_options=forwarder_filter_options,
                            transition=transition, transition_labels=transition_labels,
                            stage=stage, stage_labels=stage_labels,
@@ -7841,6 +7858,7 @@ def api_pi_customs_declaration(id):
             'pi_number': pi.pi_number,
             'customs_required': pi.customs_required,
             'freight_forwarder': pi.freight_forwarder or '',
+            'no_expenses': bool(pi.dispatch_no_expenses),
             'note': pi.customs_note or '',
             'recorded_at': (
                 pi.customs_recorded_at.strftime('%Y-%m-%d %H:%M')
@@ -7870,10 +7888,13 @@ def api_pi_customs_declaration(id):
         return jsonify({'success': False, 'error': '备注不能超过 500 个字符。'}), 400
 
     fields = [
-        'customs_required', 'customs_note', 'freight_forwarder',
+        'customs_required', 'customs_note', 'freight_forwarder', 'dispatch_no_expenses',
         'customs_recorded_at', 'customs_recorded_by',
     ]
     before = _snapshot(pi, fields)
+    if payload.get('no_expenses') is True and pi.expenses:
+        return jsonify({'success': False, 'error': '已有费用记录，不能同时标记无费用。'}), 400
+    pi.dispatch_no_expenses = payload.get('no_expenses') is True
     pi.freight_forwarder = forwarder
     pi.customs_required = customs_required
     pi.customs_note = note
@@ -7900,6 +7921,7 @@ def api_pi_customs_declaration(id):
         'pi_number': pi.pi_number,
         'customs_required': pi.customs_required,
             'freight_forwarder': pi.freight_forwarder or '',
+            'no_expenses': bool(pi.dispatch_no_expenses),
         'note': pi.customs_note or '',
         'recorded_at': pi.customs_recorded_at.strftime('%Y-%m-%d %H:%M'),
         'recorded_by': pi.customs_recorded_by,
@@ -9619,8 +9641,8 @@ def _shipping_record_payload(pi):
     unavailable_reason = ''
     if pi.shipping_paused:
         unavailable_reason = '发货记录已暂停，请由管理员在采购页恢复原发货记录。'
-    elif pi.advance_shipping_blocked:
-        unavailable_reason = '凭水单提前采购的订单，必须实际回款付清尾款后才能发货。'
+    elif not pi.actual_payment_complete:
+        unavailable_reason = '必须实际回款付清尾款后才能发货。'
     elif (pi.received_amount or 0) <= 0:
         unavailable_reason = '该 PI 尚未回款，不能登记发货。'
     elif not pi.procurement_is_complete:
@@ -9676,7 +9698,7 @@ def api_pi_shipping_record(pi_id):
         return jsonify({'success': False, 'error': '该 PI 已登记发货，请直接查看发货记录。'}), 409
     if (pi.received_amount or 0) <= 0:
         return jsonify({'success': False, 'error': '该 PI 尚未回款，不能登记发货。'}), 400
-    if pi.advance_shipping_blocked:
+    if not pi.actual_payment_complete:
         return jsonify({'success': False, 'error': '必须实际回款付清尾款后才能发货。'}), 400
     if not pi.procurement_is_complete or _procurement_gaps(pi):
         return jsonify({'success': False, 'error': '采购尚未完成，暂时不能登记发货。'}), 400

@@ -521,6 +521,7 @@ class PI(db.Model):
     # NULL means this business record has not been filled in yet. False is a
     # deliberate "no customs declaration required" decision.
     customs_required = db.Column(db.Boolean, nullable=True, default=None)
+    dispatch_no_expenses = db.Column(db.Boolean, default=False)
     freight_forwarder = db.Column(db.String(200), default='')
     customs_note = db.Column(db.Text, default='')
     customs_recorded_at = db.Column(db.DateTime, nullable=True)

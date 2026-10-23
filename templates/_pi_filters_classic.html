@@ -45,9 +45,11 @@
                 <span>{{ transition_labels[key][1] }}</span><i class="bi bi-arrow-right" aria-hidden="true"></i>
             </button>
             {% endif %}
+            {% if key != 'shipping' %}
             <button type="submit" class="pi-stage-button {{ 'is-selected' if stage == key else '' }}" aria-pressed="{{ 'true' if stage == key else 'false' }}" title="{{ '取消' if stage == key else '筛选' }}有{{ info[0] }}记录的 PI" onclick="setPiStageFilter(this.form, '{{ key }}', '');">
                 <i class="bi bi-{{ info[1] }}" aria-hidden="true"></i><span>{{ info[0] }}</span>
             </button>
+            {% endif %}
             {% endfor %}
         </div>
     </div>
