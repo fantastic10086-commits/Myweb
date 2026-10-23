@@ -3942,6 +3942,16 @@ def fees_report():
             'paid': pi.paid,
         })
 
+    profit_status_labels = {'shortfall': '回款不足', 'incomplete_cost': '成本待完善'}
+    profit_status = request.args.get('profit_status', '')
+    if profit_status not in profit_status_labels:
+        profit_status = ''
+    if profit_status == 'shortfall':
+        pi_list = [row for row in pi_list if row['received_profit_rmb'] < 0]
+    elif profit_status == 'incomplete_cost':
+        pi_list = [row for row in pi_list
+                   if not row['procurement_confirmed'] or not row['procurement_data_complete']]
+
     calculable = [row for row in pi_list if row['profit_rmb'] is not None]
     summary = {
         'total_count': len(pi_list),
@@ -3974,6 +3984,7 @@ def fees_report():
 
     resp = make_response(render_template(
         'fees.html',
+        profit_status=profit_status, profit_status_labels=profit_status_labels,
         pi_list=pi_list,
         summary=summary,
         default_exchange_rate=default_exchange_rate,
