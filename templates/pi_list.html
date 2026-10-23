@@ -56,7 +56,7 @@
         display: block; max-width: 72px; margin-top: .22rem; overflow: hidden;
         color: inherit; font-size: .66rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap;
     }
-    .dispatch-summary { color:#6c757d; font-size:.68rem; line-height:1.2; margin-top:.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:420px; text-align:center; }
+    .dispatch-summary { color:#6c757d; font-size:.68rem; line-height:1.2; margin-top:.3rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; text-align:center; }
     .pi-list-workflow-label { margin-top:.18rem; }
     .pi-list-workflow-status { margin-top:.12rem; }
     #shippingFields { display:grid; grid-template-columns:1fr 1fr; gap:.5rem .75rem; }
@@ -130,8 +130,8 @@
                     <col style="width:85px;">
                     <col style="width:105px;">
                     <col style="width:120px;">
-                    <col style="width:440px;">
-                    <col style="width:150px;">
+                    <col style="width:360px;">
+                    <col style="width:200px;">
                 </colgroup>
                 <thead class="table-light">
                     <tr>
@@ -223,9 +223,8 @@
                             {% if details %}<div class="dispatch-summary" title="{{ details }}">{{ details }}</div>{% endif %}
                         </td>
                         <td class="text-end pi-list-actions">
-                            <a href="{{ url_for('pi_detail', id=pi.id) }}" class="btn btn-sm btn-outline-warning">
-                                <i class="bi bi-eye"></i> 预览
-                            </a>
+                            <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">查看</button>
+                            <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>
                             <div class="btn-group">
                                 <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle"
                                         data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
