@@ -6,6 +6,11 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-10-23 查看改实际PDF）
+
+- 首页及PI列表查看共用static/pi_pdf_preview.js，以blob iframe展示download?inline=1返回的实际PDF；沿用直接下载默认模板、数据及渲染逻辑，错误显示于弹窗，有新窗口打开入口。关闭释放blob并忽略旧响应。导出工作台的临时编辑/其他模板不影响此默认查看。
+- 代码 `28fd309`；AST/Jinja/JS语法及diff检查通过，未运行浏览器验证。备份 `/var/lib/pi-manager/backups/pi-manager_20261023_172940.tar.gz`；发布 `/opt/pi-manager/releases/20261023173030`，服务active、维护off，部署健康检查通过。
+
 ## 最新接续（2026-10-23 PI列表操作及流程列宽）
 
 - 操作改为查看/编辑/更多，查看复用首页相同previewPI弹窗，编辑链接pi_edit，样式蓝色/黄色；流程列440px缩为360px，操作列150px增为200px，摘要随列宽省略。顶部筛选未动。
