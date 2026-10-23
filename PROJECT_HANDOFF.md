@@ -6,6 +6,11 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-10-23 导出编辑页英文国家）
+
+- pi_export GET传入english_country转换值，live_edit_pi的cust_country显示英文，与导出规则一致；不回写档案。
+- 代码 `4a9dd5e`；AST/Jinja/diff检查通过，未运行浏览器验证。备份 `/var/lib/pi-manager/backups/pi-manager_20261023_220654.tar.gz`；发布 `/opt/pi-manager/releases/20261023220818`，服务active、维护off、健康检查通过。
+
 ## 最新接续（2026-10-23 导出地址换行）
 
 - 导出编辑区cust_address改为自适应高度textarea，支持长字符串换行及窗口resize重新计算。Excel模板填充时记录customer_address/shipping_address占位符坐标，复用文本行高计算开启换行、增高，供Excel和PDF转换使用；不修改模板源文件。
