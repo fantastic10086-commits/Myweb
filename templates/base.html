@@ -75,7 +75,6 @@
                             <i class="bi bi-graph-up-arrow"></i> 利润表
                         </a>
                     </li>
-                    <li class="nav-item"><a class="nav-link" href="{{ url_for('finance_reconciliation') }}"><i class="bi bi-journal-check"></i> 财务核对</a></li>
                     {% endif %}
                 </ul>
                 {% if current_user %}
@@ -86,7 +85,8 @@
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> 我的资料</a></li>
-                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('admin_center') }}"><i class="bi bi-grid"></i> 管理中心</a></li>{% endif %}
+                        {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('admin_center') }}"><i class="bi bi-grid"></i> 管理中心</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('finance_reconciliation') }}"><i class="bi bi-journal-check"></i> 财务核对</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
                     </ul>
