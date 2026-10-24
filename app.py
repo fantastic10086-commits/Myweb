@@ -6233,7 +6233,6 @@ def pi_list():
     stage_labels = {
         'payment': ('回款', 'cash-coin'),
         'procurement': ('采购', 'cart-check'),
-        'packing': ('装箱', 'box-seam'),
         'customs': ('报关 / 发货', 'truck'),
         'shipping': ('发货', 'truck'),
     }
@@ -6242,12 +6241,14 @@ def pi_list():
         stage = ''
 
     transition_labels = {
-        'procurement': ('payment', '待流转到采购', '回款已付清，采购未完成'),
-        'packing': ('procurement', '待流转到装箱', '采购已完成，装箱未完成'),
-        'customs': ('procurement', '采购完成待安排', '采购已完成，报关安排尚未登记'),
-        'shipping': ('customs', '已安排待发货', '报关已登记（含无需报关），发货未完成'),
+        'procurement': ('payment', '待采购', '回款已付清，采购未完成'),
+        'customs': ('procurement', '待安排', '采购已完成，报关安排尚未登记'),
+        'shipping': ('customs', '待发货', '报关已登记（含无需报关），发货未完成'),
     }
     transition = request.args.get('transition', '').strip()
+    # Old packing handoff links now lead to procurement-complete dispatch work.
+    if transition == 'packing':
+        transition = 'customs'
     if transition not in transition_labels:
         transition = ''
     if transition:

@@ -12,7 +12,7 @@
     #paymentModal .payment-history-table .payment-amount { white-space: nowrap; font-variant-numeric: tabular-nums; }
     #paymentModal .payment-history-table .payment-note { white-space: pre-wrap; background: #f8f9fa; color: #6c757d; }
     .pi-list-table-wrap { overflow: visible; }
-    .pi-list-table { width: 100%; min-width: 1280px; table-layout: fixed; }
+    .pi-list-table { width: 100%; min-width: 1210px; table-layout: fixed; }
     .pi-list-table > :not(caption) > * > * { padding: .8rem .65rem; }
     .pi-list-table th { white-space: nowrap; font-size: .85rem; }
     .pi-list-table td:nth-child(1),
@@ -26,7 +26,7 @@
     .pi-list-actions { white-space: nowrap; }
     .pi-list-actions .dropdown-menu { min-width: 13rem; }
     .pi-list-actions .dropdown-item i { display: inline-block; width: 1.25rem; }
-    .pi-list-workflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+    .pi-list-workflow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
     .pi-list-workflow-stage {
         position: relative; display: flex; flex-direction: column; align-items: center;
         min-width: 0; color: #6c757d; text-decoration: none;
@@ -130,7 +130,7 @@
                     <col style="width:85px;">
                     <col style="width:105px;">
                     <col style="width:120px;">
-                    <col style="width:360px;">
+                    <col style="width:290px;">
                     <col style="width:200px;">
                 </colgroup>
                 <thead class="table-light">
@@ -192,21 +192,6 @@
                                     <span class="pi-list-workflow-label">采购</span>
                                     <span class="pi-list-workflow-status">{{ procurement_text }}</span>
                                 {% if is_admin and pi.procurement_allowed %}</a>{% else %}</button>{% endif %}
-
-                                {% set packing_state = 'complete' if pi.packing_list and pi.packing_list.is_completed else ('partial' if pi.packing_list else 'pending') %}
-                                {% set packing_text = '装箱完成' if packing_state == 'complete' else ('装箱草稿' if packing_state == 'partial' else '未装箱') %}
-                                {% if pi.packing_list or (total_received > 0) %}
-                                <a role="listitem" href="{{ url_for('packing_list_detail', pi_id=pi.id) }}"
-                                   class="pi-list-workflow-stage is-{{ packing_state }} is-action"
-                                   title="{{ packing_text }}；点击{{ '查看' if pi.packing_list else '创建' }}装箱单">
-                                {% else %}
-                                <span role="listitem" class="pi-list-workflow-stage is-{{ packing_state }}"
-                                      title="{{ packing_text }}{{ '；尚未回款，不能创建装箱单' if total_received <= 0 else '' }}">
-                                {% endif %}
-                                    <span class="pi-list-workflow-dot"><i class="bi bi-box-seam"></i></span>
-                                    <span class="pi-list-workflow-label">装箱</span>
-                                    <span class="pi-list-workflow-status">{{ packing_text }}</span>
-                                {% if pi.packing_list or (total_received > 0) %}</a>{% else %}</span>{% endif %}
 
                                 {% set dispatch_state = 'complete' if pi.shipping_completed else ('partial' if pi.customs_required is not none or pi.shipping_paused else 'pending') %}
                                 {% set dispatch_status = '发货已暂停' if pi.shipping_paused else ('已发货' if pi.shipping_completed else ('待发货' if pi.customs_required is not none else '待安排')) %}
