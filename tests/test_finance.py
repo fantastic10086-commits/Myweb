@@ -81,6 +81,16 @@ class FinanceTests(unittest.TestCase):
         self.assertIn('待核对',page.text)
         self.assertEqual(self.page(basis='paid',status='paid').status_code,200)
 
+    def test_deleted_expense_cannot_leave_payment_metadata(self):
+        data = self.form()
+        data.update(payment_status='unpaid', checked='1')
+        self.client.post('/admin/finance/review',data=data)
+        with application.app.app_context():
+            self.assertIsNotNone(FinanceReview.query.filter_by(kind='expense',record_id=self.expense_id).first())
+            db.session.delete(db.session.get(Expense,self.expense_id))
+            db.session.commit()
+            self.assertIsNone(FinanceReview.query.filter_by(kind='expense',record_id=self.expense_id).first())
+
     def test_receipt_export_literal_and_date_fallback(self):
         page=self.page('payment')
         self.assertIn('登记日期',page.text)

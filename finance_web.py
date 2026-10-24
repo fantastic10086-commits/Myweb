@@ -29,6 +29,7 @@ def register_finance_web(app, *, admin_required, current_user, audit):
         fields = ['pi_id', 'amount', 'attachment', 'note']
         fields += ['fee', 'order_no', 'receiving_account_name', 'receiving_account_currency'] if kind == 'payment' else ['currency', 'category']
         values = {key: getattr(record, key) for key in fields}
+        values['created_at'] = record.created_at.isoformat() if record.created_at else None
         return hashlib.sha256(json.dumps(values, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
     def get_rows():

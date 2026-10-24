@@ -1200,3 +1200,20 @@ class FinanceReview(db.Model):
     source_signature = db.Column(db.String(64), default='')
     version = db.Column(db.Integer, nullable=False, default=1)
     __mapper_args__ = {'version_id_col': version}
+
+
+# Generic finance metadata must not survive deletion and a possible SQLite ID reuse.
+# Execute on the same connection/transaction as the original record deletion.
+from sqlalchemy import event as _finance_event
+
+
+@_finance_event.listens_for(Expense, 'after_delete')
+def _delete_expense_finance_review(mapper, connection, target):
+    connection.execute(FinanceReview.__table__.delete().where(
+        FinanceReview.kind == 'expense', FinanceReview.record_id == target.id))
+
+
+@_finance_event.listens_for(Payment, 'after_delete')
+def _delete_payment_finance_review(mapper, connection, target):
+    connection.execute(FinanceReview.__table__.delete().where(
+        FinanceReview.kind == 'payment', FinanceReview.record_id == target.id))
