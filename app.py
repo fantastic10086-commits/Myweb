@@ -10175,6 +10175,9 @@ def inject_globals():
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════
 
+from finance_web import register_finance_web
+register_finance_web(app, admin_required=admin_required, current_user=get_current_user, audit=_audit)
+
 from mobile_web import register_mobile_web
 register_mobile_web(app)
 

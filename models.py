@@ -1172,3 +1172,31 @@ class WebPushReceipt(db.Model):
     received_at = db.Column(db.DateTime)
     displayed_at = db.Column(db.DateTime)
     error = db.Column(db.String(80), nullable=False, default='')
+
+
+class FinanceAccount(db.Model):
+    __tablename__ = 'finance_accounts'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class FinanceReview(db.Model):
+    """Accounting metadata; never changes PI receipts or recognized costs."""
+    __tablename__ = 'finance_reviews'
+    __table_args__ = (db.UniqueConstraint('kind', 'record_id'),)
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(20), nullable=False)
+    record_id = db.Column(db.Integer, nullable=False)
+    occurred_on = db.Column(db.Date, nullable=True)
+    payment_status = db.Column(db.String(20), nullable=False, default='unconfirmed')
+    paid_on = db.Column(db.Date, nullable=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('finance_accounts.id'), nullable=True)
+    account_name = db.Column(db.String(200), default='')
+    checked = db.Column(db.Boolean, nullable=False, default=False)
+    checked_by = db.Column(db.String(100), default='')
+    checked_at = db.Column(db.DateTime, nullable=True)
+    note = db.Column(db.String(1000), default='')
+    source_signature = db.Column(db.String(64), default='')
+    version = db.Column(db.Integer, nullable=False, default=1)
+    __mapper_args__ = {'version_id_col': version}
