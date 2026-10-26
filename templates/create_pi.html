@@ -8,6 +8,10 @@ body > .container { max-width: 1320px; }
 .sel-price::-webkit-inner-spin-button, .sel-price::-webkit-outer-spin-button,
 .sel-qty::-webkit-inner-spin-button, .sel-qty::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 #selected_products_area { overflow-x: auto; }
+.pi-product-toolbar { position:sticky; top:0; z-index:1010; background:#fff; border-bottom:1px solid #dee2e6; box-shadow:0 2px 5px rgba(0,0,0,.06); }
+.pi-product-footer { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.75rem; padding-top:1rem; }
+.pi-product-footer #orderWeight { min-width:0; margin-left:auto; font-size:.9rem; }
+
 #selected_products_table { min-width: 1050px; }
 .order-required-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.65rem .85rem; align-items:start; }
 #orderInformation .card-body { padding:.85rem; }
@@ -454,6 +458,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             if (e.key === 'Enter') { e.preventDefault(); openProductPicker(); }
         });
         document.getElementById('add_product_btn').addEventListener('click', openProductPicker);
+        document.getElementById('add_product_bottom_btn').addEventListener('click', openProductPicker);
 
         document.getElementById('picker_search_btn').addEventListener('click', function() { loadPickerProducts(1); });
         document.getElementById('picker_search').addEventListener('keydown', function(e) {
@@ -820,15 +825,17 @@ document.addEventListener('DOMContentLoaded', function() {
             <div id="productEntryHint" class="alert alert-info py-2">请先选择收款账户和币种，再录入产品。账户自带币种时会自动填入。</div>
             <fieldset id="productEntryFields" disabled>
             <div class="card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">产品</h5>
-                    <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button>
+                <div class="card-header pi-product-toolbar">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h5 class="mb-0">产品</h5>
+                        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#quickAddProductModal"><i class="bi bi-plus-lg"></i> 快速新增</button>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off">
+                        <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加产品</button>
+                    </div>
                 </div>
                 <div class="card-body">
-                    <div class="input-group mb-2">
-                        <input type="text" class="form-control" id="product_search" placeholder="按名称或编码搜索产品……" autocomplete="off">
-                        <button type="button" class="btn btn-primary" id="add_product_btn"><i class="bi bi-plus-lg"></i> 添加</button>
-                    </div>
                     <div class="table-responsive mt-2" id="selected_products_area">
                         <small class="text-muted d-block mb-2">品名、规格、编码、单重和图片仅修改当前 PI，产品库资料不变。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table">
@@ -836,8 +843,11 @@ document.addEventListener('DOMContentLoaded', function() {
                             <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th>单重（kg）</th><th class="text-end">单项总重（kg）</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
                             <tbody></tbody>
                         </table>
-                        <div id="orderWeight" class="text-end fw-bold py-3">订单总净重：0.0000 kg</div>
                         <div id="no_product_msg" class="text-center py-4 text-muted"><i class="bi bi-inbox"></i> 尚未选择产品，请在上方搜索并添加。</div>
+                    </div>
+                    <div class="pi-product-footer border-top">
+                        <button type="button" class="btn btn-outline-primary" id="add_product_bottom_btn"><i class="bi bi-plus-lg"></i> 添加产品</button>
+                        <div id="orderWeight" class="text-end fw-bold">订单总净重：0.0000 kg</div>
                     </div>
                 </div>
             </div>
