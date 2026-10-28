@@ -1217,3 +1217,17 @@ def _delete_expense_finance_review(mapper, connection, target):
 def _delete_payment_finance_review(mapper, connection, target):
     connection.execute(FinanceReview.__table__.delete().where(
         FinanceReview.kind == 'payment', FinanceReview.record_id == target.id))
+
+
+class PINumberSequence(db.Model):
+    __tablename__ = 'pi_number_sequences'
+    day = db.Column(db.String(8), primary_key=True)
+    last_number = db.Column(db.Integer, nullable=False, default=0)
+
+
+class PICreateSubmission(db.Model):
+    __tablename__ = 'pi_create_submissions'
+    token = db.Column(db.String(64), primary_key=True)
+    owner_id = db.Column(db.Integer, nullable=False)
+    pi_id = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

@@ -121,9 +121,15 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         return document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
     }
 
+    window.addEventListener('pageshow', function() {
+        var form = document.getElementById('pi-form'), button = document.getElementById('pi_submit_button');
+        if (form) delete form.dataset.submitting;
+        if (button) { button.disabled = false; button.innerHTML = '<i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF'; }
+    });
     function submitPiForm() {
         var form = document.getElementById('pi-form');
         if (!form) { alert('未找到表单！'); return; }
+        if (form.dataset.submitting === '1') return;
         var account = document.getElementById('account_select');
         var currency = document.getElementById('currency_select');
         var customer = document.getElementById('customer_id');
@@ -561,6 +567,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         var form = document.getElementById('pi-form');
         if (form) {
             form.addEventListener('submit', function(e) {
+                if (form.dataset.submitting === '1') { e.preventDefault(); return; }
                 var st = document.getElementById('submit_status');
                 if (st) { st.style.display='block'; st.textContent='正在检查并提交……'; st.style.background='#cce5ff'; }
                 var cust = document.getElementById('customer_id');
@@ -574,6 +581,9 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
                 if (!sp.value) { e.preventDefault(); if(st)st.textContent='提交失败：请选择业务员。'; alert('请选择业务员。'); return; }
                 if (!(parseFloat(rate.value) > 0)) { e.preventDefault(); if(st)st.textContent='提交失败：本单业务汇率必须大于 0。'; alert('本单业务汇率必须大于 0。'); return; }
                 if (np === 0) { e.preventDefault(); if(st)st.textContent='提交失败：请至少添加一个产品。'; alert('请至少添加一个产品。'); return; }
+                form.dataset.submitting = '1';
+                var submitButton = document.getElementById('pi_submit_button');
+                submitButton.disabled = true; submitButton.textContent = '正在生成，请稍候……';
                 if (st) { st.textContent = '检查完成，正在提交……'; st.style.background='#d4edda'; }
                 updateTotal();
             });
@@ -766,6 +776,7 @@ document.addEventListener('DOMContentLoaded', function() {
 {% if customers %}
 <form enctype="multipart/form-data" method="post" action="{{ url_for('pi_create') }}" id="pi-form">
     <div class="mb-3"><a href="{{ url_for('pi_drafts') }}">我的草稿</a><span class="text-muted ms-2">未填写完整也可以暂存，保存后可继续编辑。</span></div>
+    <input type="hidden" name="pi_submission_token" value="{{ pi_submission_token }}">
     <input type="hidden" id="draft_id" name="draft_id" value="{{ draft_id or '' }}">
     <input type="hidden" id="draft_version" name="draft_version" value="{{ draft_version or '' }}">
     <input type="hidden" name="product_order" id="product_order" value="">
@@ -892,7 +903,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <span id="draft_status" class="text-muted me-2"></span>
                 <a class="btn btn-outline-secondary" href="{{ url_for('pi_drafts') }}">我的草稿</a>
                 <button id="save_draft" type="button" class="btn btn-outline-primary" onclick="saveDraft()">暂存草稿</button>
-                <button type="button" class="btn btn-primary btn-lg" onclick="submitPiForm()"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
+                <button type="button" class="btn btn-primary btn-lg" id="pi_submit_button" onclick="submitPiForm()"><i class="bi bi-file-earmark-pdf me-1"></i> 生成 PI 与 PDF</button>
             </div>
         </div>
     </div>

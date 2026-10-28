@@ -8,6 +8,7 @@ from country_names import normalize_country, english_country
 import os
 import sys
 import uuid
+import hashlib
 import zipfile
 import subprocess
 import base64
@@ -46,7 +47,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
-    db, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
+    db, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, Expense, Supplier, Procurement, AuditLog, DispatchSubmission,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
@@ -1689,20 +1690,45 @@ def maintenance_page():
 
 
 # ── Helper ─────────────────────────────────────────────────────────────
+@app.context_processor
+def pi_submission_context():
+    if request.endpoint == 'pi_create':
+        return {'pi_submission_token': request.form.get('pi_submission_token', '') or uuid.uuid4().hex}
+    return {}
+
+
 def _generate_pi_number():
-    """Generate sequential PI number: PI-YYYYMMDD-NNN"""
-    today = date.today()
-    prefix = f"PI-{today.strftime('%Y%m%d')}-"
-    # Find the max existing number instead of just counting (handles gaps from deletions)
-    last = PI.query.filter(PI.pi_number.like(f'{prefix}%')).order_by(PI.pi_number.desc()).first()
-    if last and last.pi_number.startswith(prefix):
-        try:
-            num = int(last.pi_number[len(prefix):]) + 1
-        except ValueError:
-            num = 1
-    else:
-        num = 1
-    return f"{prefix}{num:03d}"
+    """Reserve the next daily number under SQLite's transaction write lock."""
+    from sqlalchemy import text
+    day = date.today().strftime('%Y%m%d')
+    prefix = f'PI-{day}-'
+    # This write serializes allocation across all workers, including PI copies.
+    db.session.execute(text('INSERT OR IGNORE INTO pi_number_sequences (day, last_number) VALUES (:day, 0)'), {'day': day})
+    sequence = db.session.get(PINumberSequence, day, populate_existing=True)
+    existing = db.session.query(PI.pi_number).filter(PI.pi_number.like(prefix + '%')).all()
+    last = max([int(number[len(prefix):]) for number, in existing if number[len(prefix):].isdigit()] or [0])
+    sequence.last_number = max(sequence.last_number, last) + 1
+    db.session.flush()
+    return f'{prefix}{sequence.last_number:03d}'
+
+
+def _reserve_pi_submission():
+    from sqlalchemy import text
+    token = request.form.get('pi_submission_token', '').strip()
+    if not token:
+        # Old browser tabs have no token: identical legacy payloads share a key.
+        payload = {k: request.form.getlist(k) for k in sorted(request.form) if k != 'csrf_token'}
+        token = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    if not re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', token):
+        abort(400, description='提交标识无效，请重新打开新建页面。')
+    owner = get_current_user().id
+    db.session.execute(text('INSERT OR IGNORE INTO pi_create_submissions (token, owner_id, created_at) VALUES (:token, :owner, :created)'),
+                       {'token': token, 'owner': owner, 'created': datetime.utcnow()})
+    submission = db.session.get(PICreateSubmission, token, populate_existing=True)
+    if submission.owner_id != owner:
+        abort(409, description='提交标识已使用，请重新打开新建页面。')
+    return submission
+
 
 def _nonnegative_float(value, field_name):
     try:
@@ -6095,6 +6121,17 @@ def pi_create():
         if not selected_items:
             return render_postback('请至少选择一个产品。')
 
+        submission = _reserve_pi_submission()
+        if submission.pi_id:
+            existing_pi = db.session.get(PI, submission.pi_id)
+            if not existing_pi or existing_pi.deleted_at:
+                db.session.rollback()
+                return render_postback('此提交已处理，对应 PI 已删除，请重新打开新建页面。')
+            require_pi_access(existing_pi)
+            db.session.rollback()
+            flash('此 PI 已提交成功，已打开原订单。', 'info')
+            return redirect(url_for('pi_detail', id=existing_pi.id))
+
         if draft:
             expected = request.form.get('draft_version', type=int)
             count = PIDraft.query.filter_by(id=draft.id, version=expected, converted_pi_id=None).update(
@@ -6130,6 +6167,7 @@ def pi_create():
         db.session.add(pi)
         db.session.flush()  # Get pi.id
 
+        submission.pi_id = pi.id
         if draft:
             draft.converted_pi_id = pi.id
 
@@ -6160,12 +6198,7 @@ def pi_create():
             pi.excel_path = excel_filename
         except Exception as e:
             db.session.rollback()
-            flash(f'生成 PDF 失败：{str(e)}', 'danger')
-            return render_template('create_pi.html', customers=customers,
-                                   pi=None,
-                                   today=issue_date.strftime('%Y-%m-%d'),
-                                   selected_customer_id=customer_id,
-                                   is_admin=admin_flag)
+            return render_postback(f'生成 PDF 失败：{str(e)}；填写内容已保留，可重试。')
 
         _audit('create', 'pi', pi.id, f'新增 PI：{pi.pi_number}',
                after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
