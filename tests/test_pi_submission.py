@@ -34,7 +34,7 @@ class SubmissionTests(unittest.TestCase):
  def test_parallel_number_reservations(self):
   def create(i):
    with application.app.app_context():
-    number=application._generate_pi_number();db.session.add(PI(pi_number=number,salesperson='Alice'));db.session.commit();return number
+    number=application._generate_pi_number();db.session.add(PI(pi_number=number,salesperson='Alice',customer_id=self.helper.alice_customer));db.session.commit();return number
   with ThreadPoolExecutor(max_workers=5) as pool:numbers=list(pool.map(create,range(10)))
   self.assertEqual(len(set(numbers)),10)
 
