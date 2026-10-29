@@ -1,7 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import validates
 from country_names import normalize_country
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 db = SQLAlchemy()
 
@@ -340,6 +340,7 @@ class Payment(db.Model):
         return {'id': self.id, 'pi_id': self.pi_id, 'amount': self.amount,
                 'fee': self.fee, 'order_no': self.order_no,
                 'received_on': review.occurred_on.isoformat() if review and review.occurred_on else '',
+                'registered_at': (self.created_at + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M') if self.created_at else '',
                 'receiving_account_id': self.receiving_account_id,
                 'receiving_account_name': self.receiving_account_name,
                 'receiving_account_currency': self.receiving_account_currency,

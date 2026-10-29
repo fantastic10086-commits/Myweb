@@ -1233,7 +1233,7 @@ function viewPayments(id) {
             var table = document.createElement('table');
             table.className = 'table table-sm payment-history-table mb-0';
             var columns = document.createElement('colgroup');
-            [4, 23, 12, 9, 15, 10, 14, 13].forEach(function(width) {
+            [4, 20, 12, 10, 8, 13, 9, 13, 11].forEach(function(width) {
                 var col = document.createElement('col');
                 col.style.width = width + '%';
                 columns.appendChild(col);
@@ -1241,7 +1241,7 @@ function viewPayments(id) {
             table.appendChild(columns);
             var thead = table.createTHead();
             var header = thead.insertRow();
-            ['#', '流水号', '金额', '手续费', '到账账户', '凭证', '日期', '操作'].forEach(function(label) {
+            ['#', '流水号', '实际到账日期', '金额', '手续费', '到账账户', '凭证', '登记时间', '操作'].forEach(function(label) {
                 var th = document.createElement('th');
                 th.textContent = label;
                 header.appendChild(th);
@@ -1252,6 +1252,7 @@ function viewPayments(id) {
                 [
                     String(i + 1),
                     pmts[i].order_no || '-',
+                    pmts[i].received_on || '未填写',
                     sym + pmts[i].amount.toFixed(2),
                     pmts[i].fee > 0 ? sym + pmts[i].fee.toFixed(2) : '-',
                     pmts[i].receiving_account_name || '历史记录未填写'
@@ -1269,7 +1270,7 @@ function viewPayments(id) {
                         if (!this.previewRow) {
                             var previewRow = document.createElement('tr');
                             var previewCell = previewRow.insertCell();
-                            previewCell.colSpan = 8;
+                            previewCell.colSpan = 9;
                             previewCell.className = 'text-center bg-light p-2';
                             var image = document.createElement('img');
                             image.alt = '回款凭证';
@@ -1300,7 +1301,7 @@ function viewPayments(id) {
                     attachmentCell.textContent = '—';
                 }
                 var dateCell = row.insertCell();
-                dateCell.textContent = pmts[i].received_on || ((pmts[i].created_at || '-') + '（登记）');
+                dateCell.textContent = pmts[i].registered_at || pmts[i].created_at || '-';
                 var actionCell = row.insertCell();
                 var deleteButton = document.createElement('button');
                 deleteButton.type = 'button';
@@ -1321,12 +1322,12 @@ function viewPayments(id) {
                     };
                 })(pmts[i]);
                 actionCell.appendChild(deleteButton);
-                row.cells[2].className = 'payment-amount';
                 row.cells[3].className = 'payment-amount';
+                row.cells[4].className = 'payment-amount';
                 if (pmts[i].note) {
                     var noteRow = tbody.insertRow();
                     var noteCell = noteRow.insertCell();
-                    noteCell.colSpan = 8;
+                    noteCell.colSpan = 9;
                     noteCell.className = 'payment-note';
                     noteCell.textContent = '备注：' + pmts[i].note;
                 }
