@@ -336,8 +336,10 @@ class Payment(db.Model):
     pi = db.relationship('PI', backref=db.backref('payments', lazy=True, cascade='all, delete-orphan'))
 
     def to_dict(self):
+        review = FinanceReview.query.filter_by(kind='payment', record_id=self.id).first()
         return {'id': self.id, 'pi_id': self.pi_id, 'amount': self.amount,
                 'fee': self.fee, 'order_no': self.order_no,
+                'received_on': review.occurred_on.isoformat() if review and review.occurred_on else '',
                 'receiving_account_id': self.receiving_account_id,
                 'receiving_account_name': self.receiving_account_name,
                 'receiving_account_currency': self.receiving_account_currency,

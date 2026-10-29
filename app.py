@@ -48,7 +48,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
-    FieldOption, Payment, Expense, Supplier, Procurement, AuditLog, DispatchSubmission,
+    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
@@ -7619,6 +7619,12 @@ def pi_toggle_paid(id):
     fee_str = request.form.get('fee', '0').strip()
     order_no = request.form.get('order_no', '').strip()
     payment_note = request.form.get('note', '').strip()
+    try:
+        received_on = date.fromisoformat(request.form.get('received_on', '').strip() or date.today().isoformat())
+    except ValueError:
+        flash('实际到账日期格式不正确。', 'danger')
+        return redirect(url_for('pi_list'))
+
     if len(payment_note) > 200:
         flash('回款备注不能超过 200 个字符。', 'danger')
         return redirect(request.referrer or url_for('pi_list'))
@@ -7720,6 +7726,8 @@ def pi_toggle_paid(id):
         if customer:
             _recalculate_customer_deal(customer)
 
+        db.session.add(FinanceReview(kind='payment', record_id=payment.id, occurred_on=received_on))
+        _audit('create', 'finance_payment_date', payment.id, '登记实际到账日期', after={'received_on': received_on.isoformat()})
         _audit('create', 'payment', payment.id, f'在 {pi.pi_number} 登记回款：{order_no}',
                after=_snapshot(payment, ['pi_id', 'amount', 'fee', 'order_no', 'receiving_account_id',
                                          'receiving_account_name', 'receiving_account_currency',
