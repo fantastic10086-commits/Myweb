@@ -6,6 +6,15 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-11-02 多条客户费用/折扣及导出）
+
+- PI新增customer_adjustments JSON可空列，_migrate_db安全加列；NULL兼容旧单条shipping_cost/name。多条保存有符号amount/name/english，shipping_cost仍存净额供旧总额/回款/利润汇总使用；内部Expense成本未改变。
+- 新建、编辑、导出工作台共用customer_adjustments.js与隐藏JSON字段，在原首条下可增加/删除额外费用类型/加收扣减/金额，最多30条；累计参与总额。草稿/校验回填、复制、export copy、审计均保留明细；切换币种/业务汇率同步转换额外行。详情显示多条记录。
+- 默认Excel模板shipping_note/en/zh独立说明行自动扩成多条费用记录（保持源文件不变），Other Charges保留净额汇总；无独立说明行的模板通过对应占位符多行说明；旧PDF/Excel生成器也逐条列明。新customer_adjustments.py提供旧记录兼容及英文说明。
+- 代码4f1ffc4。隔离回归2项涵盖多条加收扣减合计、净额0、非法格式/缺类型、旧单条、草稿、复制与默认模板明细扩行；PI重复提交/并发编号3项回归通过。初始测试错误为测试MultiDict构造/FieldOption字段及复制跳转路径，修正后通过。JS/Python/diff检查通过。
+- 使用PDF技能，以完全虚构客户/银行及三条费用生成Excel上传服务器LibreOffice转PDF并渲染查看：Freight+20/Packing+5/Discount-3，净额22、总额122，独立明细可见、无银行区重叠。未用真实客户数据，未做浏览器交互验证。
+- 备份pi-manager_20261102_224443.tar.gz按脚本上传OSS；发布20261102224443，服务active、维护off，健康检查及新增JS静态文件检查通过。
+
 ## 最新接续（2026-11-02 统一筛选记忆）
 
 - 新UserListPreference数据库表按登录user_id/endpoint保存白名单查询参数；list_preferences.py统一GET钩子在裸路径进入时恢复筛选/排序/页码，显式查询保存当前条件，clear_filters=1清空后回默认。按账号隔离、重新登录可恢复；用户物理删除同事务清理配置。非管理员不保存管理员页面配置，不改变页面访问权限。
