@@ -1,0 +1,2 @@
+<input type="hidden" name="customer_adjustments_json" id="customer_adjustments_json" value="{{ request.form.get('customer_adjustments_json', '') }}">
+<script type="application/json" id="customer-adjustments-initial">{{ (adjustment_rows(pi) if pi else [])|tojson }}</script>

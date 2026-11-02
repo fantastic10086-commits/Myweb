@@ -506,6 +506,7 @@ class PI(db.Model):
     shipping_cost = db.Column(db.Float, default=0.0)
     shipping_note = db.Column(db.Text, default='')
     shipping_note_en = db.Column(db.Text, default='')
+    customer_adjustments = db.Column(db.JSON, nullable=True)
     # Legacy database column retained for a no-data-loss migration.  The value
     # now means the RMB freight charged by the supplier for this purchase.
     actual_shipping_cost = db.Column(db.Float, default=0.0)

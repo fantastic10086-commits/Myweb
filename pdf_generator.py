@@ -1,3 +1,4 @@
+from customer_adjustments import adjustment_description, adjustment_rows
 """
 PI (Proforma Invoice) PDF Generator using ReportLab.
 Generates A4-sized professional foreign trade PI documents.
@@ -399,7 +400,7 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
                                         fontName=_FONT_BOLD, textColor=base_color, alignment=TA_RIGHT)
 
     # Adjustment row (if non-zero)
-    if abs(shipping_cost) > 0.001:
+    if abs(shipping_cost) > 0.001 or len(adjustment_rows(pi)) > 1:
         # Use a table that matches the product table width, with the value in the rightmost columns
         summary_label_w = 160
         summary_value_w = 70
@@ -412,8 +413,13 @@ def generate_pi_pdf(pi, output_dir, salesperson_info=None):
         shipping_data = [
             ['', Paragraph(f'Subtotal ({cur_label}):', right_label_style),
              Paragraph(f'{sym}{total:,.2f}', right_value_style)],
-            ['', Paragraph(f'{escape(shipping_note_en)} ({cur_label}):', right_label_style),
+            ['', Paragraph(f'{escape(adjustment_description(pi) or shipping_note_en).replace(chr(10), "<br/>")} ({cur_label}):', right_label_style),
              Paragraph(f'{sym}{shipping_cost:,.2f}', right_value_style)],
+        ]
+        shipping_data = shipping_data[:1] + [
+            ['', Paragraph(f"{escape(detail['english'])} ({cur_label}):", right_label_style),
+             Paragraph(f"{sym}{detail['amount']:,.2f}", right_value_style)]
+            for detail in adjustment_rows(pi)
         ]
         ship_table = Table(shipping_data, colWidths=[spacer_w, summary_label_w, summary_value_w])
         ship_style = [

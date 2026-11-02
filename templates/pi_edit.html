@@ -54,7 +54,7 @@
     }
     function signedAdjustment() {
         var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
-        return document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount;
+        return (document.getElementById('adjustment_operation').value === 'subtract' ? -amount : amount) + (window.piExtraAdjustmentTotal ? window.piExtraAdjustmentTotal() : 0);
     }
     function structuralEditLocked() {
         if (!hasDownstreamRecords) return false;
@@ -439,11 +439,11 @@
             if (getCurrency() === 'RMB') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
-            adjustmentUsd = toUsd(signedAdjustment());
+            adjustmentUsd = toUsd(signedAdjustment() - (window.piExtraAdjustmentTotal ? window.piExtraAdjustmentTotal() : 0));
             updateTotal();
         });
         document.getElementById('adjustment_operation').addEventListener('change', function() {
-            adjustmentUsd = toUsd(signedAdjustment());
+            adjustmentUsd = toUsd(signedAdjustment() - (window.piExtraAdjustmentTotal ? window.piExtraAdjustmentTotal() : 0));
             updateTotal();
         });
         var form = document.getElementById('pi-form');
@@ -555,7 +555,8 @@
                 <div class="row align-items-start">
                     <div class="col-md-3">
                         <label class="form-label">客户费用 / 折扣</label>
-                        <div class="input-group">
+                        {% include '_customer_adjustments.html' %}
+<div class="input-group">
                             <span class="input-group-text" id="shipping_sym">{{ '¥' if pi and pi.currency == 'RMB' else '$' }}</span>
                             <input type="number" step="0.01" min="0" class="form-control pi-structural-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" oninput="updateTotal()">
                         </div>

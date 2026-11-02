@@ -1,3 +1,4 @@
+from customer_adjustments import adjustment_rows, adjustment_description
 """Safe Excel-template rendering and PDF conversion for PI exports."""
 
 from country_names import english_country
@@ -677,10 +678,31 @@ def render_excel_template(template_path, pi, output_path, salesperson_info=None,
     validate_template(template_path)
     workbook = load_workbook(template_path, data_only=False, read_only=False, keep_links=False)
     fixed_values = _fixed_values(pi, salesperson_info or {})
+    details = adjustment_rows(pi)
+    if len(details) > 1:
+        fixed_values['shipping_note'] = adjustment_description(pi)
+        fixed_values['shipping_note_en'] = adjustment_description(pi)
+        fixed_values['shipping_note_zh'] = '\n'.join('%s: %s %+.2f' % (row['name'], getattr(pi, 'currency', 'USD'), row['amount']) for row in details)
     items = list(getattr(pi, 'items', []) or [])
 
     try:
         for sheet in workbook.worksheets:
+            # Existing templates use a note row under the adjustment total.
+            # Expand that row so each customer charge/discount has its own line.
+            if len(details) > 1:
+                note_cell = next((cell for row in sheet.iter_rows() for cell in row
+                                  if isinstance(cell.value, str) and re.fullmatch(r'{{\s*shipping_note(?:_en|_zh)?\s*}}', cell.value.strip())), None)
+                if note_cell:
+                    column = note_cell.column
+                    expanded = _expand_item_row(sheet, note_cell.row, len(details))
+                    for number, detail in zip(expanded, details):
+                        cell = sheet.cell(number, column)
+                        _replace_cell(sheet, cell, {'shipping_note': '%s: %s %+.2f' % (detail['english'], getattr(pi, 'currency', 'USD'), detail['amount']),
+                                                   'shipping_note_en': '%s: %s %+.2f' % (detail['english'], getattr(pi, 'currency', 'USD'), detail['amount']),
+                                                   'shipping_note_zh': '%s: %s %+.2f' % (detail['name'], getattr(pi, 'currency', 'USD'), detail['amount'])}, upload_dir)
+                        cell.alignment = copy.copy(cell.alignment)
+                        cell.alignment = Alignment(horizontal='right', vertical='center', wrap_text=True)
+                        sheet.row_dimensions[number].height = max(30, sheet.row_dimensions[number].height or 0)
             item_rows = set()
             for row in sheet.iter_rows():
                 for cell in row:

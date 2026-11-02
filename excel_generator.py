@@ -1,3 +1,4 @@
+from customer_adjustments import adjustment_description, adjustment_rows
 """
 PI Excel Generator — matches PDF side-by-side layout, A4 portrait.
 """
@@ -148,22 +149,18 @@ def generate_pi_excel(pi, output_dir):
     # ── Totals ──
     total = pi.total_amount
     adjustment = getattr(pi, 'shipping_cost', 0.0) or 0.0
-    if abs(adjustment) > 0.001:
+    if abs(adjustment) > 0.001 or len(adjustment_rows(pi)) > 1:
         ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
         ws.cell(row=r, column=1, value='PRODUCT SUBTOTAL:').font = b9
         ws.cell(row=r, column=1).alignment = rgt
         c = ws.cell(row=r, column=5, value=total); c.font = n9; c.alignment = rgt; c.number_format = f'{sym}#,##0.00'
         r += 1
-        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
-        adjustment_label = (
-            getattr(pi, 'shipping_note_en', '')
-            or getattr(pi, 'shipping_note', '')
-            or 'Other Charges'
-        )
-        ws.cell(row=r, column=1, value=f'{adjustment_label.upper()}:').font = b9
-        ws.cell(row=r, column=1).alignment = rgt
-        c = ws.cell(row=r, column=5, value=adjustment); c.font = n9; c.alignment = rgt; c.number_format = f'{sym}#,##0.00'
-        r += 1
+        for detail in adjustment_rows(pi):
+            ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
+            ws.cell(row=r, column=1, value=detail['english'] + ':').font = b9
+            ws.cell(row=r, column=1).alignment = rgt
+            c = ws.cell(row=r, column=5, value=detail['amount']); c.font = n9; c.alignment = rgt; c.number_format = f'{sym}#,##0.00'
+            r += 1
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=4)
     ws.cell(row=r, column=1, value='TOTAL:').font = Font(name='Arial', bold=True, size=12); ws.cell(row=r, column=1).alignment = rgt
     c = ws.cell(row=r, column=5, value=total + adjustment); c.font = Font(name='Arial', bold=True, size=12); c.alignment = rgt

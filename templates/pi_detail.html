@@ -142,7 +142,8 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">类型（中文 / 对外英文）</label>
-                        <input type="text" class="form-control" value="{% if pi.shipping_note %}{{ pi.shipping_note }} / {{ pi.shipping_note_en or pi.shipping_note }}{% else %}-{% endif %}" readonly>
+                        <input type="text" class="form-control" value="{% if adjustment_rows(pi)|length > 1 %}多条费用 / 折扣{% elif pi.shipping_note %}{{ pi.shipping_note }} / {{ pi.shipping_note_en or pi.shipping_note }}{% else %}-{% endif %}" readonly>
+                        {% if adjustment_rows(pi)|length > 1 %}{% for entry in adjustment_rows(pi) %}<div class="small mt-1">{{ entry.name }} · {{ pi.currency }} {{ '%+.2f'|format(entry.amount) }}</div>{% endfor %}{% endif %}
                     </div>
                     <div class="col-md-4 text-end">
                         <small class="text-muted">客户费用 / 折扣： <strong>{{ sym }}{{ '%.2f'|format(pi.shipping_cost or 0) }}</strong></small>

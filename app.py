@@ -407,7 +407,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'customer_adjustments': ('JSON', 'NULL'), 'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -1692,9 +1692,10 @@ def maintenance_page():
 # ── Helper ─────────────────────────────────────────────────────────────
 @app.context_processor
 def pi_submission_context():
+    from customer_adjustments import adjustment_rows
     if request.endpoint == 'pi_create':
-        return {'pi_submission_token': request.form.get('pi_submission_token', '') or uuid.uuid4().hex}
-    return {}
+        return {'pi_submission_token': request.form.get('pi_submission_token', '') or uuid.uuid4().hex, 'adjustment_rows': adjustment_rows}
+    return {'adjustment_rows': adjustment_rows}
 
 
 def _generate_pi_number():
@@ -1728,6 +1729,48 @@ def _reserve_pi_submission():
     if submission.owner_id != owner:
         abort(409, description='提交标识已使用，请重新打开新建页面。')
     return submission
+
+
+def _parse_customer_adjustments(form, previous=None):
+    from customer_adjustments import adjustment_rows
+    raw = form.get('customer_adjustments_json')
+    if raw is None:
+        return None
+    try:
+        entries = json.loads(raw)
+    except (ValueError, TypeError):
+        raise ValueError('费用明细格式无效。')
+    if not isinstance(entries, list) or len(entries) > 30:
+        raise ValueError('客户费用/折扣最多30条。')
+    old = {row['name']: row for row in adjustment_rows(previous)} if previous else {}
+    rows = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError('费用明细格式无效。')
+        try:
+            amount = float(entry.get('amount', 0))
+        except (TypeError, ValueError):
+            raise ValueError('费用金额必须为有效数字。')
+        if not math.isfinite(amount):
+            raise ValueError('费用金额必须为有效数字。')
+        amount = round(amount, 2)
+        if not amount:
+            continue
+        name = str(entry.get('name', '')).strip()
+        if not name:
+            raise ValueError('每条非零费用都必须选择类型。')
+        name = _managed_field_value('shipping_note', name, name if name in old else '')
+        english = _managed_field_english('shipping_note', name, name if name in old else '', old.get(name, {}).get('english', ''))
+        rows.append({'name': name, 'english': english or name, 'amount': amount})
+    return rows
+
+
+def _apply_customer_adjustment_rows(pi, rows):
+    if rows is not None:
+        pi.customer_adjustments = rows
+        pi.shipping_cost = round(sum(row['amount'] for row in rows), 2)
+        pi.shipping_note = rows[0]['name'] if rows else ''
+        pi.shipping_note_en = rows[0]['english'] if rows else ''
 
 
 def _nonnegative_float(value, field_name):
@@ -5879,7 +5922,7 @@ def _pi_create_postback_data(form, draft=None):
         'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency',
         'company', 'exchange_rate', 'issue_date', 'payment_terms',
         'price_terms', 'delivery_time', 'bank_info', 'shipping_address',
-        'shipping_cost', 'shipping_note', 'adjustment_operation',
+        'shipping_cost', 'shipping_note', 'adjustment_operation', 'customer_adjustments_json',
     }
     fields = {key: value for key, value in form.items() if key in field_names}
     selected_items, _ = _submitted_pi_items(
@@ -5969,7 +6012,7 @@ def pi_draft_save():
             'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
             'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
             'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note',
-            'adjustment_operation'}}
+            'adjustment_operation', 'customer_adjustments_json'}}
         if fields.get('customer_id'):
             require_customer_access(Customer.query.get_or_404(int(fields['customer_id'])))
         if not is_admin():
@@ -6104,6 +6147,9 @@ def pi_create():
                 'shipping_note', request.form.get('shipping_note', '')
             )
             _require_customer_adjustment_type(shipping_cost, shipping_note)
+            customer_adjustments = _parse_customer_adjustments(request.form, pi if 'pi' in locals() else None)
+            if customer_adjustments is not None:
+                shipping_cost = round(sum(row['amount'] for row in customer_adjustments), 2)
         except ValueError as exc:
             return render_postback(str(exc))
 
@@ -6164,6 +6210,7 @@ def pi_create():
             notes=notes,
         )
         _apply_bank_snapshot(pi, selected_account, bank_info)
+        _apply_customer_adjustment_rows(pi, customer_adjustments)
         db.session.add(pi)
         db.session.flush()  # Get pi.id
 
@@ -6201,7 +6248,7 @@ def pi_create():
             return render_postback(f'生成 PDF 失败：{str(e)}；填写内容已保留，可重试。')
 
         _audit('create', 'pi', pi.id, f'新增 PI：{pi.pi_number}',
-               after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
+               after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
         db.session.commit()
         flash(f'PI {pi_number} 已创建并生成 PDF。', 'success')
         return redirect(url_for('pi_detail', id=pi.id))
@@ -8022,6 +8069,7 @@ def pi_copy(id):
         exchange_rate=_pi_exchange_rate(original),
         company=original.company or 'klista',
         total_amount=original.total_amount,
+        customer_adjustments=copy.deepcopy(original.customer_adjustments),
         shipping_cost=original.shipping_cost or 0.0,
         shipping_note=original.shipping_note or '',
         shipping_note_en=original.shipping_note_en or '',
@@ -8311,7 +8359,7 @@ def pi_edit(id):
             db.session.rollback()
             flash('该 PI 已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('pi_edit', id=id))
-        before = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        before = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         before['items'] = [item.to_dict() for item in pi.items]
         old_customer_id = pi.customer_id
         customer_id = request.form.get('customer_id', type=int)
@@ -8387,6 +8435,9 @@ def pi_edit(id):
                 pi.shipping_note, pi.shipping_note_en,
             )
             _require_customer_adjustment_type(shipping_cost, shipping_note)
+            customer_adjustments = _parse_customer_adjustments(request.form, pi if 'pi' in locals() else None)
+            if customer_adjustments is not None:
+                shipping_cost = round(sum(row['amount'] for row in customer_adjustments), 2)
         except ValueError as exc:
             flash(str(exc), 'danger')
             return redirect(url_for('pi_edit', id=id))
@@ -8462,6 +8513,7 @@ def pi_edit(id):
         pi.shipping_cost = shipping_cost
         pi.shipping_note = shipping_note
         pi.shipping_note_en = shipping_note_en
+        _apply_customer_adjustment_rows(pi, customer_adjustments)
         pi.shipping_address = shipping_address
         pi.notes = notes
 
@@ -8499,7 +8551,7 @@ def pi_edit(id):
             return render_edit_page()
 
         pi.version = (pi.version or 1) + 1
-        after = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        after = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         after['items'] = [item.to_dict() for item in pi.items]
         if structural_changes:
             after['structural_changes'] = structural_changes
@@ -8554,6 +8606,7 @@ def _apply_form_to_pi(form, pi):
         form.get('shipping_cost', '0'), form.get('adjustment_operation', '')
     )
     _require_customer_adjustment_type(pi.shipping_cost, pi.shipping_note)
+    _apply_customer_adjustment_rows(pi, _parse_customer_adjustments(form, pi))
 
     # Customer fields (in memory)
     if pi.customer:
@@ -8665,6 +8718,7 @@ def _pi_export_copy(pi):
         shipping_note=pi.shipping_note,
         shipping_note_en=pi.shipping_note_en,
         notes=pi.notes,
+        customer_adjustments=copy.deepcopy(pi.customer_adjustments),
         shipping_cost=pi.shipping_cost,
         total_amount=pi.total_amount,
         customer=customer_copy,
@@ -8723,6 +8777,7 @@ def _apply_export_form(form, export_pi):
         form.get('shipping_cost', '0'), form.get('adjustment_operation', '')
     )
     _require_customer_adjustment_type(export_pi.shipping_cost, export_pi.shipping_note)
+    _apply_customer_adjustment_rows(export_pi, _parse_customer_adjustments(form, export_pi))
 
     if is_admin():
         account_id = form.get('account_id', type=int)
@@ -8789,6 +8844,7 @@ def _export_copy_snapshot(export_pi):
         'shipping_note': export_pi.shipping_note,
         'shipping_note_en': export_pi.shipping_note_en,
         'notes': export_pi.notes,
+        'customer_adjustments': getattr(export_pi, 'customer_adjustments', None),
         'shipping_cost': export_pi.shipping_cost,
         'customer': {
             'name': export_pi.customer.name,
