@@ -184,7 +184,7 @@
                     </div>
                 <div class="col-12 mt-2">
                     <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-search"></i> 搜索</button>
-                    <a href="{{ url_for('customer_detail', id=customer.id) }}" class="btn btn-sm btn-outline-secondary ms-2">清除</a>
+                    <a href="{{ url_for('customer_detail', id=customer.id, clear_filters=1) }}" class="btn btn-sm btn-outline-secondary ms-2">清除</a>
                 </div>
                 </form>
             </div>

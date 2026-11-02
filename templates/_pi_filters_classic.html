@@ -31,7 +31,7 @@
             </div>
         <div class="pi-filter-actions">
             <button type="submit" class="btn btn-sm btn-primary px-3"><i class="bi bi-funnel"></i> 筛选</button>
-            <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">重置</a>
+            <a href="{{ url_for('pi_list', clear_filters=1) }}" class="btn btn-sm btn-outline-secondary">重置</a>
             <button type="button" class="btn btn-sm btn-light text-secondary" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters"><i class="bi bi-sliders"></i> 更多筛选{{ ' · 已设置' if advanced_active else '' }}</button>
         </div>
     </div>

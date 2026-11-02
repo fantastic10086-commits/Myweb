@@ -9244,15 +9244,6 @@ def _procurement_gaps(pi):
 def procurement_select():
     """Select a PI to start procurement."""
     if not is_admin(): return redirect(url_for('index'))
-    filter_keys = {'salesperson', 'date_from', 'date_to', 'preset',
-                   'country', 'customer_name', 'pi_number', 'order_status'}
-    if request.args.get('clear_filters') == '1':
-        session.pop('procurement_filters', None)
-        return redirect(url_for('procurement_select'))
-    if not filter_keys.intersection(request.args):
-        saved_filters = session.get('procurement_filters', {})
-        if saved_filters:
-            return redirect(url_for('procurement_select', **saved_filters))
     salesperson_filter, date_from, date_to, preset = _report_filter_values()
     pi_query = PI.query.options(
         joinedload(PI.customer),
@@ -9289,13 +9280,6 @@ def procurement_select():
     if selected_statuses:
         selected_labels = {order_labels[key] for key in selected_statuses}
         pis = [pi for pi in pis if pi.effective_procurement_status in selected_labels]
-    # Store resolved dates so returning later keeps the original date range.
-    saved_filters = {
-        'salesperson': salesperson_filter, 'date_from': date_from, 'date_to': date_to,
-        'country': country_filter, 'customer_name': customer_name_filter,
-        'pi_number': pi_number_filter, 'order_status': order_status,
-    }
-    session['procurement_filters'] = {key: value for key, value in saved_filters.items() if value}
     pi_complete = {pi.id for pi in pis if pi.procurement_is_complete}
     resp = make_response(render_template(
         'procurement_select.html', customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options,
@@ -10229,6 +10213,9 @@ register_mobile_photos(
     validate_file=_validate_customer_file, save_file=_save_customer_file,
     remove_file=_remove_upload, audit=_audit, thumbnail=_ensure_product_thumbnail,
 )
+
+from list_preferences import register_list_preferences
+register_list_preferences(app, get_current_user)
 
 if __name__ == '__main__':
     print(f"App root: {APP_ROOT}")

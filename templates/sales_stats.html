@@ -47,7 +47,7 @@
             </div>
             <div class="col-md-1">
                 {% if date_from or date_to or preset or sp_filter %}
-                <a href="{{ url_for('sales_stats') }}" class="btn btn-sm btn-outline-danger w-100">清除</a>
+                <a href="{{ url_for('sales_stats', clear_filters=1) }}" class="btn btn-sm btn-outline-danger w-100">清除</a>
                 {% endif %}
             </div>
         </form>

@@ -1234,3 +1234,15 @@ class PICreateSubmission(db.Model):
     owner_id = db.Column(db.Integer, nullable=False)
     pi_id = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class UserListPreference(db.Model):
+    __tablename__ = 'user_list_preferences'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
+    endpoint = db.Column(db.String(80), primary_key=True)
+    parameters = db.Column(db.JSON, nullable=False, default=dict)
+
+
+@_finance_event.listens_for(User, 'after_delete')
+def _delete_user_list_preferences(mapper, connection, target):
+    connection.execute(UserListPreference.__table__.delete().where(UserListPreference.user_id == target.id))

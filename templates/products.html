@@ -29,7 +29,7 @@
             {% if filter %}<input type="hidden" name="filter" value="{{ filter }}">{% endif %}
             <button type="submit" class="btn btn-outline-primary"><i class="bi bi-search"></i></button>
             {% if search or filter %}
-            <a href="{{ url_for('product_list') }}" class="btn btn-outline-secondary">清除</a>
+            <a href="{{ url_for('product_list', clear_filters=1) }}" class="btn btn-outline-secondary">清除</a>
             {% endif %}
         </form>
     </div>

@@ -9,7 +9,7 @@
   <div class="col-md-3"><select name="entity_type" class="form-select"><option value="">全部记录类型</option><option value="customer" {% if entity_type == 'customer' %}selected{% endif %}>客户</option><option value="pi" {% if entity_type == 'pi' %}selected{% endif %}>PI</option><option value="payment" {% if entity_type == 'payment' %}selected{% endif %}>回款</option><option value="account" {% if entity_type == 'account' %}selected{% endif %}>收款账户</option></select></div>
   <div class="col-md-3"><select name="action" class="form-select"><option value="">全部操作</option><option value="create" {% if action == 'create' %}selected{% endif %}>新增</option><option value="update" {% if action == 'update' %}selected{% endif %}>修改</option><option value="reassign" {% if action == 'reassign' %}selected{% endif %}>转交</option><option value="soft_delete" {% if action == 'soft_delete' %}selected{% endif %}>移入回收站</option><option value="restore" {% if action == 'restore' %}selected{% endif %}>恢复</option><option value="delete" {% if action == 'delete' %}selected{% endif %}>删除</option></select></div>
   <div class="col"><button class="btn btn-primary">筛选</button></div>
-</form>
+<div class="col-auto"><a class="btn btn-outline-secondary" href="{{ url_for('audit_logs', clear_filters=1) }}">重置</a></div></form>
 <div class="card"><div class="table-responsive"><table class="table table-sm table-hover mb-0 align-middle">
 <thead class="table-light"><tr><th>时间</th><th>用户 / IP</th><th>操作</th><th>记录</th><th>说明</th><th>修改前 / 修改后</th></tr></thead>
 <tbody>{% for log in logs %}<tr>
