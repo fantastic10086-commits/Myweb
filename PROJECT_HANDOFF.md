@@ -6,6 +6,15 @@
 
 - 每次修改完成并验证后，提交并推送至既有 GitHub 仓库 `origin`（`fantastic10086-commits/Myweb`）。部署完成后更新交接记录并一并推送；保持正常推送，不强制覆盖远程历史。现有服务器部署授权继续有效，部署前备份，保留业务数据。
 
+## 最新接续（2026-11-02 欧元PI及逐单汇率）
+
+- 代码f719701；新增EUR收款账户和PI币种。PI安全加eur_usd_rate/eur_rmb_rate/fx_reference_date/fx_source列；旧USD/RMB记录及业绩口径保留。EUR订单只接受EUR回款账户，创建/编辑账户币种亦校验一致。
+- 新/api/exchange-rates/eur登录接口经服务器获取Frankfurter最新公布EUR→USD、EUR→CNY参考汇率，5秒超时、进程内缓存30分钟，要求两项日期一致；只发送币种不发送业务数据。前端异步读取不阻塞打开页面，显示参考日期/来源，可手动改；失败要求手动填写，无伪造默认EUR汇率。保存本单后不自动刷新历史汇率。
+- currency_utils集中符号/换算。EUR业绩及客户成交额按本单EUR→USD；客户启动重算SQL、个人统计、业绩统计同步。利润/采购价格风险按EUR→RMB，采购页展示只读EUR汇率不覆盖USD业务汇率；历史USD费用仍用USD业务汇率。费用继续RMB录入。PI列表按三个币种分开汇总，首页/详情/历史/预览符号及Excel/PDF生成器支持€。
+- 新建/编辑产品以USD产品库价换算EUR报价，客户费用/折扣同步换算；草稿/复制/导出副本保留汇率，已有下游记录的汇率修改走原结构修改权限和确认机制。新增static/eur_rates.js及共用汇率表单；customer_adjustments.js同步币种及欧元汇率变化。
+- 隔离EUR集成2项通过：真实创建、错误币种回款拒绝、EUR回款入账、100EUR→120USD/800RMB、客户重算、复制/草稿、默认Excel及页面内联JS语法、参考接口失败与非法汇率。财务4项、多条客户费用2项、PI提交3项分别运行通过；所有Jinja/Python/静态JS及diff检查通过。测试中修正了路由注册位置、页面脚本拼接及测试路径/CSRF/角色；未用生产业务数据，未做浏览器交互或此次PDF视觉验证。
+- 服务器真实请求确认同日EUR→USD/CNY均可获取。备份pi-manager_20261102_233043.tar.gz按发布脚本上传OSS；发布20261102233043，service active、维护off。用户需自行新增EUR收款账户后使用。
+
 ## 最新接续（2026-11-02 多条客户费用/折扣及导出）
 
 - PI新增customer_adjustments JSON可空列，_migrate_db安全加列；NULL兼容旧单条shipping_cost/name。多条保存有符号amount/name/english，shipping_cost仍存净额供旧总额/回款/利润汇总使用；内部Expense成本未改变。
