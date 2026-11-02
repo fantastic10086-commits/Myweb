@@ -60,7 +60,7 @@
                     <td><strong>{{ pi.pi_number }}</strong></td>
                     <td>{{ pi.customer.name if pi.customer else '-' }}</td>
                     <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                    <td class="text-end">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.grand_total) }}</td>
+                    <td class="text-end">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</td>
                 </tr>{% endfor %}</tbody>
             </table></div>
             {% else %}<div class="text-center py-4 text-muted">暂无 PI。</div>{% endif %}

@@ -178,9 +178,9 @@
                         <td title="{{ pi.customer.country if pi.customer else '' }}">{{ pi.customer.country if pi.customer and pi.customer.country else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
                         <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                        <td class="text-end">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</td>
+                        <td class="text-end">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</td>
                         {% set total_received = pi.received_amount or 0 %}
-                        {% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+                        {% set sym = currency_symbol(pi.currency) %}
                         <td>
                             <div class="pi-list-workflow" role="list" aria-label="{{ pi.pi_number }} 订单流程">
                                 {% set payment_state = 'complete' if pi.paid else ('partial' if total_received > 0 else 'pending') %}
@@ -1165,7 +1165,7 @@ document.addEventListener('paste', pastePaymentAttachment);
 function confirmPayment(id, total, currency, preferredAccountId) {
     currentPaymentPiId = id;
     showPaymentDetails();
-    var sym = currency === 'RMB' ? '¥' : '$';
+    var sym = ({RMB:'¥',USD:'$',EUR:'€'})[currency];
     currentPITotal = total;
     document.getElementById('payModalTitle').textContent = '登记回款';
     document.getElementById('payPINumber').textContent = '#' + id;
@@ -1199,7 +1199,7 @@ function viewPayments(id) {
     fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
         currentPaymentPiId = id;
         showPaymentDetails();
-        var sym = data.currency === 'RMB' ? '¥' : '$';
+        var sym = ({RMB:'¥',USD:'$',EUR:'€'})[data.currency];
         var grandTotal = data.grand_total || data.total_amount;
         currentPITotal = grandTotal;
         document.getElementById('payModalTitle').textContent = '回款记录';

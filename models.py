@@ -501,6 +501,10 @@ class PI(db.Model):
     # follow later changes to the system default because historical quotation,
     # procurement and profit figures need to remain reproducible.
     exchange_rate = db.Column(db.Float, nullable=False, default=6.5)
+    eur_usd_rate = db.Column(db.Float, nullable=True)
+    eur_rmb_rate = db.Column(db.Float, nullable=True)
+    fx_reference_date = db.Column(db.String(10), default='')
+    fx_source = db.Column(db.String(100), default='')
     company = db.Column(db.String(50), default='klista')
     total_amount = db.Column(db.Float, default=0.0)
     shipping_cost = db.Column(db.Float, default=0.0)
@@ -648,6 +652,8 @@ class PI(db.Model):
             'salesperson': self.salesperson,
             'currency': self.currency,
             'exchange_rate': self.exchange_rate,
+            'eur_usd_rate': self.eur_usd_rate, 'eur_rmb_rate': self.eur_rmb_rate,
+            'fx_reference_date': self.fx_reference_date, 'fx_source': self.fx_source,
             'total_amount': self.total_amount,
             'product_subtotal': self.product_subtotal,
             'other_charges': self.other_charges,

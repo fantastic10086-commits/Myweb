@@ -33,9 +33,12 @@
   add.addEventListener('click',()=>{addRow();update();});
   [firstAmount,firstType,firstOperation].forEach(control=>control.addEventListener('input',update));
   const currency=document.getElementById('currency_select');
-  if(currency)currency.addEventListener('change',()=>{const next=typeof getCurrency==='function'?getCurrency():currency.value;if(lastCurrency&&next&&lastCurrency!==next){const rate=typeof getBusinessRate==='function'?getBusinessRate():6.5;rows.forEach(r=>{r.amount.value=(Number(r.amount.value)*(next==='RMB'?rate:1/rate)).toFixed(2);});}lastCurrency=next;update();});
-  const rateInput=document.getElementById('exchange_rate');
-  if(rateInput)rateInput.addEventListener('input',()=>{const next=typeof getBusinessRate==='function'?getBusinessRate():lastRate;if(lastCurrency==='RMB'&&next>0&&lastRate>0)rows.forEach(r=>{r.amount.value=(Number(r.amount.value)*next/lastRate).toFixed(2);});lastRate=next;update();});
+  let lastFactor=window.piUsdFactor&&currency?window.piUsdFactor():1;
+  function convertExtras(){const factor=window.piUsdFactor&&currency?window.piUsdFactor():1;if(factor>0&&lastFactor>0)rows.forEach(r=>{r.amount.value=(Number(r.amount.value)*factor/lastFactor).toFixed(2);});lastFactor=factor;update();}
+  if(currency)currency.addEventListener('change',convertExtras);
+  ['exchange_rate','eur_usd_rate'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('input',convertExtras);});
+  document.addEventListener('eur-rates-updated',convertExtras);
+  document.addEventListener('pi-currency-applied',convertExtras);
   form.addEventListener('submit',sync,true);update();
  });
 })();

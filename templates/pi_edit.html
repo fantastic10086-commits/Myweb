@@ -35,22 +35,22 @@
     var pickerLoading = false;
     var hasDownstreamRecords = {{ downstream_impact.has_downstream|tojson }};
     var downstreamEditAdmin = {{ is_admin|tojson }};
-    var adjustmentUsd = {{ ((pi.shipping_cost or 0) / (pi.exchange_rate or exchange_rate) if pi.currency == 'RMB' else (pi.shipping_cost or 0))|tojson }};
+    var adjustmentUsd = {{ currency_to_usd(pi, pi.shipping_cost or 0)|tojson }};
     var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
 
     function getCurrency() {
         var cs = document.getElementById('currency_select');
-        return cs && cs.value === 'RMB' ? 'RMB' : 'USD';
+        return cs && ['USD','RMB','EUR'].includes(cs.value) ? cs.value : 'USD';
     }
     function getBusinessRate() {
         var el = document.getElementById('exchange_rate');
         var rate = parseFloat(el ? el.value : '');
         return isFinite(rate) && rate > 0 ? rate : {{ exchange_rate|tojson }};
     }
-    function fromUsd(value) { return getCurrency() === 'RMB' ? value * getBusinessRate() : value; }
-    function toUsd(value) { return getCurrency() === 'RMB' ? value / getBusinessRate() : value; }
+    function fromUsd(value) { return value * window.piUsdFactor(); }
+    function toUsd(value) { return value / window.piUsdFactor(); }
     function getSymbol() {
-        return getCurrency() === 'RMB' ? '¥' : '$';
+        return ({RMB:'¥',USD:'$',EUR:'€'})[getCurrency()];
     }
     function signedAdjustment() {
         var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
@@ -232,11 +232,13 @@
         updateTotal();
     }
     function applyCurrency() {
+        if(window.updateEurCurrency)window.updateEurCurrency();
         var currency = getCurrency();
         document.getElementById('total_label').textContent = '订单总金额 (' + currency + ')';
         var shipSym = document.getElementById('shipping_sym');
-        if (shipSym) shipSym.textContent = currency === 'RMB' ? '¥' : '$';
+        if (shipSym) shipSym.textContent = ({RMB:'¥',USD:'$',EUR:'€'})[currency];
         repriceForCurrency();
+        document.dispatchEvent(new Event('pi-currency-applied'));
     }
     function updatePickerSelectionState() {
         var count = pickerSelectionOrder.length;
@@ -281,7 +283,7 @@
                 '<td><div class="fw-semibold">' + escHtml(p.name) + '</div>' + (p.chinese_name ? '<small class="text-muted">' + escHtml(p.chinese_name) + '</small>' : '') + '</td>' +
                 '<td><span class="font-monospace">' + escHtml(p.code || '—') + '</span></td>' +
                 '<td class="text-muted">' + escHtml(p.spec || '—') + '</td>' +
-                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(3) + '</small>' : '') + '</td>' +
+                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() !== 'USD' ? '<br><small class="text-muted">≈ '+getSymbol()+ p.price.toFixed(3) + '</small>' : '') + '</td>' +
                 '<td class="text-center">' + (alreadyAdded ? '<span class="badge bg-secondary">已加入</span>' : '') + '</td>';
             body.appendChild(tr);
         }
@@ -436,7 +438,7 @@
         curSel.addEventListener('change', applyCurrency);
         document.getElementById('exchange_rate').addEventListener('change', function() {
             if (!(parseFloat(this.value) > 0)) this.value = Number({{ exchange_rate|tojson }}).toFixed(4);
-            if (getCurrency() === 'RMB') repriceForCurrency();
+            if (getCurrency() !== 'USD') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
             adjustmentUsd = toUsd(signedAdjustment() - (window.piExtraAdjustmentTotal ? window.piExtraAdjustmentTotal() : 0));
@@ -528,8 +530,9 @@
             <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
             <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select pi-structural-control" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
-            <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
-            <div class="mb-3">
+            <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="EUR" {% if pi.currency == 'EUR' %}selected{% endif %}>EUR (€)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
+            {% include '_eur_rates.html' %}
+<div class="mb-3">
                 <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>
                 <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control pi-structural-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ pi.exchange_rate or exchange_rate }}" required><span class="input-group-text">RMB</span></div>
                 <small class="text-muted">这是该 PI 保存的业务汇率。修改只影响本单报价、采购成本和利润，不改变其他历史 PI。</small>
@@ -557,7 +560,7 @@
                         <label class="form-label">客户费用 / 折扣</label>
                         {% include '_customer_adjustments.html' %}
 <div class="input-group">
-                            <span class="input-group-text" id="shipping_sym">{{ '¥' if pi and pi.currency == 'RMB' else '$' }}</span>
+                            <span class="input-group-text" id="shipping_sym">{{ currency_symbol(pi.currency) }}</span>
                             <input type="number" step="0.01" min="0" class="form-control pi-structural-control" name="shipping_cost" id="shipping_cost" value="{{ '%.2f'|format((pi.shipping_cost or 0)|abs) }}" oninput="updateTotal()">
                         </div>
                         <small class="text-muted">只需填写正数金额</small>
@@ -579,9 +582,9 @@
                         {% if is_admin %}<small><a href="{{ url_for('account_list', _anchor='shipping_note') }}">管理选项</a></small>{% endif %}
                     </div>
                     <div class="col-md-4 text-end">
-                        <small class="text-muted">客户费用 / 折扣： <strong id="shipping_display">{{ '$' if not pi or pi.currency != 'RMB' else '¥' }}{{ '%.2f'|format(pi.shipping_cost) if pi and pi.shipping_cost else '0.00' }}</strong></small>
+                        <small class="text-muted">客户费用 / 折扣： <strong id="shipping_display">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.shipping_cost) if pi and pi.shipping_cost else '0.00' }}</strong></small>
                         <h6 class="text-muted mb-1 mt-2" id="total_label">订单总金额 ({{ pi.currency or 'USD' }})</h6>
-                        <h2 class="text-primary fw-bold mb-0" id="total_display">{{ '$' if not pi or pi.currency != 'RMB' else '¥' }}{{ '%.2f'|format(pi.grand_total) }}</h2>
+                        <h2 class="text-primary fw-bold mb-0" id="total_display">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</h2>
                         <input type="hidden" name="total_amount" id="total_input" value="{{ '%.2f'|format(pi.grand_total) }}">
                     </div>
                 </div>

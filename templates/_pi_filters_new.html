@@ -121,6 +121,7 @@
     {% if filtered_totals.USD %}<strong>${{ '%.2f'|format(filtered_totals.USD) }}</strong>{% endif %}
     {% if filtered_totals.USD and filtered_totals.RMB %} + {% endif %}
     {% if filtered_totals.RMB %}<strong>¥{{ '%.2f'|format(filtered_totals.RMB) }}</strong>{% endif %}
+    {% if filtered_totals.EUR %} <strong>€{{ '%.2f'|format(filtered_totals.EUR) }}</strong>{% endif %}
 </div>
 {% endif %}
 <script>

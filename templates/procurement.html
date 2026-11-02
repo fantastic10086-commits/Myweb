@@ -101,7 +101,7 @@ function numericValue(elementId) {
 }
 
 function currentExchangeRate() {
-    if (piCurrency === 'RMB') return savedExchangeRate;
+    if (piCurrency === 'RMB' || piCurrency === 'EUR') return savedExchangeRate;
     return numericValue('businessRate');
 }
 
@@ -698,8 +698,8 @@ function openProcurementPreview() {
         '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">供应商采购运费</div><strong class="fs-5">¥' + values.freight.toFixed(2) + '</strong></div></div>' +
         '<div class="col-md-3"><div class="border rounded p-3 h-100"><div class="text-muted small">差额（利润）</div><strong class="fs-5 ' + (values.profit >= 0 ? 'text-success' : 'text-danger') + '">¥' + values.profit.toFixed(2) + '</strong></div></div>' +
         '</div></div>';
-    if (piCurrency === 'USD') {
-        html += '<div class="alert alert-light border mt-3 mb-0 small">本单业务汇率：1 USD = ¥' + currentExchangeRate().toFixed(4) + '。订单产品金额已按该汇率折算成人民币。</div>';
+    if (piCurrency !== 'RMB') {
+        html += '<div class="alert alert-light border mt-3 mb-0 small">本单业务汇率：1 {{ pi.currency }} = ¥' + currentExchangeRate().toFixed(4) + '。订单产品金额已按该汇率折算成人民币。</div>';
     } else {
         html += '<div class="alert alert-light border mt-3 mb-0 small">原始订单币种为人民币，订单产品金额保持原值，不进行汇率换算。</div>';
     }
@@ -846,8 +846,8 @@ document.addEventListener('DOMContentLoaded', function() {
             <div>
                 <label for="businessRate" class="form-label small mb-1">本单业务汇率</label>
                 <div class="input-group input-group-sm" style="width:220px;">
-                    <span class="input-group-text">1 USD =</span>
-                    <input type="number" class="form-control" id="businessRate" min="0.0001" step="0.0001" value="{{ '%.4f'|format(pi_exchange_rate) }}" {% if pi.procurement_confirmed %}disabled{% endif %}>
+                    <span class="input-group-text">1 {{ pi.currency }} =</span>
+                    <input type="number" class="form-control" id="businessRate" min="0.0001" step="0.0001" value="{{ '%.4f'|format(pi_exchange_rate) }}" {% if pi.procurement_confirmed or pi.currency == 'EUR' %}disabled{% endif %}>
                     <span class="input-group-text">RMB</span>
                 </div>
             </div>
@@ -899,7 +899,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <th style="width:210px;">产品</th>
                         <th>规格</th>
                         <th class="text-end">PI 数量</th>
-                        <th class="text-end">PI 单价{% if pi.currency == 'USD' %}（USD / RMB）{% else %}（RMB）{% endif %}</th>
+                        <th class="text-end">PI 单价{% if pi.currency != 'RMB' %}（{{ pi.currency }} / RMB）{% else %}（RMB）{% endif %}</th>
                         <th>供应商</th>
                         <th class="text-end">采购单价（RMB）</th>
                         <th class="text-end">采购数量</th>
@@ -932,7 +932,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         </td>
                         <td class="small">{{ display_spec or '—' }}</td>
                         <td class="text-end">{{ item.quantity }}</td>
-                        <td class="text-end fw-semibold">{% if pi.currency == 'USD' %}<div>${{ '%.3f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.3f'|format(item.unit_price) }}</div>{% endif %}</td>
+                        <td class="text-end fw-semibold">{% if pi.currency != 'RMB' %}<div>{{ currency_symbol(pi.currency) }}{{ '%.3f'|format(item.unit_price) }}</div><div class="small text-muted order-unit-price-rmb">¥0.00</div>{% else %}<div class="order-unit-price-rmb">¥{{ '%.3f'|format(item.unit_price) }}</div>{% endif %}</td>
                         <td>
                             <div class="input-group input-group-sm" style="min-width:180px;">
                                 <select class="form-select proc-supplier" {% if pi.procurement_confirmed %}disabled{% endif %}>

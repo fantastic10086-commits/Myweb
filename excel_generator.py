@@ -1,3 +1,4 @@
+from currency_utils import currency_symbol
 from customer_adjustments import adjustment_description, adjustment_rows
 """
 PI Excel Generator — matches PDF side-by-side layout, A4 portrait.
@@ -9,7 +10,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.worksheet.page import PageMargins
 
-CUR_SYMBOL = {'USD': '$', 'RMB': '¥'}
+CUR_SYMBOL = {'USD': '$', 'RMB': '¥', 'EUR': '€'}
 BRANDS = {
     'klista': 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
     'qisuo':  'Changzhou QISUO Welding and Cutting Equipment Co., Ltd.',

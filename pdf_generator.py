@@ -1,3 +1,4 @@
+from currency_utils import currency_symbol
 from customer_adjustments import adjustment_description, adjustment_rows
 """
 PI (Proforma Invoice) PDF Generator using ReportLab.
@@ -141,10 +142,10 @@ def _draw_page_template(canvas: canvas.Canvas, doc):
 
 
 def currency_symbol(cur):
-    return '¥' if cur == 'RMB' else '$'
+    return currency_symbol(cur)
 
 def currency_label(cur):
-    return 'RMB' if cur == 'RMB' else 'USD'
+    return cur if cur in ('RMB', 'USD', 'EUR') else 'USD'
 
 def generate_pi_pdf(pi, output_dir, salesperson_info=None):
     """

@@ -1,4 +1,4 @@
-{% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+{% set sym = currency_symbol(pi.currency) %}
 <!-- Action buttons -->
 <div class="text-end mb-3" style="max-width:750px;margin:0 auto;">
     {% if pi.pdf_path %}<a href="{{ url_for('pi_download', id=pi.id) }}" class="btn btn-sm btn-danger me-1"><i class="bi bi-file-pdf"></i> 下载 PDF</a>{% endif %}

@@ -12,7 +12,7 @@
 </style>
 {% endblock %}
 {% block content %}
-{% set sym = '¥' if pi.currency == 'RMB' else '$' %}
+{% set sym = currency_symbol(pi.currency) %}
 <div class="row mb-3 align-items-center">
     <div class="col">
         <h2><i class="bi bi-eye me-2"></i>预览 PI {{ pi.pi_number }}</h2>
@@ -55,7 +55,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">本单业务汇率</label>
-                    <input type="text" class="form-control" value="1 USD = {{ '%.4f'|format(pi.exchange_rate or exchange_rate) }} RMB" readonly>
+                    <input type="text" class="form-control" value="{% if pi.currency == 'EUR' %}1 EUR = {{ pi.eur_usd_rate }} USD / {{ pi.eur_rmb_rate }} RMB{% else %}1 USD = {{ '%.4f'|format(pi.exchange_rate or exchange_rate) }} RMB{% endif %}" readonly>
                     <small class="text-muted">用于本单报价、采购和利润核算；不会随系统默认汇率变化。</small>
                 </div>
                 <div class="mb-3">
@@ -170,7 +170,7 @@
                         <tr>
                             <td>{{ expense.category }}</td>
                             <td class="text-muted">{{ expense.note or '-' }}</td>
-                            <td class="text-end fw-semibold">{{ '¥' if expense.currency == 'RMB' else '$' }}{{ '%.2f'|format(expense.amount) }}</td>
+                            <td class="text-end fw-semibold">{{ currency_symbol(expense.currency) }}{{ '%.2f'|format(expense.amount) }}</td>
                             <td class="text-center">
                                 {% if expense.attachment %}
                                 <a href="{{ url_for('expense_attachment', id=expense.id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">

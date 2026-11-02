@@ -1,0 +1,7 @@
+<div id="eur-rate-fields" class="row g-2 mb-3" style="display:none">
+  <div class="col-md-6"><label class="form-label">1 EUR = USD</label><input class="form-control pi-structural-control" type="number" step="0.000001" min="0.000001" name="eur_usd_rate" id="eur_usd_rate" value="{{ request.form.get('eur_usd_rate', pi.eur_usd_rate if pi is defined and pi else '') or '' }}"></div>
+  <div class="col-md-6"><label class="form-label">1 EUR = RMB</label><input class="form-control pi-structural-control" type="number" step="0.000001" min="0.000001" name="eur_rmb_rate" id="eur_rmb_rate" value="{{ request.form.get('eur_rmb_rate', pi.eur_rmb_rate if pi is defined and pi else '') or '' }}"></div>
+  <input type="hidden" name="fx_reference_date" id="fx_reference_date" value="{{ request.form.get('fx_reference_date', pi.fx_reference_date if pi is defined and pi else '') or '' }}">
+  <input type="hidden" name="fx_source" id="fx_source" value="{{ request.form.get('fx_source', pi.fx_source if pi is defined and pi else '') or '' }}">
+  <div class="col-12"><button type="button" class="btn btn-sm btn-outline-primary pi-structural-control" id="fetch-eur-rates">获取最新参考汇率</button> <small id="eur-rate-status" class="text-muted">按本单保存，可手动调整；用于业绩和利润折算。</small></div>
+</div>

@@ -1,3 +1,4 @@
+from currency_utils import currency_symbol, to_usd as currency_to_usd, to_rmb as currency_to_rmb, positive_rate
 """
 Flask PI Management System
 Foreign Trade Proforma Invoice Generator
@@ -407,7 +408,7 @@ def _migrate_db():
             'customs_tax_exemption': ('VARCHAR(100)', "'照章征税'"),
             'customs_elements': ('TEXT', "''"),
         },
-        'pis': {'customer_adjustments': ('JSON', 'NULL'), 'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
+        'pis': {'eur_usd_rate': ('FLOAT', 'NULL'), 'eur_rmb_rate': ('FLOAT', 'NULL'), 'fx_reference_date': ('VARCHAR(10)', "''"), 'fx_source': ('VARCHAR(100)', "''"), 'customer_adjustments': ('JSON', 'NULL'), 'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
         'payments': {
             'order_no': 'VARCHAR(200)',
@@ -628,6 +629,10 @@ def _migrate_db():
                                 max(coalesce(payment_totals.received_with_fee, 0), 0),
                                 max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
                             ) / :performance_rate
+                            WHEN upper(coalesce(pi.currency, 'USD')) = 'EUR' THEN min(
+                                max(coalesce(payment_totals.received_with_fee, 0), 0),
+                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
+                            ) * pi.eur_usd_rate
                             ELSE min(
                                 max(coalesce(payment_totals.received_with_fee, 0), 0),
                                 max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
@@ -697,6 +702,21 @@ def _get_exchange_rate():
     except (TypeError, ValueError):
         return DEFAULT_BUSINESS_EXCHANGE_RATE
     return rate if math.isfinite(rate) and rate > 0 else DEFAULT_BUSINESS_EXCHANGE_RATE
+
+
+
+def _eur_snapshot(form, currency, previous=None):
+    if currency != 'EUR':
+        return dict(eur_usd_rate=None, eur_rmb_rate=None, fx_reference_date='', fx_source='')
+    result = {}
+    for key in ('eur_usd_rate', 'eur_rmb_rate'):
+        result[key] = positive_rate(form.get(key, getattr(previous, key, None)))
+    reference_date = form.get('fx_reference_date', getattr(previous, 'fx_reference_date', '') or '')[:10]
+    if reference_date:
+        datetime.strptime(reference_date, '%Y-%m-%d')
+    result.update(fx_reference_date=reference_date,
+                  fx_source=form.get('fx_source', getattr(previous, 'fx_source', '') or '手动填写')[:100])
+    return result
 
 
 CUSTOMER_TYPE_DEFAULTS = (
@@ -2130,7 +2150,7 @@ def _recalculate_customer_deal(customer):
         # A customer cannot receive more deal credit from one PI than the
         # amount invoiced, even when an overpayment or fee crosses the total.
         deal_amount = min(max(received_with_fee, 0), max(pi.grand_total, 0))
-        total += deal_amount / PERFORMANCE_EXCHANGE_RATE if (pi.currency or 'USD').upper() == 'RMB' else deal_amount
+        total += currency_to_usd(pi, deal_amount, performance=True)
     customer.total_deal_usd = round(total, 2)
 
 def _validate_pi_item_image(file):
@@ -2620,6 +2640,7 @@ def profile():
             func.coalesce(func.sum(
                 db.case(
                     (PI.currency == 'RMB', (PI.total_amount + func.coalesce(PI.shipping_cost, 0)) / saved_pi_rate),
+                    (PI.currency == 'EUR', (PI.total_amount + func.coalesce(PI.shipping_cost, 0)) * PI.eur_usd_rate),
                     else_=(PI.total_amount + func.coalesce(PI.shipping_cost, 0))
                 )
             ), 0).label('total_amount'),
@@ -3749,6 +3770,7 @@ def sales_stats():
     amount_usd = func.sum(
         db.case(
             (PI.currency == 'RMB', PI.received_amount / PERFORMANCE_EXCHANGE_RATE),
+            (PI.currency == 'EUR', PI.received_amount * PI.eur_usd_rate),
             else_=PI.received_amount
         )
     )
@@ -3795,7 +3817,7 @@ def sales_stats():
     all_filtered_pis = pi_detail_q.all()
 
     # Check if any PI is in RMB
-    has_rmb = any(pi.currency == 'RMB' for pi in all_filtered_pis)
+    has_rmb = any(pi.currency != 'USD' for pi in all_filtered_pis)
 
     return render_template('sales_stats.html',
                            stats=results,
@@ -3897,8 +3919,10 @@ def fees_report():
     pi_list = []
     for pi in pis:
         exchange_rate = _pi_exchange_rate(pi)
+        if pi.currency == 'EUR':
+            exchange_rate = positive_rate(pi.eur_rmb_rate)
         currency = (pi.currency or 'USD').upper()
-        sym = '¥' if currency == 'RMB' else '$'
+        sym = currency_symbol(currency)
         product_revenue_rmb = to_rmb(pi.product_subtotal, currency, exchange_rate)
         adjustment_rmb = to_rmb(pi.other_charges, currency, exchange_rate)
         order_revenue_rmb = product_revenue_rmb + adjustment_rmb
@@ -3941,14 +3965,14 @@ def fees_report():
         recorded_expense_rmb = 0.0
         for expense in sorted(pi.expenses, key=lambda item: item.created_at or datetime.min, reverse=True):
             expense_currency = (expense.currency or 'RMB').upper()
-            amount_rmb = to_rmb(expense.amount, expense_currency, exchange_rate)
+            amount_rmb = currency_to_rmb(pi, expense.amount, expense_currency)
             recorded_expense_rmb += amount_rmb
             expense_lines.append({
                 'id': expense.id,
                 'category': expense.category,
                 'amount': finite_amount(expense.amount),
                 'currency': expense_currency,
-                'symbol': '¥' if expense_currency == 'RMB' else '$',
+                'symbol': currency_symbol(expense_currency),
                 'amount_rmb': round(amount_rmb, 2),
                 'note': expense.note or '',
                 'has_attachment': bool(expense.attachment),
@@ -5528,8 +5552,8 @@ def account_add():
             flash(str(exc), 'danger')
             return render_template('account_form.html', a=None, editing=False), 400
         currency = request.form.get('currency', 'USD').strip().upper()
-        if currency not in {'USD', 'RMB'}:
-            flash('收款账户币种只能选择美元或人民币。', 'danger')
+        if currency not in {'USD', 'RMB', 'EUR'}:
+            flash('收款账户币种只能选择美元、人民币或欧元。', 'danger')
             return render_template('account_form.html', a=None, editing=False), 400
         account = Account(
             name=request.form.get('name','').strip(),
@@ -5572,8 +5596,8 @@ def account_edit(id):
             flash(str(exc), 'danger')
             return render_template('account_form.html', a=a, editing=True), 400
         currency = request.form.get('currency', 'USD').strip().upper()
-        if currency not in {'USD', 'RMB'}:
-            flash('收款账户币种只能选择美元或人民币。', 'danger')
+        if currency not in {'USD', 'RMB', 'EUR'}:
+            flash('收款账户币种只能选择美元、人民币或欧元。', 'danger')
             return render_template('account_form.html', a=a, editing=True), 400
         account_fields = ['name', 'company_name', 'country_region', 'beneficiary_address',
                           'bank_name', 'bank_address', 'account_no', 'swift_code',
@@ -5920,7 +5944,7 @@ def _pi_create_postback_data(form, draft=None):
     """Rebuild the Create PI browser state after a validation error."""
     field_names = {
         'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency',
-        'company', 'exchange_rate', 'issue_date', 'payment_terms',
+        'company', 'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'exchange_rate', 'issue_date', 'payment_terms',
         'price_terms', 'delivery_time', 'bank_info', 'shipping_address',
         'shipping_cost', 'shipping_note', 'adjustment_operation', 'customer_adjustments_json',
     }
@@ -6010,7 +6034,7 @@ def pi_draft_save():
             row.pop('imageFile', None)
         fields = {key: value for key, value in request.form.items() if key in {
             'customer_id', 'contact_id', 'salesperson', 'notes', 'account_id', 'currency', 'company',
-            'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
+            'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'exchange_rate', 'issue_date', 'payment_terms', 'price_terms', 'delivery_time',
             'bank_info', 'shipping_address', 'shipping_cost', 'shipping_note',
             'adjustment_operation', 'customer_adjustments_json'}}
         if fields.get('customer_id'):
@@ -6099,8 +6123,12 @@ def pi_create():
             return render_postback('请填写 PI 备注。')
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', '').strip().upper()
-        if currency not in {'USD', 'RMB'}:
+        if currency not in {'USD', 'RMB', 'EUR'}:
             abort(400, description='请选择币种后生成 PI。')
+        try:
+            eur_snapshot = _eur_snapshot(request.form, currency, locals().get('pi'))
+        except (ValueError, TypeError) as exc:
+            return render_postback(str(exc))
         try:
             business_exchange_rate = _nonnegative_float(
                 request.form.get('exchange_rate', str(_get_exchange_rate())),
@@ -6118,6 +6146,12 @@ def pi_create():
         if not is_admin() and selected_account:
             currency = selected_account.currency or 'USD'
             company = company if company in selected_account.brands else selected_account.primary_brand
+        try:
+            eur_snapshot = _eur_snapshot(request.form, currency)
+        except (ValueError, TypeError) as exc:
+            return render_postback(str(exc))
+        if selected_account.currency != currency:
+            return render_postback('收款账户币种必须与 PI 一致。')
         if company not in {'klista', 'qisuo'}:
             abort(400)
 
@@ -6201,6 +6235,7 @@ def pi_create():
             salesperson=salesperson,
             currency=currency,
             exchange_rate=business_exchange_rate,
+            **eur_snapshot,
             company=company,
             total_amount=total_amount,
             shipping_cost=shipping_cost,
@@ -6248,7 +6283,7 @@ def pi_create():
             return render_postback(f'生成 PDF 失败：{str(e)}；填写内容已保留，可重试。')
 
         _audit('create', 'pi', pi.id, f'新增 PI：{pi.pi_number}',
-               after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
+               after=_snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version']))
         db.session.commit()
         flash(f'PI {pi_number} 已创建并生成 PDF。', 'success')
         return redirect(url_for('pi_detail', id=pi.id))
@@ -6452,7 +6487,7 @@ def pi_list():
         if not has_record:
             dispatch_summaries[pi.id] = ''
             continue
-        expense_total = sum((expense.amount or 0) * (_pi_exchange_rate(pi) if expense.currency == 'USD' else 1)
+        expense_total = sum(currency_to_rmb(pi, expense.amount, expense.currency)
                             for expense in pi.expenses)
         dispatch_summaries[pi.id] = ' · '.join(part for part in [
             pi.freight_forwarder or '',
@@ -6467,8 +6502,9 @@ def pi_list():
 
     # Total for this filtered set
     filtered_totals = {
-        'USD': round(sum(pi.grand_total for pi in pis if pi.currency != 'RMB'), 2),
+        'USD': round(sum(pi.grand_total for pi in pis if pi.currency == 'USD'), 2),
         'RMB': round(sum(pi.grand_total for pi in pis if pi.currency == 'RMB'), 2),
+        'EUR': round(sum(pi.grand_total for pi in pis if pi.currency == 'EUR'), 2),
     }
 
     resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
@@ -7717,7 +7753,7 @@ def pi_toggle_paid(id):
     pi_grand_total = pi.grand_total
     current_received = sum(p.amount for p in _active_payments(pi.id))
     if current_received + amount > pi_grand_total:
-        sym = '¥' if pi.currency == 'RMB' else '$'
+        sym = currency_symbol(pi.currency)
         remaining = pi_grand_total - current_received
         flash(f'回款金额超过 PI 总额。剩余可收：{sym}{remaining:,.2f}（PI 总额：{sym}{pi_grand_total:,.2f}）', 'danger')
         return redirect(request.referrer or url_for('pi_list'))
@@ -7787,7 +7823,7 @@ def pi_toggle_paid(id):
         raise
 
     # ── DingTalk 喜报 ──
-    sym = '¥' if (pi.currency == 'RMB') else '$'
+    sym = currency_symbol(pi.currency)
     cust_name = pi.customer.name if pi.customer else '未知客户'
     sp_name = pi.salesperson or '未分配'
     status = '🎉 全额付清' if pi.paid else ('📥 部分付款' if pi.received_amount > 0 else '📝 首笔付款')
@@ -8067,6 +8103,8 @@ def pi_copy(id):
         salesperson=original.salesperson,
         currency=original.currency or 'USD',
         exchange_rate=_pi_exchange_rate(original),
+        eur_usd_rate=original.eur_usd_rate, eur_rmb_rate=original.eur_rmb_rate,
+        fx_reference_date=original.fx_reference_date, fx_source=original.fx_source,
         company=original.company or 'klista',
         total_amount=original.total_amount,
         customer_adjustments=copy.deepcopy(original.customer_adjustments),
@@ -8123,7 +8161,7 @@ def _preload_products(pi):
     for item in pi.items:
         prod = item.product
         if prod:
-            price_usd = item.unit_price if pi.currency != 'RMB' else item.unit_price / pi_rate
+            price_usd = currency_to_usd(pi, item.unit_price)
             preload.append({'id': -item.id, 'productId': prod.id, 'itemId': item.id, 'name': item.display_name, 'code': item.display_code,
                             'originalCode': prod.product_code or '',
                             'originalName': prod.name, 'originalSpec': prod.specification or '',
@@ -8359,7 +8397,7 @@ def pi_edit(id):
             db.session.rollback()
             flash('该 PI 已被其他人修改，已重新加载最新版本，请核对后再次提交。', 'warning')
             return redirect(url_for('pi_edit', id=id))
-        before = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        before = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         before['items'] = [item.to_dict() for item in pi.items]
         old_customer_id = pi.customer_id
         customer_id = request.form.get('customer_id', type=int)
@@ -8379,6 +8417,11 @@ def pi_edit(id):
         notes = request.form.get('notes', '').strip()
         issue_date_str = request.form.get('issue_date', '').strip()
         currency = request.form.get('currency', 'USD').strip()
+        try:
+            eur_snapshot = _eur_snapshot(request.form, currency, pi)
+        except (ValueError, TypeError) as exc:
+            flash(str(exc), 'danger')
+            return redirect(url_for('pi_edit', id=id))
         try:
             business_exchange_rate = _nonnegative_float(
                 request.form.get('exchange_rate', str(_pi_exchange_rate(pi))),
@@ -8400,7 +8443,15 @@ def pi_edit(id):
             else:
                 currency = pi.currency or 'USD'
                 company = pi.company or 'klista'
-        if currency not in {'USD', 'RMB'} or company not in {'klista', 'qisuo'}:
+        try:
+            eur_snapshot = _eur_snapshot(request.form, currency, pi)
+        except (ValueError, TypeError) as exc:
+            flash(str(exc), 'danger')
+            return render_edit_page()
+        if selected_account and selected_account.currency != currency:
+            flash('收款账户币种必须与 PI 一致。', 'danger')
+            return render_edit_page()
+        if currency not in {'USD', 'RMB', 'EUR'} or company not in {'klista', 'qisuo'}:
             abort(400)
 
         if not customer_id:
@@ -8468,6 +8519,9 @@ def pi_edit(id):
             shipping_cost=shipping_cost,
             selected_items=selected_items,
         )
+        for rate_key in ('eur_usd_rate', 'eur_rmb_rate'):
+            if getattr(pi, rate_key) != eur_snapshot[rate_key]:
+                structural_changes.append('欧元汇率 ' + rate_key)
         if downstream_impact['has_downstream'] and structural_changes:
             if not is_admin():
                 flash(
@@ -8500,6 +8554,8 @@ def pi_edit(id):
         pi.salesperson = salesperson
         pi.currency = currency
         pi.exchange_rate = business_exchange_rate
+        for key, value in eur_snapshot.items():
+            setattr(pi, key, value)
         pi.company = company
         pi.issue_date = issue_date
         pi.payment_terms = payment_terms or '100% TT before shipment'
@@ -8551,7 +8607,7 @@ def pi_edit(id):
             return render_edit_page()
 
         pi.version = (pi.version or 1) + 1
-        after = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
+        after = _snapshot(pi, ['pi_number', 'customer_id', 'contact_snapshot', 'issue_date', 'salesperson', 'currency', 'exchange_rate', 'eur_usd_rate', 'eur_rmb_rate', 'fx_reference_date', 'fx_source', 'company', 'total_amount', 'shipping_cost', 'shipping_note', 'shipping_note_en', 'customer_adjustments', 'payment_terms', 'price_terms', 'delivery_time', 'bank_info', 'bank_receiving_account_id', *BANK_SNAPSHOT_FIELDS, 'notes', 'version'])
         after['items'] = [item.to_dict() for item in pi.items]
         if structural_changes:
             after['structural_changes'] = structural_changes
@@ -8582,8 +8638,10 @@ def _apply_form_to_pi(form, pi):
             pi, account, form.get('bank_info', ''), preserve_existing=not account
         )
     pi.currency = form.get('currency', pi.currency or 'USD').strip()
-    if pi.currency not in {'USD', 'RMB'}:
+    if pi.currency not in {'USD', 'RMB', 'EUR'}:
         raise ValueError('不支持该币种。')
+    for key, value in _eur_snapshot(form, pi.currency, pi).items():
+        setattr(pi, key, value)
     pi.payment_terms = form.get('payment_terms', '').strip()
     pi.price_terms = _selectable_or_manual_field(
         'price_terms', form.get('price_terms', pi.price_terms or '')
@@ -8708,6 +8766,8 @@ def _pi_export_copy(pi):
         issue_date=pi.issue_date,
         salesperson=pi.salesperson,
         currency=pi.currency,
+        exchange_rate=pi.exchange_rate, eur_usd_rate=pi.eur_usd_rate, eur_rmb_rate=pi.eur_rmb_rate,
+        fx_reference_date=pi.fx_reference_date, fx_source=pi.fx_source,
         company=pi.company,
         payment_terms=pi.payment_terms,
         price_terms=pi.price_terms,
@@ -9378,7 +9438,7 @@ def procurement_page(pi_id):
         existing=existing,
         procurement_records=procurement_records,
         readonly=readonly,
-        pi_exchange_rate=_pi_exchange_rate(pi),
+        pi_exchange_rate=positive_rate(pi.eur_rmb_rate) if pi.currency == 'EUR' else _pi_exchange_rate(pi),
     ))
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     return resp
@@ -9617,7 +9677,8 @@ def api_procurement_save():
         )
         db.session.add(proc)
 
-    pi.exchange_rate = business_exchange_rate
+    if pi.currency != 'EUR':
+        pi.exchange_rate = business_exchange_rate
     pi.supplier_freight_cost = supplier_freight_cost
     pi.procurement_status = '部分采购' if normalized_items else '待采购'
     _audit('update', 'procurement', pi.id, '暂存采购单明细' if draft else '保存采购单明细',
@@ -10246,6 +10307,8 @@ def inject_globals():
         'current_user': user,
         'is_admin': is_admin(),
         'exchange_rate': _get_exchange_rate(),
+        'currency_symbol': currency_symbol,
+        'currency_to_usd': currency_to_usd,
         'performance_exchange_rate': PERFORMANCE_EXCHANGE_RATE,
         'today_str': date.today().strftime('%Y-%m-%d'),
         'maintenance': _maintenance_state(settings),
@@ -10269,6 +10332,19 @@ register_mobile_photos(
     validate_file=_validate_customer_file, save_file=_save_customer_file,
     remove_file=_remove_upload, audit=_audit, thumbnail=_ensure_product_thumbnail,
 )
+
+@app.route('/api/exchange-rates/eur')
+@login_required
+def eur_reference_rates():
+    from fx_rates import latest_eur_rates
+    try:
+        response = jsonify(latest_eur_rates())
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except Exception:
+        app.logger.warning('EUR reference rate retrieval failed', exc_info=True)
+        return jsonify(error='参考汇率暂时无法获取，请手动填写两项欧元汇率。'), 503
+
 
 from list_preferences import register_list_preferences
 register_list_preferences(app, get_current_user)

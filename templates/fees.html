@@ -186,12 +186,12 @@ function deleteExpense(id) {
                         <td class="text-end">
                             <div class="profit-main-value">{{ p.sym }}{{ '%.2f'|format(p.order_revenue) }}</div>
                             <div class="profit-muted text-end">产品 {{ p.sym }}{{ '%.2f'|format(p.product_revenue) }}{% if p.adjustment %} · 费用/折扣 {% if p.adjustment > 0 %}+{% endif %}{{ p.sym }}{{ '%.2f'|format(p.adjustment) }}{% endif %}</div>
-                            {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
+                            {% if p.currency != 'RMB' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
                         </td>
                         <td class="text-end">
                             <div class="profit-main-value">{{ p.sym }}{{ '%.2f'|format(p.received) }}</div>
                             <div class="profit-muted">回款进度 {{ '%.1f'|format(p.receipt_ratio) }}% · 未回款 {{ p.sym }}{{ '%.2f'|format(p.unpaid) }}</div>
-                            {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.received_rmb) }}</div>{% endif %}
+                            {% if p.currency != 'RMB' %}<div class="profit-muted text-end">折合 ¥{{ '%.2f'|format(p.received_rmb) }}</div>{% endif %}
                         </td>
                         <td class="text-end"><div class="profit-main-value">¥{{ '%.2f'|format(p.total_actual_cost_rmb) }}</div><div class="profit-muted">整单已登记成本</div></td>
                         <td class="text-end">
@@ -224,7 +224,7 @@ function deleteExpense(id) {
                                                     <span>{% if p.adjustment > 0 %}+ {% elif p.adjustment < 0 %}− {% endif %}{{ p.sym }}{{ '%.2f'|format(p.adjustment_abs) }}</span>
                                                 </div>
                                                 <div class="profit-line profit-total-line"><span>订单总金额</span><strong>{{ p.sym }}{{ '%.2f'|format(p.order_revenue) }}</strong></div>
-                                                {% if p.currency == 'USD' %}<div class="profit-muted text-end">折合人民币 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
+                                                {% if p.currency != 'RMB' %}<div class="profit-muted text-end">折合人民币 ¥{{ '%.2f'|format(p.order_revenue_rmb) }}</div>{% endif %}
                                                 <h6 class="mt-4"><i class="bi bi-cash-stack me-1"></i>实际回款构成</h6>
                                                 {% for payment in p.payment_lines %}
                                                 <div class="profit-muted d-flex justify-content-between gap-2 ms-2">
@@ -257,7 +257,7 @@ function deleteExpense(id) {
                                                 {% for e in p.expense_lines %}
                                                 <div class="profit-muted d-flex justify-content-between gap-2 ms-2">
                                                     <span>· {{ e.category }}{% if e.note %}（{{ e.note }}）{% endif %}{% if e.has_attachment %}<a href="{{ url_for('expense_attachment', id=e.id) }}" target="_blank" rel="noopener" class="ms-1 text-decoration-none"><i class="bi bi-paperclip"></i>查看凭证</a>{% endif %}</span>
-                                                    <span class="text-nowrap">{{ e.symbol }}{{ '%.2f'|format(e.amount) }}{% if e.currency == 'USD' %} ≈ ¥{{ '%.2f'|format(e.amount_rmb) }}{% endif %}<a href="javascript:void(0)" onclick="deleteExpense({{ e.id }})" class="text-danger ms-1" title="删除费用"><i class="bi bi-x-circle"></i></a></span>
+                                                    <span class="text-nowrap">{{ e.symbol }}{{ '%.2f'|format(e.amount) }}{% if e.currency != 'RMB' %} ≈ ¥{{ '%.2f'|format(e.amount_rmb) }}{% endif %}<a href="javascript:void(0)" onclick="deleteExpense({{ e.id }})" class="text-danger ms-1" title="删除费用"><i class="bi bi-x-circle"></i></a></span>
                                                 </div>
                                                 {% else %}
                                                 <div class="profit-muted ms-2">暂无业务员登记的真实成本。</div>
@@ -272,7 +272,7 @@ function deleteExpense(id) {
                                         </div>
                                     </div>
                                     <div class="d-flex flex-wrap justify-content-between gap-2 mt-2 profit-muted">
-                                        <span>本单汇率：1 USD = ¥{{ '%.4f'|format(p.exchange_rate) }} · 回款结余 = 累计实收金额 − 整单已登记实际成本</span>
+                                        <span>本单汇率：1 {{ p.currency if p.currency != 'RMB' else 'USD' }} = ¥{{ '%.4f'|format(p.exchange_rate) }} · 回款结余 = 累计实收金额 − 整单已登记实际成本</span>
                                         {% if p.potential_duplicate_freight %}<span class="text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>供应商采购运费与运费类真实成本同时存在，请检查是否重复记账。</span>{% endif %}
                                     </div>
                                 </div>

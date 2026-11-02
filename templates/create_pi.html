@@ -100,7 +100,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
 
     function getCurrency() {
         var cs = document.getElementById('currency_select');
-        return cs && cs.value === 'RMB' ? 'RMB' : 'USD';
+        return cs && ['USD','RMB','EUR'].includes(cs.value) ? cs.value : 'USD';
     }
     function getBusinessRate() {
         var el = document.getElementById('exchange_rate');
@@ -108,13 +108,13 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         return isFinite(rate) && rate > 0 ? rate : defaultBusinessRate;
     }
     function fromUsd(value) {
-        return getCurrency() === 'RMB' ? value * getBusinessRate() : value;
+        return value * window.piUsdFactor();
     }
     function toUsd(value) {
-        return getCurrency() === 'RMB' ? value / getBusinessRate() : value;
+        return value / window.piUsdFactor();
     }
     function getSymbol() {
-        return getCurrency() === 'RMB' ? '¥' : '$';
+        return ({RMB:'¥',USD:'$',EUR:'€'})[getCurrency()];
     }
     function signedAdjustment() {
         var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
@@ -336,7 +336,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     function productEntryReady() {
         var account = document.getElementById('account_select');
         var currency = document.getElementById('currency_select');
-        return !!(account && account.value && currency && ['USD', 'RMB'].includes(currency.value));
+        return !!(account && account.value && currency && ['USD', 'RMB', 'EUR'].includes(currency.value));
     }
     function updateProductEntryGate() {
         var ready = productEntryReady();
@@ -347,13 +347,15 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
     }
 
     function applyCurrency() {
+        if(window.updateEurCurrency)window.updateEurCurrency();
         updateProductEntryGate();
         var selectedCurrency = document.getElementById('currency_select').value;
         var currency = getCurrency();
         document.getElementById('currency_hidden').value = selectedCurrency;
         document.getElementById('total_label').textContent = '订单总金额 (' + currency + ')';
-        document.getElementById('shipping_sym').textContent = currency === 'RMB' ? '¥' : '$';
+        document.getElementById('shipping_sym').textContent = ({RMB:'¥',USD:'$',EUR:'€'})[currency];
         repriceForCurrency();
+        document.dispatchEvent(new Event('pi-currency-applied'));
     }
 
     function updatePickerSelectionState() {
@@ -399,7 +401,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
                 '<td><div class="fw-semibold">' + escHtml(p.name) + '</div>' + (p.chinese_name ? '<small class="text-muted">' + escHtml(p.chinese_name) + '</small>' : '') + '</td>' +
                 '<td><span class="font-monospace">' + escHtml(p.code || '—') + '</span></td>' +
                 '<td class="text-muted">' + escHtml(p.spec || '—') + '</td>' +
-                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() === 'RMB' ? '<br><small class="text-muted">≈ ¥' + p.price.toFixed(3) + '</small>' : '') + '</td>' +
+                '<td class="text-end fw-semibold">$' + p.priceUsd.toFixed(3) + (getCurrency() !== 'USD' ? '<br><small class="text-muted">≈ '+getSymbol()+ p.price.toFixed(3) + '</small>' : '') + '</td>' +
                 '<td class="text-center">' + (alreadyAdded ? '<span class="badge bg-secondary">已加入</span>' : '') + '</td>';
             body.appendChild(tr);
         }
@@ -553,7 +555,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         curSel.addEventListener('change', applyCurrency);
         document.getElementById('exchange_rate').addEventListener('change', function() {
             if (!(parseFloat(this.value) > 0)) this.value = Number(defaultBusinessRate).toFixed(4);
-            if (getCurrency() === 'RMB') repriceForCurrency();
+            if (getCurrency() !== 'USD') repriceForCurrency();
         });
         document.getElementById('shipping_cost').addEventListener('input', function() {
             adjustmentUsd = toUsd(signedAdjustment() - (window.piExtraAdjustmentTotal ? window.piExtraAdjustmentTotal() : 0));
@@ -815,8 +817,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="mb-3"><label for="notes" class="form-label">PI 备注 <span class="text-danger">*</span></label><textarea class="form-control" id="notes" name="notes" rows="2" placeholder="该 PI 的其他备注……" required>{{ request.form.get('notes', '') }}</textarea></div>
                     <div class="mb-3"><label for="account_select" class="form-label">收款账户 <span class="text-danger">*</span></label><select class="form-select" name="account_id" id="account_select" required onchange="onAccountChange()"><option value="">— 选择收款账户 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">选择后会整组带入收款人、账号、银行地址、SWIFT、Bank Code、Branch Code 和币种。</div></div>
-                    <div class="mb-3"><label class="form-label">币种 <span class="text-danger">*</span></label><select class="form-select" id="currency_select" required><option value="">— 请选择币种 —</option><option value="USD">USD ($)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value=""></div>
-                    <div class="mb-3">
+                    <div class="mb-3"><label class="form-label">币种 <span class="text-danger">*</span></label><select class="form-select" id="currency_select" required><option value="">— 请选择币种 —</option><option value="USD">USD ($)</option><option value="EUR" >EUR (€)</option><option value="RMB">RMB (¥)</option></select><input type="hidden" name="currency" id="currency_hidden" value=""></div>
+                    {% include '_eur_rates.html' %}
+<div class="mb-3">
                         <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>
                         <div class="input-group"><span class="input-group-text">1 USD =</span><input type="number" class="form-control" id="exchange_rate" name="exchange_rate" min="0.0001" step="0.0001" value="{{ request.form.get('exchange_rate', exchange_rate) }}" required><span class="input-group-text">RMB</span></div>
                         <small class="text-muted">默认使用系统业务汇率，可单独调整；保存后用于本单报价、采购成本和利润核算，不随以后系统汇率变化。</small>

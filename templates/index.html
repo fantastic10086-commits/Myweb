@@ -114,7 +114,7 @@
                             <td>{{ pi.customer.name }}</td>
                             {% if current_user.role == 'admin' %}<td class="text-nowrap">{{ pi.salesperson or '—' }}</td>{% endif %}
                             <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
-                            <td class="text-end fw-bold"><span translate="no" class="notranslate">{% if pi.currency == 'RMB' %}¥{% else %}${% endif %}{{ '%.2f'|format(pi.grand_total) }}</span></td>
+                            <td class="text-end fw-bold"><span translate="no" class="notranslate">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</span></td>
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">查看</button>
                                 <a href="{{ url_for('pi_edit', id=pi.id) }}" class="btn btn-sm btn-outline-warning">编辑</a>

@@ -216,7 +216,7 @@
                                     {% endfor %}
                                     </small>
                                 </td>
-                                <td class="text-end">{{ '¥' if pi.currency == 'RMB' else '$' }}{{ '%.2f'|format(pi.grand_total) }}</td>
+                                <td class="text-end">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</td>
                                 <td class="text-end">
                                     <form action="{{ url_for('pi_copy', id=pi.id) }}" method="post" class="d-inline"
                                           onsubmit="return confirm('复制 PI {{ pi.pi_number }}? 全部信息会保留，仅更新日期。');">
@@ -256,7 +256,7 @@
                             <td><div>{{ item.code or '-' }}</div><small class="text-muted">{{ item.specification or '-' }}</small></td>
                             <td class="text-end fw-bold">{{ item.quantity }}</td>
                             <td class="text-end">{{ item.order_count }}</td>
-                            <td class="text-end">{{ '¥' if item.latest_currency == 'RMB' else '$' }}{{ '%.3f'|format(item.latest_unit_price) }}</td>
+                            <td class="text-end">{{ currency_symbol(item.latest_currency) }}{{ '%.3f'|format(item.latest_unit_price) }}</td>
                             <td><a href="{{ url_for('pi_detail', id=item.latest_pi_id) }}" class="text-decoration-none">{{ item.latest_date.strftime('%Y-%m-%d') if item.latest_date else '-' }}<small class="d-block">{{ item.latest_pi_number }}</small></a></td>
                         </tr>{% endfor %}</tbody>
                     </table>

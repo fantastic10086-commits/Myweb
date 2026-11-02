@@ -1,3 +1,4 @@
+from currency_utils import currency_symbol
 from customer_adjustments import adjustment_rows, adjustment_description
 """Safe Excel-template rendering and PDF conversion for PI exports."""
 
@@ -36,7 +37,7 @@ PLACEHOLDER_GROUPS = {
         ('salesperson_wechat', '业务员微信（同电话）'),
         ('salesperson_whatsapp', '业务员 WhatsApp（同电话）'),
         ('salesperson_email', '业务员邮箱'),
-        ('currency', '币种代码（USD/RMB）'),
+        ('currency', '币种代码（USD/RMB/EUR）'),
         ('currency_symbol', '币种符号（$/¥）'),
         ('payment_terms', '付款条款'),
         ('price_terms', '贸易条款'),
@@ -166,7 +167,7 @@ def _fixed_values(pi, salesperson_info):
         'salesperson_whatsapp': salesperson_phone,
         'salesperson_email': (salesperson_info or {}).get('email', ''),
         'currency': currency,
-        'currency_symbol': '¥' if currency == 'RMB' else '$',
+        'currency_symbol': currency_symbol(currency),
         'company_name': _company_name(pi),
         'company_address': _company_address(pi),
         'customer_name': getattr(customer, 'name', '') or '',
