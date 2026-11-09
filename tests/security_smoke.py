@@ -2073,7 +2073,7 @@ class SecuritySmokeTests(unittest.TestCase):
         )
         self.assertFalse(os.path.exists(image_path))
 
-    def test_pi_rate_defaults_from_settings_but_existing_pi_keeps_its_rate(self):
+    def test_pi_quote_default_is_fixed_65_but_existing_pi_keeps_its_rate(self):
         with application.app.app_context():
             original_settings = application._load_settings().copy()
             settings = original_settings.copy()
@@ -2088,8 +2088,8 @@ class SecuritySmokeTests(unittest.TestCase):
             self.login('alice')
             create_html = self.client.get('/pi/create').get_data(as_text=True)
             self.assertIn('name="exchange_rate"', create_html)
-            self.assertIn('value="8.25"', create_html)
-            self.assertIn('var defaultBusinessRate = 8.25;', create_html)
+            self.assertIn('value="6.5"', create_html)
+            self.assertIn('var defaultBusinessRate = 6.5;', create_html)
             self.assertNotIn("this.value = '7.0000'", create_html)
 
             edit_html = self.client.get(f'/pi/{self.alice_pi}/edit').get_data(as_text=True)
@@ -2298,36 +2298,24 @@ class SecuritySmokeTests(unittest.TestCase):
         finally:
             application._save_settings(original_settings)
 
-    def test_sales_performance_uses_fixed_seven_not_pi_or_default_rate(self):
+    def test_sales_performance_uses_saved_receipt_rate_not_pi_or_default_rate(self):
+        from models import FinanceReview
         with application.app.app_context():
-            original_settings = application._load_settings().copy()
-            settings = original_settings.copy()
-            settings['exchange_rate'] = '8.88'
-            application._save_settings(settings)
-            pi = db.session.get(PI, self.alice_pi)
-            original = {
-                'currency': pi.currency,
-                'exchange_rate': pi.exchange_rate,
-                'received_amount': pi.received_amount,
-                'paid': pi.paid,
-            }
-            pi.currency = 'RMB'
-            pi.exchange_rate = 9.5
-            pi.received_amount = 70
-            pi.paid = True
+            pi = PI(pi_number='PERFORMANCE-SNAPSHOT', customer_id=self.alice_customer,
+                    salesperson='Alice', currency='RMB', exchange_rate=9.5,
+                    received_amount=70, total_amount=70, paid=True)
+            db.session.add(pi); db.session.flush()
+            payment = Payment(pi_id=pi.id, amount=70, performance_usd_rate=0.2,
+                              performance_date=date(2026,10,30), performance_source='Frankfurter',
+                              performance_reference_date='2026-10-30')
+            db.session.add(payment); db.session.flush()
+            db.session.add(FinanceReview(kind='payment', record_id=payment.id, occurred_on=date(2026,10,30)))
             db.session.commit()
-        try:
-            self.login('alice')
-            html = self.client.get('/sales-stats').get_data(as_text=True)
-            self.assertIn('1 美元 = 7.00 人民币', html)
-            self.assertIn('$10.00', html)
-        finally:
-            with application.app.app_context():
-                pi = db.session.get(PI, self.alice_pi)
-                for key, value in original.items():
-                    setattr(pi, key, value)
-                db.session.commit()
-                application._save_settings(original_settings)
+        self.login('alice')
+        page = self.client.get('/sales-stats?date_from=2026-10-30&date_to=2026-10-30&sp=Alice').get_data(as_text=True)
+        self.assertIn('$14.00', page)
+        self.assertIn('0.200000 USD', page)
+        self.assertNotIn('业绩固定汇率', page)
 
     def test_procurement_status_is_record_driven_and_shipping_is_scoped_to_pi_owner(self):
         with application.app.app_context():

@@ -454,7 +454,7 @@
             <hr>
             <form id="paymentForm" method="post" enctype="multipart/form-data" onsubmit="return preparePaymentSubmit(this);">
                 <input type="hidden" name="idempotency_key" value="{{ payment_token }}">
-                <div class="mb-3 pay-date"><label class="form-label" for="payReceivedOn">实际到账日期 <span class="text-danger">*</span></label><input type="date" class="form-control" name="received_on" id="payReceivedOn" required></div>
+                <div class="mb-3 pay-date"><label class="form-label" for="payReceivedOn">实际到账日期 <span class="text-danger">*</span></label><input type="date" class="form-control" name="received_on" id="payReceivedOn" required onchange="updateUsdEquiv()"></div>
                 <div class="mb-3 pay-account">
                     <label class="form-label" for="payAccount">到账账户（确认） <span class="text-danger">*</span></label>
                     <select class="form-select" name="receiving_account_id" id="payAccount" required>
@@ -487,7 +487,7 @@
                     </div>
                 </div>
                 <div class="mb-3 pay-fee"><label class="form-label">手续费</label><input type="number" step="0.01" min="0" class="form-control" name="fee" id="payFee" oninput="updateUsdEquiv()"></div>
-                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">按业绩固定汇率（1 USD = 7 RMB）折合：<strong id="usdEquiv">$0.00</strong></small></div>
+                <div class="mb-3" id="usdEquivRow" style="display:none"><small class="text-muted">按到账日期参考汇率折合：<strong id="usdEquiv">$0.00</strong></small></div>
                 <button type="submit" class="btn btn-success w-100">登记回款</button>
             </form>
             </div>
@@ -1182,7 +1182,7 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
     if (window.paymentLiveCheck) window.paymentLiveCheck.reset(id);
     var usdRow = document.getElementById('usdEquivRow');
-    if (currency === 'RMB') {
+    if (currency === 'RMB' || currency === 'EUR') {
         usdRow.style.display = '';
         updateUsdEquiv();
     } else {
@@ -1190,11 +1190,35 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     }
     new bootstrap.Modal(document.getElementById('paymentModal')).show();
 }
-function updateUsdEquiv() {
+var receiptRateRequests = {};
+async function updateUsdEquiv() {
     if (window.paymentLiveCheck) window.paymentLiveCheck.amount();
-    var amt = parseFloat(document.getElementById('payAmount').value) || 0;
-    document.getElementById('usdEquiv').textContent = '$' + (amt / {{ performance_exchange_rate }}).toFixed(2);
+    var currency = document.getElementById('payCurrency').textContent;
+    var day = document.getElementById('payReceivedOn').value;
+    var output = document.getElementById('usdEquiv');
+    if (currency === 'USD') return;
+    if (!day) { output.textContent = '请选择实际到账日期'; return; }
+    output.textContent = '获取中…';
+    try {
+        if (!receiptRateRequests[day]) {
+            receiptRateRequests[day] = fetch('/api/exchange-rates/current?date=' + encodeURIComponent(day))
+                .then(function(response) { return response.json().then(function(data) {
+                    if (!response.ok) throw Error(data.error || '获取失败');
+                    return data;
+                }); }).catch(function(error) { delete receiptRateRequests[day]; throw error; });
+        }
+        var rates = await receiptRateRequests[day];
+        if (document.getElementById('payReceivedOn').value !== day || document.getElementById('payCurrency').textContent !== currency) return;
+        var rate = Number(currency === 'RMB' ? rates.rmb_usd_rate : rates.eur_usd_rate);
+        if (!(rate > 0 && Number.isFinite(rate))) throw Error('参考汇率无效');
+        var amount = parseFloat(document.getElementById('payAmount').value) || 0;
+        output.textContent = '$' + (amount * rate).toFixed(2) + ' · 1 ' + currency + ' = ' + rate.toFixed(6) + ' USD · 参考日期 ' + rates.fx_reference_date;
+    } catch (error) {
+        if (document.getElementById('payReceivedOn').value === day && document.getElementById('payCurrency').textContent === currency)
+            output.textContent = '参考汇率获取失败，请稍后重试';
+    }
 }
+
 function viewPayments(id) {
     fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
         currentPaymentPiId = id;
@@ -1213,7 +1237,7 @@ function viewPayments(id) {
         clearPaymentAttachment();
         populatePaymentAccounts(data.currency, data.default_account_id);
         document.getElementById('payAmount').value = (grandTotal - data.received).toFixed(2);
-        if (data.currency === 'RMB') {
+        if (data.currency === 'RMB' || data.currency === 'EUR') {
             document.getElementById('usdEquivRow').style.display = '';
             updateUsdEquiv();
         } else {

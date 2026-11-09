@@ -18,7 +18,7 @@ from models import db, PI, Payment, Expense, FinanceReview, FinanceAccount, Audi
 STATUS = {'unconfirmed': '付款待确认', 'unpaid': '未支付', 'paid': '已支付'}
 
 
-def register_finance_web(app, *, admin_required, current_user, audit):
+def register_finance_web(app, *, admin_required, current_user, audit, recalculate_customer=None):
     @app.after_request
     def protect_finance_cache(response):
         if request.path.startswith('/admin/finance'):
@@ -190,6 +190,15 @@ def register_finance_web(app, *, admin_required, current_user, audit):
             return go('记录已被其他管理员修改，请刷新后重新核对。')
         if request.form.get('source_signature') != signature(record, kind):
             return go('原始金额或凭证已变化，请刷新后重新核对。')
+        rate_snapshot = None
+        if kind == 'payment':
+            effective_date = occurred or (record.created_at + timedelta(hours=8)).date()
+            if effective_date != record.performance_date:
+                from fx_rates import receipt_performance_snapshot
+                try:
+                    rate_snapshot = receipt_performance_snapshot(record.pi.currency, effective_date)
+                except Exception:
+                    return go('无法获取新到账日期的业绩参考汇率，请稍后重试；修改尚未保存。')
         before = snapshot(review) if review else {}
         if not review:
             review = FinanceReview(kind=kind, record_id=record.id)
@@ -203,6 +212,14 @@ def register_finance_web(app, *, admin_required, current_user, audit):
         review.source_signature = signature(record, kind)
         review.checked_by = current_user().username if review.checked else ''
         review.checked_at = datetime.utcnow() if review.checked else None
+        if rate_snapshot:
+            before_rate = {key: getattr(record, key) for key in rate_snapshot}
+            for key, value in rate_snapshot.items():
+                setattr(record, key, value)
+            audit('update', 'payment_performance_rate', record.id, '到账日期变更，更新业绩汇率',
+                  before=before_rate, after=rate_snapshot)
+            if recalculate_customer and record.pi.customer:
+                recalculate_customer(record.pi.customer)
         try:
             db.session.flush()
             audit('update', 'finance_review', review.id, f'财务核对 {record.pi.pi_number if record.pi else "未关联PI"} {kind} #{record.id}', before=before, after=snapshot(review))

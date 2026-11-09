@@ -1,3 +1,4 @@
+from fx_rates import receipt_performance_snapshot, payment_to_usd
 from currency_utils import currency_symbol, to_usd as currency_to_usd, to_rmb as currency_to_rmb, positive_rate
 """
 Flask PI Management System
@@ -91,8 +92,7 @@ PACKING_TEMPLATE_DEFINITIONS = {
     ),
 }
 
-# Sales-performance reporting deliberately uses a stable rate so changing the
-# quotation/profit rate never rewrites a salesperson's historical performance.
+# Legacy performance rate is kept only for pre-snapshot migration compatibility.
 DEFAULT_BUSINESS_EXCHANGE_RATE = 6.5
 PERFORMANCE_EXCHANGE_RATE = 7.0
 
@@ -410,7 +410,7 @@ def _migrate_db():
         },
         'pis': {'eur_usd_rate': ('FLOAT', 'NULL'), 'eur_rmb_rate': ('FLOAT', 'NULL'), 'fx_reference_date': ('VARCHAR(10)', "''"), 'fx_source': ('VARCHAR(100)', "''"), 'customer_adjustments': ('JSON', 'NULL'), 'dispatch_no_expenses': ('BOOLEAN', '0'), 'freight_forwarder': ('VARCHAR(200)', "''"), 'shipping_paused': ('BOOLEAN', '0'), 'advance_slip': ('JSON', 'NULL'), 'advance_payment_required': ('BOOLEAN', '0'), 'contact_snapshot': ('JSON', 'NULL'), 'bank_receiving_account_id': ('INTEGER', 'NULL'), 'salesperson': 'VARCHAR(100)', 'currency': 'VARCHAR(3)', 'exchange_rate': ('FLOAT', '6.5'), 'company': 'VARCHAR(50)', 'excel_path': 'VARCHAR(500)', 'paid': 'BOOLEAN', 'received_amount': 'FLOAT', 'shipping_address': 'TEXT', 'shipping_note_en': 'TEXT', 'price_terms': 'VARCHAR(200)', 'delivery_time': 'VARCHAR(200)', 'bank_beneficiary_name': 'VARCHAR(300)', 'bank_account_no': 'VARCHAR(100)', 'bank_country_region': 'VARCHAR(100)', 'bank_beneficiary_address': 'TEXT', 'bank_name': 'VARCHAR(200)', 'bank_address': 'TEXT', 'bank_swift_code': 'VARCHAR(50)', 'bank_code': 'VARCHAR(50)', 'bank_branch_code': 'VARCHAR(50)', 'bank_currency': 'VARCHAR(3)', 'actual_shipping_cost': 'FLOAT', 'procurement_confirmed': 'BOOLEAN', 'shipping_completed': ('BOOLEAN', '0'), 'shipping_date': ('DATE', 'NULL'), 'shipping_tracking_no': ('VARCHAR(200)', "''"), 'shipping_record_note': ('TEXT', "''"), 'shipping_attachment': ('VARCHAR(500)', "''"), 'shipping_recorded_at': ('DATETIME', 'NULL'), 'shipping_recorded_by': ('VARCHAR(100)', "''"), 'procurement_status': ('VARCHAR(20)', "'未回款'"), 'customs_required': ('BOOLEAN', 'NULL'), 'customs_note': ('TEXT', "''"), 'customs_recorded_at': ('DATETIME', 'NULL'), 'customs_recorded_by': ('VARCHAR(100)', "''"), 'updated_at': ('DATETIME', 'NULL'), 'deleted_at': ('DATETIME', 'NULL'), 'version': ('INTEGER', '1')},
         'salespersons': {'phone': 'VARCHAR(50)', 'email': 'VARCHAR(200)', 'dingtalk_user_id': 'VARCHAR(100)'},
-        'payments': {
+        'payments': {'performance_usd_rate': ('FLOAT', 'NULL'), 'performance_date': ('DATE', 'NULL'), 'performance_reference_date': ('VARCHAR(10)', "''"), 'performance_source': ('VARCHAR(100)', "''"),
             'order_no': 'VARCHAR(200)',
             'order_no_normalized': 'VARCHAR(200)',
             'idempotency_key': 'VARCHAR(64)',
@@ -614,42 +614,29 @@ def _migrate_db():
         """))
         db.session.commit()
 
-    # Keep the stored customer total aligned with the current accounting rule:
-    # every active payment contributes amount + fee, RMB is converted at the
-    # fixed performance rate, and each PI contributes no more than its total.
-    # Running this during migration also corrects historical partial payments
-    # immediately after an upgrade without changing any payment or PI record.
+    # Stage legacy values until the explicit, backed-up history repricing job runs.
     if all(inspector.has_table(table) for table in ('customers', 'pis', 'payments')):
         db.session.execute(text("""
-            UPDATE customers
-               SET total_deal_usd = round(coalesce((
-                   SELECT sum(
-                       CASE WHEN upper(coalesce(pi.currency, 'USD')) = 'RMB'
-                            THEN min(
-                                max(coalesce(payment_totals.received_with_fee, 0), 0),
-                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
-                            ) / :performance_rate
-                            WHEN upper(coalesce(pi.currency, 'USD')) = 'EUR' THEN min(
-                                max(coalesce(payment_totals.received_with_fee, 0), 0),
-                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
-                            ) * pi.eur_usd_rate
-                            ELSE min(
-                                max(coalesce(payment_totals.received_with_fee, 0), 0),
-                                max(coalesce(pi.total_amount, 0) + coalesce(pi.shipping_cost, 0), 0)
-                            )
-                       END
-                   )
-                     FROM pis AS pi
-                     JOIN (
-                         SELECT pi_id, sum(coalesce(amount, 0) + coalesce(fee, 0)) AS received_with_fee
-                           FROM payments
-                          WHERE deleted_at IS NULL
-                          GROUP BY pi_id
-                     ) AS payment_totals ON payment_totals.pi_id = pi.id
-                    WHERE pi.customer_id = customers.id
-                      AND pi.deleted_at IS NULL
-               ), 0), 2)
-        """), {'performance_rate': PERFORMANCE_EXCHANGE_RATE})
+            UPDATE payments SET performance_usd_rate = (
+                SELECT CASE WHEN upper(coalesce(pi.currency, 'USD')) = 'RMB' THEN 1.0 / :rate
+                    WHEN upper(pi.currency) = 'EUR' THEN pi.eur_usd_rate ELSE 1.0 END
+                FROM pis pi WHERE pi.id = payments.pi_id),
+                performance_source = '历史汇率（保留）'
+            WHERE performance_usd_rate IS NULL
+        """), {'rate': PERFORMANCE_EXCHANGE_RATE})
+        db.session.execute(text("""
+            UPDATE customers SET total_deal_usd = round(coalesce((
+                SELECT sum(t.usd_total * CASE WHEN t.raw_total > 0 THEN
+                    min(t.raw_total, max(coalesce(pi.total_amount,0) + coalesce(pi.shipping_cost,0),0)) / t.raw_total
+                    ELSE 0 END)
+                FROM pis pi JOIN (
+                    SELECT pi_id, sum(coalesce(amount,0) + coalesce(fee,0)) raw_total,
+                        sum((coalesce(amount,0) + coalesce(fee,0)) * performance_usd_rate) usd_total
+                    FROM payments WHERE deleted_at IS NULL GROUP BY pi_id
+                ) t ON t.pi_id = pi.id
+                WHERE pi.customer_id = customers.id AND pi.deleted_at IS NULL
+            ),0),2)
+        """))
         db.session.commit()
 
 
@@ -694,14 +681,8 @@ def _save_settings(data):
             os.remove(tmp_path)
 
 def _get_exchange_rate():
-    """Return the validated default business rate for newly created PIs."""
-    try:
-        rate = float(_load_settings().get(
-            'exchange_rate', DEFAULT_BUSINESS_EXCHANGE_RATE
-        ) or DEFAULT_BUSINESS_EXCHANGE_RATE)
-    except (TypeError, ValueError):
-        return DEFAULT_BUSINESS_EXCHANGE_RATE
-    return rate if math.isfinite(rate) and rate > 0 else DEFAULT_BUSINESS_EXCHANGE_RATE
+    """Quotation default is fixed independently of receipt performance rates."""
+    return DEFAULT_BUSINESS_EXCHANGE_RATE
 
 
 
@@ -2150,7 +2131,9 @@ def _recalculate_customer_deal(customer):
         # A customer cannot receive more deal credit from one PI than the
         # amount invoiced, even when an overpayment or fee crosses the total.
         deal_amount = min(max(received_with_fee, 0), max(pi.grand_total, 0))
-        total += currency_to_usd(pi, deal_amount, performance=True)
+        usd_total = sum(payment_to_usd(p, pi, (p.amount or 0) + (p.fee or 0))
+                        for p in pi.active_payments)
+        total += usd_total * (deal_amount / received_with_fee) if received_with_fee > 0 else 0
     customer.total_deal_usd = round(total, 2)
 
 def _validate_pi_item_image(file):
@@ -2712,17 +2695,7 @@ def settings_page():
         settings['dingtalk_report_enabled'] = '1' if request.form.get('dingtalk_report_enabled') else '0'
         settings['dingtalk_task_enabled'] = '1' if request.form.get('dingtalk_task_enabled') else '0'
         settings['dingtalk_default_executors'] = _json.dumps(default_execs)
-        exchange_rate = request.form.get('exchange_rate', '').strip()
-        if exchange_rate:
-            try:
-                parsed_rate = _nonnegative_float(exchange_rate, '默认业务汇率')
-            except ValueError as exc:
-                flash(str(exc), 'danger')
-                return redirect(url_for('settings_page'))
-            if parsed_rate <= 0:
-                flash('默认业务汇率必须大于 0。', 'danger')
-                return redirect(url_for('settings_page'))
-            settings['exchange_rate'] = str(parsed_rate)
+        settings['exchange_rate'] = str(DEFAULT_BUSINESS_EXCHANGE_RATE)
         raw_waiting_days = request.form.get(
             'followup_days_waiting', settings.get('followup_days_waiting', '3')
         ).strip()
@@ -2752,9 +2725,7 @@ def settings_page():
                            dingtalk_appkey=settings.get('dingtalk_appkey', ''),
                            dingtalk_appsecret='',
                            dingtalk_agent_id=settings.get('dingtalk_agent_id', ''),
-                           exchange_rate=settings.get(
-                               'exchange_rate', DEFAULT_BUSINESS_EXCHANGE_RATE
-                           ),
+                           exchange_rate=_get_exchange_rate(),
                            followup_days_waiting=settings.get('followup_days_waiting', '3'),
                            webhook_ok=bool(settings.get('dingtalk_webhook')),
                            shu_kei_webhook_ok=bool(settings.get('dingtalk_shu_kei_webhook')),
@@ -3790,7 +3761,7 @@ def sales_stats():
     for payment, pi, received_on in rows:
         if isinstance(received_on, str):
             received_on = date.fromisoformat(received_on)
-        amount = currency_to_usd(pi, payment.amount, True)
+        amount = payment_to_usd(payment, pi)
         name = pi.salesperson or '(未分配)'
         group = groups.setdefault(name, dict(total=0.0, pis=set(), customers=set()))
         group['total'] += amount
@@ -3806,8 +3777,7 @@ def sales_stats():
                            grand_pi_count=len({pi.id for _, pi, _ in rows}),
                            date_from=date_from, date_to=date_to, preset=preset,
                            sp_filter=sp_filter, receipts=details,
-                           has_rmb=any(pi.currency != 'USD' for _, pi, _ in rows),
-                           performance_exchange_rate=PERFORMANCE_EXCHANGE_RATE)
+                           has_rmb=any(pi.currency != 'USD' for _, pi, _ in rows))
 
 
 def _report_filter_values():
@@ -7737,6 +7707,13 @@ def pi_toggle_paid(id):
         flash(f'回款金额超过 PI 总额。剩余可收：{sym}{remaining:,.2f}（PI 总额：{sym}{pi_grand_total:,.2f}）', 'danger')
         return redirect(request.referrer or url_for('pi_list'))
 
+    try:
+        performance_snapshot = receipt_performance_snapshot(pi_currency, received_on)
+    except Exception:
+        app.logger.warning('Receipt performance reference retrieval failed', exc_info=True)
+        flash('无法获取到账日期的业绩参考汇率，请稍后重试；本次回款尚未登记。', 'danger')
+        return redirect(request.referrer or url_for('pi_list'))
+
     attachment_file = request.files.get('attachment')
     if not attachment_file or not attachment_file.filename:
         flash('请上传回款凭证图片。', 'danger')
@@ -7768,6 +7745,7 @@ def pi_toggle_paid(id):
         receiving_account_currency=pi_currency,
         attachment=attachment_name,
         note=payment_note,
+        **performance_snapshot,
     )
     db.session.add(payment)
     try:
@@ -7782,8 +7760,8 @@ def pi_toggle_paid(id):
         # Amount + fee counts toward both paid status and the capped customer deal total.
         total_paid = _recalculate_pi_payments(pi)
 
-        # Partial payments count immediately; RMB payments use the fixed
-        # performance rate and each PI is capped at its invoiced total.
+        # Partial payments use each receipt's frozen performance rate;
+        # customer deal credit remains capped at the invoiced total.
         customer = Customer.query.get(pi.customer_id)
         if customer:
             _recalculate_customer_deal(customer)
@@ -7793,7 +7771,8 @@ def pi_toggle_paid(id):
         _audit('create', 'payment', payment.id, f'在 {pi.pi_number} 登记回款：{order_no}',
                after=_snapshot(payment, ['pi_id', 'amount', 'fee', 'order_no', 'receiving_account_id',
                                          'receiving_account_name', 'receiving_account_currency',
-                                         'attachment', 'created_at']))
+                                         'attachment', 'created_at', 'performance_usd_rate', 'performance_date',
+                                         'performance_reference_date', 'performance_source']))
 
         db.session.commit()
     except Exception:
@@ -10288,7 +10267,6 @@ def inject_globals():
         'exchange_rate': _get_exchange_rate(),
         'currency_symbol': currency_symbol,
         'currency_to_usd': currency_to_usd,
-        'performance_exchange_rate': PERFORMANCE_EXCHANGE_RATE,
         'today_str': date.today().strftime('%Y-%m-%d'),
         'maintenance': _maintenance_state(settings),
     }
@@ -10299,7 +10277,8 @@ def inject_globals():
 # ═══════════════════════════════════════════════════════════════════════
 
 from finance_web import register_finance_web
-register_finance_web(app, admin_required=admin_required, current_user=get_current_user, audit=_audit)
+register_finance_web(app, admin_required=admin_required, current_user=get_current_user, audit=_audit,
+                     recalculate_customer=_recalculate_customer_deal)
 
 from mobile_web import register_mobile_web
 register_mobile_web(app)
@@ -10316,10 +10295,29 @@ register_mobile_photos(
 @login_required
 def exchange_rates_page():
     response = make_response(render_template(
-        'exchange_rates.html', business_rate=_get_exchange_rate(),
-        performance_rate=PERFORMANCE_EXCHANGE_RATE))
+        'exchange_rates.html', business_rate=_get_exchange_rate()))
     response.headers['Cache-Control'] = 'no-store'
     return response
+
+
+@app.route('/api/exchange-rates/current')
+@login_required
+def current_reference_rates():
+    from fx_rates import usd_reference_rates
+    try:
+        raw_date = request.args.get('date', '').strip()
+        on = date.fromisoformat(raw_date) if raw_date else None
+    except ValueError:
+        return jsonify(error='参考日期格式不正确。'), 400
+    if on and on > (datetime.utcnow() + timedelta(hours=8)).date():
+        return jsonify(error='参考日期不能晚于今天。'), 400
+    try:
+        response = jsonify(usd_reference_rates(on))
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except Exception:
+        app.logger.warning('Current reference retrieval failed', exc_info=True)
+        return jsonify(error='参考汇率暂时无法获取，请稍后重试。'), 503
 
 
 @app.route('/api/exchange-rates/eur')

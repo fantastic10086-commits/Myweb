@@ -14,6 +14,8 @@ class EuroTests(unittest.TestCase):
  def setUpClass(cls):fixture.SecuritySmokeTests.setUpClass()
  def setUp(self):
   self.helper=fixture.SecuritySmokeTests();self.helper.setUp();self.helper.login('alice');self.client=self.helper.client
+  rate_mock=patch('fx_rates.usd_reference_rates',return_value={'eur_usd_rate':1.3,'rmb_usd_rate':1/7,'fx_reference_date':'2026-11-02','fx_source':'Frankfurter'})
+  rate_mock.start();self.addCleanup(rate_mock.stop)
  def test_euro_invoice_payment_and_reports(self):
   with application.app.app_context():
    account=Account(name='EUR Test',currency='EUR',bank_name='Example',brand='klista');db.session.add(account);db.session.commit();account_id=account.id;product=Product.query.first().id
@@ -37,12 +39,12 @@ class EuroTests(unittest.TestCase):
   self.client.post('/pi/%s/toggle-paid'%pi_id,data=payment)
   with application.app.app_context():
    pi=db.session.get(PI,pi_id);self.assertEqual(pi.received_amount,100);self.assertTrue(pi.paid)
-   self.assertEqual(pi.customer.total_deal_usd,120)
-   application._migrate_db();self.assertEqual(pi.customer.total_deal_usd,120)
+   self.assertEqual(pi.customer.total_deal_usd,130)
+   application._migrate_db();self.assertEqual(pi.customer.total_deal_usd,130)
   self.helper.login('admin-test')
   for path in ('/pi/create','/pi/list','/sales-stats','/pi/%s/edit'%pi_id,'/procurement/%s'%pi_id):
    response=self.client.get(path);self.assertIn(response.status_code,(200,302),path)
-   if path=='/sales-stats':self.assertIn('120.00',response.text)
+   if path=='/sales-stats':self.assertIn('130.00',response.text)
    import re, subprocess
    for script in re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>',response.text):
     if not script.strip() or script.lstrip().startswith(('[','{')):continue

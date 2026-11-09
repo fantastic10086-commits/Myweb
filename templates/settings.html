@@ -104,12 +104,11 @@
                 <div class="input-group" style="max-width:300px;">
                     <span class="input-group-text">1 美元 =</span>
                     <input type="text" class="form-control" id="exchange_rate" name="exchange_rate"
-                           value="{{ exchange_rate }}" placeholder="6.5">
+                           value="{{ exchange_rate }}" readonly>
                     <span class="input-group-text">人民币</span>
                 </div>
                 <small class="text-muted">
-                    新建 PI 时自动带入，可在每份 PI 中单独调整。已保存 PI 使用自己的历史汇率，不会随这里的修改而改变。
-                    业务员回款业绩始终固定按 1 美元 = 7 人民币折算，与本设置无关。
+                    报价默认固定使用 6.5；已保存 PI 保留本单业务汇率。回款业绩按每笔到账日期的参考汇率独立折算并保存。
                 </small>
             </div>
             <div class="mb-3">

@@ -8,8 +8,7 @@
         <p class="text-muted mb-2">按每笔回款的实际到账日期统计业绩；历史未填写到账日期的回款，按登记日期（北京时间）统计。</p>
         <div class="alert alert-primary py-2 mb-0">
             <i class="bi bi-lock-fill me-1"></i>
-            <strong>业绩固定汇率：</strong>1 美元 = {{ '%.2f'|format(performance_exchange_rate) }} 人民币；欧元按每份 PI 保存的 EUR → USD 汇率折算。
-            人民币按固定业绩汇率折算；欧元使用本单保存的汇率。
+            <strong>业绩汇率：</strong>新回款按到账当天最新已公布的参考汇率折算美元，并随每笔回款保存；历史回款也按各笔到账日期（未填写则登记日期）的参考汇率重算并保存。报价默认汇率为 6.5。
         </div>
     </div>
 </div>
@@ -82,7 +81,7 @@
     <div class="col-md-4">
         <div class="card border-info">
             <div class="card-body text-center">
-                <h6 class="text-muted">实际回款总额（按固定业绩汇率折合 USD）</h6>
+                <h6 class="text-muted">实际回款总额（折合 USD）</h6>
                 <h3 class="text-info">${{ '%.2f'|format(grand_total) }}</h3>
             </div>
         </div>
@@ -104,7 +103,7 @@
                         <th>业务员</th>
                         <th class="text-end">客户数</th>
                         <th class="text-end">有回款的 PI</th>
-                    <th class="text-end">实际回款（固定汇率折合 USD）</th>
+                    <th class="text-end">实际回款（到账汇率折合 USD）</th>
                         <th class="text-end" style="width:120px;">占比</th>
                     </tr>
                 </thead>
@@ -179,7 +178,7 @@
                     <th class="text-end">订单总金额</th><th class="text-end">回款手续费</th>
                     <th class="text-end">实际回款金额</th>
                     {% if has_rmb %}<th class="text-end">实际回款折合 USD</th>{% endif %}
-                    <th>回款状态</th>
+                    <th>业绩汇率 / 参考日期</th><th>回款状态</th>
                 </tr></thead>
                 <tbody>
                     {% for receipt in receipts %}
@@ -196,6 +195,11 @@
                         <td class="text-end text-muted">{{ sym }}{{ '%.2f'|format(total_fee) }}</td>
                         <td class="text-end fw-bold text-success">{{ sym }}{{ '%.2f'|format(receipt.payment.amount) }}</td>
                         {% if has_rmb %}<td class="text-end text-muted">{% if pi.currency != 'USD' %}${{ '%.2f'|format(receipt.amount_usd) }}{% else %}—{% endif %}</td>{% endif %}
+                        <td class="small text-muted">
+                            {% if receipt.payment.performance_usd_rate %}1 {{ pi.currency }} = {{ '%.6f'|format(receipt.payment.performance_usd_rate) }} USD<br>{% endif %}
+                            {{ receipt.payment.performance_reference_date or '历史汇率' }}
+                            <div>{{ receipt.payment.performance_source or '历史汇率（保留）' }}</div>
+                        </td>
                         <td>{% if pi.paid %}<span class="badge bg-success">已付清</span>{% elif (pi.received_amount or 0) > 0 %}<span class="badge bg-warning">部分回款</span>{% else %}<span class="badge bg-secondary">未回款</span>{% endif %}</td>
                     </tr>
                     {% endfor %}
