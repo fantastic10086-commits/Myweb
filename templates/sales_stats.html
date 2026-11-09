@@ -5,14 +5,18 @@
 <div class="row mb-3">
     <div class="col">
         <h2><i class="bi bi-cash-stack me-2"></i>回款统计</h2>
-        <p class="text-muted mb-2">按业务员统计全部实际回款（包括全款和部分回款）。</p>
+        <p class="text-muted mb-2">按每笔回款的实际到账日期统计业绩；分期回款分别归属各自到账月份。</p>
         <div class="alert alert-primary py-2 mb-0">
             <i class="bi bi-lock-fill me-1"></i>
             <strong>业绩固定汇率：</strong>1 美元 = {{ '%.2f'|format(performance_exchange_rate) }} 人民币；欧元按每份 PI 保存的 EUR → USD 汇率折算。
-            不受系统默认业务汇率或 PI 本单汇率影响。
+            人民币按固定业绩汇率折算；欧元使用本单保存的汇率。
         </div>
     </div>
 </div>
+
+{% if missing_date_count %}
+<div class="alert alert-warning py-2">有 {{ missing_date_count }} 笔回款未填写实际到账日期，暂不计入业绩。请在财务核对中补充到账日期后统计。</div>
+{% endif %}
 
 <!-- Filter Bar -->
 <div class="card mb-3">
@@ -28,11 +32,11 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-1">开始日期</label>
+                <label class="form-label small mb-1">到账开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
             <div class="col-md-2">
-                <label class="form-label small mb-1">结束日期</label>
+                <label class="form-label small mb-1">到账结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
             <div class="col-md-1">
@@ -161,39 +165,41 @@
 </div>
 
 <!-- PI Detail List -->
-{% if all_pis %}
+{% if receipts %}
 <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">已回款 PI ({{ all_pis|length }})</h5>
+        <h5 class="mb-0">实际到账明细（{{ receipts|length }} 笔）</h5>
         <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#piDetailTable">显示 / 隐藏</button>
     </div>
     <div class="collapse show" id="piDetailTable">
         <div class="alert alert-light border rounded-0 mb-0 py-2 small text-muted">
             <strong>字段说明：</strong>
-            订单总金额 = 产品小计 + 其他费用或折扣；实际回款金额为已经登记到账的累计金额；回款手续费单独列示，不计入实际回款金额。
+            订单总金额 = 产品小计 + 其他费用或折扣；实际回款金额为本笔到账金额，仅统计所选到账日期区间；回款手续费单独列示，不计入实际回款金额。
         </div>
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle small">
                 <thead class="table-light"><tr>
-                    <th>PI 编号</th><th>客户</th><th>业务员</th><th>日期</th>
+                    <th>PI 编号</th><th>客户</th><th>业务员</th><th>实际到账日期</th><th>流水号</th>
                     <th class="text-end">订单总金额</th><th class="text-end">回款手续费</th>
                     <th class="text-end">实际回款金额</th>
                     {% if has_rmb %}<th class="text-end">实际回款折合 USD</th>{% endif %}
                     <th>回款状态</th>
                 </tr></thead>
                 <tbody>
-                    {% for pi in all_pis %}
+                    {% for receipt in receipts %}
+                    {% set pi = receipt.pi %}
                     {% set sym = currency_symbol(pi.currency) %}
-                    {% set total_fee = pi.active_payments | sum(attribute='fee') %}
+                    {% set total_fee = receipt.payment.fee or 0 %}
                     <tr>
                         <td><strong>{{ pi.pi_number }}</strong></td>
                         <td>{{ pi.customer.name if pi.customer else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
-                        <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                        <td>{{ receipt.received_on.strftime('%Y-%m-%d') }}</td>
+                        <td style="overflow-wrap:anywhere;max-width:180px;">{{ receipt.payment.order_no or '-' }}</td>
                         <td class="text-end fw-bold">{{ sym }}{{ '%.2f'|format(pi.grand_total) }}</td>
                         <td class="text-end text-muted">{{ sym }}{{ '%.2f'|format(total_fee) }}</td>
-                        <td class="text-end fw-bold text-success">{{ sym }}{{ '%.2f'|format(pi.received_amount or 0) }}</td>
-                        {% if has_rmb %}<td class="text-end text-muted">{% if pi.currency != 'USD' %}${{ '%.2f'|format(currency_to_usd(pi, pi.received_amount or 0, true)) }}{% else %}—{% endif %}</td>{% endif %}
+                        <td class="text-end fw-bold text-success">{{ sym }}{{ '%.2f'|format(receipt.payment.amount) }}</td>
+                        {% if has_rmb %}<td class="text-end text-muted">{% if pi.currency != 'USD' %}${{ '%.2f'|format(receipt.amount_usd) }}{% else %}—{% endif %}</td>{% endif %}
                         <td>{% if pi.paid %}<span class="badge bg-success">已付清</span>{% elif (pi.received_amount or 0) > 0 %}<span class="badge bg-warning">部分回款</span>{% else %}<span class="badge bg-secondary">未回款</span>{% endif %}</td>
                     </tr>
                     {% endfor %}

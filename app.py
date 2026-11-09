@@ -3743,7 +3743,7 @@ def customer_file_delete(id):
 @app.route('/sales-stats')
 @login_required
 def sales_stats():
-    """Payment received stats — paid PIs only, filterable by salesperson."""
+    """Performance by each receipt's actual arrival date and salesperson."""
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
     preset = request.args.get('preset', '').strip()
@@ -3763,72 +3763,49 @@ def sales_stats():
         date_from = today.replace(month=1, day=1).strftime('%Y-%m-%d')
         date_to = today.strftime('%Y-%m-%d')
 
-    paid_filter = (PI.received_amount > 0)  # include partial payments
-
-    # Performance conversion is intentionally fixed and independent from each
-    # PI's quotation/profit rate and the editable system default.
-    amount_usd = func.sum(
-        db.case(
-            (PI.currency == 'RMB', PI.received_amount / PERFORMANCE_EXCHANGE_RATE),
-            (PI.currency == 'EUR', PI.received_amount * PI.eur_usd_rate),
-            else_=PI.received_amount
-        )
-    )
-    base_q = db.session.query(
-        func.coalesce(db.func.nullif(PI.salesperson, ''), '(未分配)').label('salesperson'),
-        func.count(PI.id).label('pi_count'),
-        func.coalesce(amount_usd, 0).label('total_amount'),
-        func.count(db.distinct(PI.customer_id)).label('customer_count'),
-    ).filter(paid_filter, PI.deleted_at.is_(None))
+    # Attribute each receipt to its explicit actual arrival date. Never guess
+    # historical arrival dates from issue_date or registration timestamps.
+    receipts = (db.session.query(Payment, PI, FinanceReview.occurred_on)
+        .join(PI, Payment.pi_id == PI.id)
+        .outerjoin(FinanceReview, and_(FinanceReview.kind == 'payment',
+                                     FinanceReview.record_id == Payment.id))
+        .options(joinedload(PI.customer))
+        .filter(Payment.deleted_at.is_(None), PI.deleted_at.is_(None), Payment.amount > 0))
     if not is_admin():
-        base_q = base_q.filter(PI.salesperson == current_salesperson_name())
+        receipts = receipts.filter(PI.salesperson == current_salesperson_name())
     if sp_filter:
-        base_q = base_q.filter(PI.salesperson == sp_filter)
-    if date_from:
+        receipts = receipts.filter(PI.salesperson == sp_filter)
+    missing_date_count = receipts.filter(FinanceReview.occurred_on.is_(None)).count()
+    receipts = receipts.filter(FinanceReview.occurred_on.isnot(None))
+    for value, lower in ((date_from, True), (date_to, False)):
         try:
-            base_q = base_q.filter(PI.issue_date >= datetime.strptime(date_from, '%Y-%m-%d').date())
+            boundary = datetime.strptime(value, '%Y-%m-%d').date()
         except ValueError:
-            pass
-    if date_to:
-        try:
-            base_q = base_q.filter(PI.issue_date <= datetime.strptime(date_to, '%Y-%m-%d').date())
-        except ValueError:
-            pass
-    results = base_q.group_by(PI.salesperson).order_by(amount_usd.desc()).all()
-
-    grand_total = sum(r.total_amount for r in results)
-    grand_pi_count = sum(r.pi_count for r in results)
-
-    # Detailed PI list for the same filter (paid only) — eager load payments for fee display
-    pi_detail_q = PI.query.options(
-        joinedload(PI.customer),
-        joinedload(PI.payments)
-    ).filter(paid_filter, PI.deleted_at.is_(None)).order_by(PI.created_at.desc())
-    if not is_admin():
-        pi_detail_q = pi_detail_q.filter(PI.salesperson == current_salesperson_name())
-    if sp_filter:
-        pi_detail_q = pi_detail_q.filter(PI.salesperson == sp_filter)
-    if date_from:
-        try: pi_detail_q = pi_detail_q.filter(PI.issue_date >= datetime.strptime(date_from, '%Y-%m-%d').date())
-        except: pass
-    if date_to:
-        try: pi_detail_q = pi_detail_q.filter(PI.issue_date <= datetime.strptime(date_to, '%Y-%m-%d').date())
-        except: pass
-    all_filtered_pis = pi_detail_q.all()
-
-    # Check if any PI is in RMB
-    has_rmb = any(pi.currency != 'USD' for pi in all_filtered_pis)
-
-    return render_template('sales_stats.html',
-                           stats=results,
-                           grand_total=grand_total,
-                           grand_pi_count=grand_pi_count,
-                           date_from=date_from,
-                           date_to=date_to,
-                           preset=preset,
-                           sp_filter=sp_filter,
-                           all_pis=all_filtered_pis,
-                           has_rmb=has_rmb,
+            continue
+        receipts = receipts.filter(FinanceReview.occurred_on >= boundary if lower
+                                   else FinanceReview.occurred_on <= boundary)
+    rows = receipts.order_by(FinanceReview.occurred_on.desc(), Payment.id.desc()).all()
+    groups = {}
+    details = []
+    for payment, pi, received_on in rows:
+        amount = currency_to_usd(pi, payment.amount, True)
+        name = pi.salesperson or '(未分配)'
+        group = groups.setdefault(name, dict(total=0.0, pis=set(), customers=set()))
+        group['total'] += amount
+        group['pis'].add(pi.id)
+        group['customers'].add(pi.customer_id)
+        details.append(SimpleNamespace(pi=pi, payment=payment, received_on=received_on,
+                                       amount_usd=amount))
+    results = sorted((SimpleNamespace(salesperson=name, total_amount=g['total'],
+                       pi_count=len(g['pis']), customer_count=len(g['customers']))
+                      for name, g in groups.items()), key=lambda r: r.total_amount, reverse=True)
+    return render_template('sales_stats.html', stats=results,
+                           grand_total=sum(r.total_amount for r in results),
+                           grand_pi_count=len({pi.id for _, pi, _ in rows}),
+                           date_from=date_from, date_to=date_to, preset=preset,
+                           sp_filter=sp_filter, receipts=details,
+                           missing_date_count=missing_date_count,
+                           has_rmb=any(pi.currency != 'USD' for _, pi, _ in rows),
                            performance_exchange_rate=PERFORMANCE_EXCHANGE_RATE)
 
 
