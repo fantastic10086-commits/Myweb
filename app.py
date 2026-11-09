@@ -10312,6 +10312,16 @@ register_mobile_photos(
     remove_file=_remove_upload, audit=_audit, thumbnail=_ensure_product_thumbnail,
 )
 
+@app.route('/exchange-rates')
+@login_required
+def exchange_rates_page():
+    response = make_response(render_template(
+        'exchange_rates.html', business_rate=_get_exchange_rate(),
+        performance_rate=PERFORMANCE_EXCHANGE_RATE))
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
 @app.route('/api/exchange-rates/eur')
 @login_required
 def eur_reference_rates():

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}系统汇率{% endblock %}
+{% block content %}
+<div class="mb-3">
+    <h2><i class="bi bi-currency-exchange me-2"></i>系统汇率</h2>
+    <p class="text-muted mb-0">查看系统默认汇率和欧元参考汇率。每份 PI 的实际换算使用该单保存的汇率。</p>
+</div>
+<div class="row g-3 mb-3">
+    <div class="col-md-6"><div class="card h-100"><div class="card-body">
+        <h6 class="text-muted">美元兑人民币 · 默认业务汇率</h6>
+        <div class="fs-4 fw-bold text-primary">1 USD = {{ '%.4f'|format(business_rate) }} RMB</div>
+        <p class="small text-muted mt-2 mb-0">来源：系统设置。用于新 PI 的默认业务换算；已有订单按本单保存值计算。</p>
+    </div></div></div>
+    <div class="col-md-6"><div class="card h-100"><div class="card-body">
+        <h6 class="text-muted">人民币回款 · 固定业绩汇率</h6>
+        <div class="fs-4 fw-bold text-success">1 USD = {{ '%.4f'|format(performance_rate) }} RMB</div>
+        <p class="small text-muted mt-2 mb-0">人民币回款金额除以此汇率，折算美元业绩；美元回款直接计入美元业绩。</p>
+    </div></div></div>
+</div>
+<div class="card mb-3">
+    <div class="card-header d-flex align-items-center justify-content-between gap-2">
+        <h5 class="mb-0">欧元参考汇率</h5>
+        <button type="button" id="reload-rates" class="btn btn-sm btn-outline-primary"><i class="bi bi-arrow-clockwise me-1"></i>重新获取</button>
+    </div>
+    <div class="card-body">
+        <div id="rates-status" class="small text-muted mb-3" role="status" aria-live="polite">正在获取参考汇率…</div>
+        <div class="row g-3">
+            <div class="col-md-6"><div class="border rounded p-3"><div class="text-muted small">欧元兑美元 · 业绩折算</div><div class="fs-4 fw-bold mt-1" id="eur-usd">—</div></div></div>
+            <div class="col-md-6"><div class="border rounded p-3"><div class="text-muted small">欧元兑人民币 · 成本与利润换算</div><div class="fs-4 fw-bold mt-1" id="eur-rmb">—</div></div></div>
+        </div>
+        <p class="small text-muted mt-3 mb-1">来源：<a href="https://frankfurter.dev/" target="_blank" rel="noopener noreferrer">Frankfurter</a>；按日发布的参考价，服务器缓存 30 分钟。重新获取可能返回缓存中的同一参考价。</p>
+        <p class="small text-muted mb-0">参考日期以接口返回为准。银行实际结汇价格可能不同；获取失败时不显示估算值。</p>
+    </div>
+</div>
+<div class="alert alert-light border mb-0">
+    <strong>订单汇率如何使用</strong>
+    <p class="mb-0 mt-1 small">新建欧元 PI 时可获取参考汇率并手动调整；两项汇率随 PI 保存。此页更新参考汇率不会修改已有 PI。欧元回款按本单保存的 EUR → USD 汇率计算业绩，欧元订单金额按本单 EUR → RMB 汇率进行成本与利润换算。</p>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(() => {
+    const button = document.getElementById('reload-rates');
+    const status = document.getElementById('rates-status');
+    const usd = document.getElementById('eur-usd');
+    const rmb = document.getElementById('eur-rmb');
+    async function loadRates() {
+        button.disabled = true;
+        status.className = 'small text-muted mb-3';
+        status.textContent = '正在获取参考汇率…';
+        usd.textContent = rmb.textContent = '—';
+        try {
+            const response = await fetch({{ url_for('eur_reference_rates')|tojson }}, {cache: 'no-store'});
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || '获取失败，请稍后重试。');
+            const usdRate = Number(data.eur_usd_rate), rmbRate = Number(data.eur_rmb_rate);
+            if (!(usdRate > 0 && rmbRate > 0 && Number.isFinite(usdRate) && Number.isFinite(rmbRate))) throw new Error('参考汇率无效，请稍后重试。');
+            usd.textContent = '1 EUR = ' + usdRate.toFixed(6) + ' USD';
+            rmb.textContent = '1 EUR = ' + rmbRate.toFixed(6) + ' RMB';
+            status.textContent = data.fx_source + ' · 参考日期：' + data.fx_reference_date;
+        } catch (error) {
+            status.className = 'small text-danger mb-3';
+            status.textContent = '欧元参考汇率暂时无法获取，请稍后重试。已有 PI 仍使用该单保存的汇率。';
+        } finally {
+            button.disabled = false;
+        }
+    }
+    button.addEventListener('click', loadRates);
+    loadRates();
+})();
+</script>
+{% endblock %}
