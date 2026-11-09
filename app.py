@@ -3763,9 +3763,10 @@ def sales_stats():
         date_from = today.replace(month=1, day=1).strftime('%Y-%m-%d')
         date_to = today.strftime('%Y-%m-%d')
 
-    # Attribute each receipt to its explicit actual arrival date. Never guess
-    # historical arrival dates from issue_date or registration timestamps.
-    receipts = (db.session.query(Payment, PI, FinanceReview.occurred_on)
+    # Preserve explicit arrival dates; legacy receipts use Beijing registration date.
+    receipt_date = func.coalesce(FinanceReview.occurred_on,
+                                 func.date(Payment.created_at, '+8 hours'))
+    receipts = (db.session.query(Payment, PI, receipt_date.label('received_on'))
         .join(PI, Payment.pi_id == PI.id)
         .outerjoin(FinanceReview, and_(FinanceReview.kind == 'payment',
                                      FinanceReview.record_id == Payment.id))
@@ -3775,19 +3776,20 @@ def sales_stats():
         receipts = receipts.filter(PI.salesperson == current_salesperson_name())
     if sp_filter:
         receipts = receipts.filter(PI.salesperson == sp_filter)
-    missing_date_count = receipts.filter(FinanceReview.occurred_on.is_(None)).count()
-    receipts = receipts.filter(FinanceReview.occurred_on.isnot(None))
+    receipts = receipts.filter(receipt_date.isnot(None))
     for value, lower in ((date_from, True), (date_to, False)):
         try:
             boundary = datetime.strptime(value, '%Y-%m-%d').date()
         except ValueError:
             continue
-        receipts = receipts.filter(FinanceReview.occurred_on >= boundary if lower
-                                   else FinanceReview.occurred_on <= boundary)
-    rows = receipts.order_by(FinanceReview.occurred_on.desc(), Payment.id.desc()).all()
+        receipts = receipts.filter(receipt_date >= boundary if lower
+                                   else receipt_date <= boundary)
+    rows = receipts.order_by(receipt_date.desc(), Payment.id.desc()).all()
     groups = {}
     details = []
     for payment, pi, received_on in rows:
+        if isinstance(received_on, str):
+            received_on = date.fromisoformat(received_on)
         amount = currency_to_usd(pi, payment.amount, True)
         name = pi.salesperson or '(未分配)'
         group = groups.setdefault(name, dict(total=0.0, pis=set(), customers=set()))
@@ -3804,7 +3806,6 @@ def sales_stats():
                            grand_pi_count=len({pi.id for _, pi, _ in rows}),
                            date_from=date_from, date_to=date_to, preset=preset,
                            sp_filter=sp_filter, receipts=details,
-                           missing_date_count=missing_date_count,
                            has_rmb=any(pi.currency != 'USD' for _, pi, _ in rows),
                            performance_exchange_rate=PERFORMANCE_EXCHANGE_RATE)
 

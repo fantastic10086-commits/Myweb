@@ -1,6 +1,6 @@
 """Receipt-month attribution using isolated database and authenticated routes."""
 import unittest
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 import security_smoke as fixture
 from models import db, PI, Payment, FinanceReview, User
@@ -26,7 +26,8 @@ class ReceiptMonthTests(unittest.TestCase):
                                          (200, date(2026, 11, 1), False),
                                          (300, None, False),
                                          (400, date(2026, 11, 2), True)]:
-                payment = Payment(pi_id=pi.id, amount=amount)
+                payment = Payment(pi_id=pi.id, amount=amount,
+                                  created_at=datetime(2026, 10, 31, 18, 0))
                 if deleted:
                     payment.deleted_at = app.datetime.utcnow()
                 db.session.add(payment)
@@ -43,13 +44,13 @@ class ReceiptMonthTests(unittest.TestCase):
                     'date_from': f'2026-{month}-01', 'date_to': f'2026-{month}-' + ('31' if month == '10' else '30'), 'sp': 'Alice'})
                 self.assertEqual(response.status_code, 200)
                 context = render.call_args[1]
-                expected = amount
+                expected = amount + (360 if month == '11' else 0)
                 self.assertAlmostEqual(context['grand_total'], expected)
-                self.assertEqual(context['missing_date_count'], 1)
+                self.assertEqual(context['grand_pi_count'], 1)
         response = client.get('/sales-stats?date_from=2026-10-31&date_to=2026-11-30&sp=Alice')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('实际到账明细（2 笔）', response.text)
-        self.assertIn('$360.00', response.text)
+        self.assertIn('实际到账明细（3 笔）', response.text)
+        self.assertIn('$720.00', response.text)
 
 
 if __name__ == '__main__':

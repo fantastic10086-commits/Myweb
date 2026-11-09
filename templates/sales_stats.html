@@ -5,7 +5,7 @@
 <div class="row mb-3">
     <div class="col">
         <h2><i class="bi bi-cash-stack me-2"></i>回款统计</h2>
-        <p class="text-muted mb-2">按每笔回款的实际到账日期统计业绩；分期回款分别归属各自到账月份。</p>
+        <p class="text-muted mb-2">按每笔回款的实际到账日期统计业绩；历史未填写到账日期的回款，按登记日期（北京时间）统计。</p>
         <div class="alert alert-primary py-2 mb-0">
             <i class="bi bi-lock-fill me-1"></i>
             <strong>业绩固定汇率：</strong>1 美元 = {{ '%.2f'|format(performance_exchange_rate) }} 人民币；欧元按每份 PI 保存的 EUR → USD 汇率折算。
@@ -13,10 +13,6 @@
         </div>
     </div>
 </div>
-
-{% if missing_date_count %}
-<div class="alert alert-warning py-2">有 {{ missing_date_count }} 笔回款未填写实际到账日期，暂不计入业绩。请在财务核对中补充到账日期后统计。</div>
-{% endif %}
 
 <!-- Filter Bar -->
 <div class="card mb-3">
