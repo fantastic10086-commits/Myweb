@@ -14,7 +14,9 @@ def seed_currencies():
 
 
 def currency_allowed(code, previous=None):
-    code = (code or 'USD').upper()
+    code = 'USD' if code is None else code.upper()
+    if not re.fullmatch(r'[A-Z]{3}', code):
+        return False
     row = db.session.get(Currency, code)
     return bool(row and (row.enabled or code == previous))
 

@@ -43,6 +43,10 @@ class CurrencyTests(unittest.TestCase):
     def test_add_validate_edit_and_admin_toggle(self):
         page=self.client.get('/currencies');self.check_scripts(page)
         self.assertIn('HKD',page.text)
+        with application.app.app_context():
+            from currencies import currency_allowed
+            self.assertFalse(currency_allowed(''))
+            self.assertFalse(currency_allowed('XXX'))
         data=dict(code='GBP',name='英镑',symbol='£',current_password='StrongPass123!',csrf_token=self.helper.token('/currencies'))
         self.assertEqual(self.client.post('/currencies/add',data={**data,'csrf_token':''}).status_code,400)
         with patch('fx_rates.currency_reference_rates',side_effect=ValueError('not supported')):
