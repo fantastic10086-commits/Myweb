@@ -16,6 +16,6 @@
 <div class="col-md-4"><label class="form-label">Bank Code</label><input type="text" class="form-control" name="bank_code" value="{{ a.bank_code if a else '' }}"></div>
 <div class="col-md-4"><label class="form-label">Branch Code</label><input type="text" class="form-control" name="branch_code" value="{{ a.branch_code if a else '' }}"></div>
 <div class="col-12"><label class="form-label">备注</label><input type="text" class="form-control" name="notes" value="{{ a.notes if a else '' }}"></div>
-<div class="col-md-6"><label class="form-label">当前管理员密码 <span class="text-danger">*</span></label><input type="password" class="form-control" name="current_password" required autocomplete="current-password"><div class="form-text">每次修改收款账户都必须验证管理员密码。</div></div>
+<div class="col-md-6"><label class="form-label">当前登录密码 <span class="text-danger">*</span></label><input type="password" class="form-control" name="current_password" required autocomplete="current-password"><div class="form-text">请填写您自己的登录密码以确认此次操作。</div></div>
 </div><div class="mt-4"><button type="submit" class="btn btn-primary">{% if editing %}更新{% else %}创建{% endif %}</button><a href="{{ url_for('account_list') }}" class="btn btn-outline-secondary ms-2">取消</a></div></form></div></div>
 {% endblock %}

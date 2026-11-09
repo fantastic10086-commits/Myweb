@@ -2117,7 +2117,7 @@ def _require_current_password():
     user = get_current_user()
     password = request.form.get('current_password', '')
     if not user or not check_password_hash(user.password_hash, password):
-        flash('当前管理员密码不正确。', 'danger')
+        flash('当前登录密码不正确。', 'danger')
         return False
     return True
 
@@ -5407,11 +5407,14 @@ def customer_type_toggle(id):
     return redirect(url_for('account_list', _anchor='customer-types'))
 
 
-@app.route('/accounts')
 @app.route('/field-management')
-@admin_required
+@app.route('/accounts')
+@login_required
 def account_list():
-    if not is_admin(): return redirect(url_for('index'))
+    if not is_admin():
+        if request.path == '/field-management':
+            abort(403)
+        return render_template('account_list.html', accounts=Account.query.order_by(Account.name).all())
     accounts = Account.query.order_by(Account.name).all()
     return render_template(
         'field_management.html',
@@ -5518,9 +5521,8 @@ def field_option_delete(id):
     return redirect(url_for('account_list', _anchor=field_key))
 
 @app.route('/accounts/add', methods=['GET', 'POST'])
-@admin_required
+@login_required
 def account_add():
-    if not is_admin(): return redirect(url_for('index'))
     if request.method == 'POST':
         if not _require_current_password():
             return render_template('account_form.html', a=None, editing=False), 403
@@ -5561,9 +5563,8 @@ def account_add():
     return render_template('account_form.html', a=None, editing=False)
 
 @app.route('/accounts/<int:id>/edit', methods=['GET', 'POST'])
-@admin_required
+@login_required
 def account_edit(id):
-    if not is_admin(): return redirect(url_for('index'))
     a = Account.query.get_or_404(id)
     if request.method == 'POST':
         if not _require_current_password():
