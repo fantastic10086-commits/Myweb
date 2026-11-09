@@ -34,6 +34,10 @@
         <p class="small text-muted mb-0">参考日期以接口返回为准。银行实际结汇价格可能不同；获取失败时不显示估算值。</p>
     </div>
 </div>
+<div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><h5 class="mb-0">其他已启用币种</h5><a href="{{ url_for('currency_list') }}" class="btn btn-sm btn-outline-secondary">币种管理</a></div>
+<div class="table-responsive"><table class="table mb-0"><thead><tr><th>币种</th><th>参考汇率</th><th>参考日期 / 来源</th></tr></thead><tbody>
+{% for c in currency_options() %}{% if c.code not in ['USD','RMB','EUR'] %}<tr class="custom-reference-row" data-code="{{ c.code }}"><td>{{ c.name }}（{{ c.code }}）</td><td class="reference-value">获取中…</td><td class="reference-source">—</td></tr>{% endif %}{% endfor %}
+</tbody></table></div></div>
 <div class="alert alert-light border mb-0">
     <strong>订单汇率如何使用</strong>
     <p class="mb-0 mt-1 small">新建 PI 的美元与人民币报价默认按 6.5 换算，利润保留逐单业务汇率。人民币和欧元回款按到账日期的参考价折算美元，汇率随每笔回款保存。此页重新获取不会改变已保存的回款业绩；汇率来源和日期可在回款统计明细查看。</p>
@@ -70,6 +74,19 @@
             button.disabled = false;
         }
     }
+    async function loadOtherRates() {
+        await Promise.all(Array.from(document.querySelectorAll('.custom-reference-row')).map(async row => {
+            const code = row.dataset.code, value = row.querySelector('.reference-value'), source = row.querySelector('.reference-source');
+            value.textContent = '获取中…'; source.textContent = '—';
+            try {
+                const response = await fetch('/api/exchange-rates/currency/' + encodeURIComponent(code), {cache:'no-store'});
+                const data = await response.json(); if (!response.ok) throw Error();
+                value.textContent = '1 ' + code + ' = ' + Number(data.currency_usd_rate).toFixed(6) + ' USD / ' + Number(data.currency_rmb_rate).toFixed(6) + ' RMB';
+                source.textContent = data.fx_reference_date + ' · ' + data.fx_source;
+            } catch (_) { value.textContent = '暂时无法获取，请稍后重试'; }
+        }));
+    }
+    button.addEventListener('click', loadOtherRates); loadOtherRates();
     button.addEventListener('click', loadRates);
     loadRates();
 })();

@@ -40,7 +40,7 @@
 
     function getCurrency() {
         var cs = document.getElementById('currency_select');
-        return cs && ['USD','RMB','EUR'].includes(cs.value) ? cs.value : 'USD';
+        return cs && Object.prototype.hasOwnProperty.call(window.systemCurrencies, cs.value) ? cs.value : 'USD';
     }
     function getBusinessRate() {
         var el = document.getElementById('exchange_rate');
@@ -50,7 +50,7 @@
     function fromUsd(value) { return value * window.piUsdFactor(); }
     function toUsd(value) { return value / window.piUsdFactor(); }
     function getSymbol() {
-        return ({RMB:'¥',USD:'$',EUR:'€'})[getCurrency()];
+        return window.systemCurrencySymbol(getCurrency());
     }
     function signedAdjustment() {
         var amount = Math.abs(parseFloat(document.getElementById('shipping_cost').value) || 0);
@@ -236,7 +236,7 @@
         var currency = getCurrency();
         document.getElementById('total_label').textContent = '订单总金额 (' + currency + ')';
         var shipSym = document.getElementById('shipping_sym');
-        if (shipSym) shipSym.textContent = ({RMB:'¥',USD:'$',EUR:'€'})[currency];
+        if (shipSym) shipSym.textContent = window.systemCurrencySymbol(currency);
         repriceForCurrency();
         document.dispatchEvent(new Event('pi-currency-applied'));
     }
@@ -530,7 +530,7 @@
             <div class="mb-3"><label class="form-label">业务员 <span class="text-danger">*</span></label><input type="text" class="form-control searchable-input pi-structural-control" id="sp_search" placeholder="输入关键词搜索……" autocomplete="off" value="{{ pi.salesperson }}"><select class="form-select d-none pi-structural-control" id="pi_salesperson" name="salesperson" required><option value="">— 请选择 —</option>{% for sp in all_salespersons %}<option value="{{ sp.name }}" data-label="{{ sp.name }}" {% if pi.salesperson == sp.name %}selected{% endif %}>{{ sp.name }}</option>{% endfor %}</select><div class="searchable-dropdown dropdown-menu w-100" id="sp_dropdown" style="max-height:200px;overflow-y:auto;"></div></div>
             <div class="mb-3"><label for="notes" class="form-label">PI 备注</label><textarea class="form-control" id="notes" name="notes" rows="2">{{ pi.notes or '' }}</textarea></div>
             <div class="mb-3"><label class="form-label">收款账户</label><select class="form-select pi-structural-control" name="account_id" id="account_select" onchange="onAccountChange()"><option value="" selected>— 保留本单银行信息快照 —</option>{% for a in all_accounts %}<option value="{{ a.id }}" data-brand="{{ a.primary_brand }}" data-brands="{{ a.brand }}" data-bank="{{ a.bank_info() }}" data-currency="{{ a.currency or '' }}">{{ a.name }}{% if a.currency %}（{{ a.currency }}）{% endif %}</option>{% endfor %}</select><div class="form-text">只有主动选择新账户时，才会整组替换本单银行资料。</div></div>
-            <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select"><option value="USD" {% if pi.currency == 'USD' %}selected{% endif %}>USD ($)</option><option value="EUR" {% if pi.currency == 'EUR' %}selected{% endif %}>EUR (€)</option><option value="RMB" {% if pi.currency == 'RMB' %}selected{% endif %}>RMB (¥)</option></select></div>
+            <div class="mb-3"><label class="form-label">币种</label><select class="form-select pi-structural-control" name="currency" id="currency_select">{% for c in currency_options(pi.currency if pi is defined and pi else none) %}<option value="{{ c.code }}" {% if pi is defined and pi and pi.currency == c.code %}selected{% endif %}>{{ c.code }} ({{ c.symbol }}){% if not c.enabled %} · 已停用{% endif %}</option>{% endfor %}</select></div>
             {% include '_eur_rates.html' %}
 <div class="mb-3">
                 <label for="exchange_rate" class="form-label">本单业务汇率 <span class="text-danger">*</span></label>

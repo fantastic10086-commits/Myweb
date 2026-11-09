@@ -37,7 +37,7 @@ PLACEHOLDER_GROUPS = {
         ('salesperson_wechat', '业务员微信（同电话）'),
         ('salesperson_whatsapp', '业务员 WhatsApp（同电话）'),
         ('salesperson_email', '业务员邮箱'),
-        ('currency', '币种代码（USD/RMB/EUR）'),
+        ('currency', '币种代码（来自币种管理）'),
         ('currency_symbol', '币种符号（$/¥）'),
         ('payment_terms', '付款条款'),
         ('price_terms', '贸易条款'),

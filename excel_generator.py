@@ -10,7 +10,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.worksheet.page import PageMargins
 
-CUR_SYMBOL = {'USD': '$', 'RMB': '¥', 'EUR': '€'}
 BRANDS = {
     'klista': 'CHANGZHOU KLISTA INTERNATIONAL TRADE CO., LTD.',
     'qisuo':  'Changzhou QISUO Welding and Cutting Equipment Co., Ltd.',
@@ -19,7 +18,7 @@ BRANDS = {
 
 def generate_pi_excel(pi, output_dir):
     cur = getattr(pi, 'currency', 'USD') or 'USD'
-    sym = CUR_SYMBOL.get(cur, '$')
+    sym = currency_symbol(cur)
     brand = getattr(pi, 'company', 'klista') or 'klista'
     company_name = getattr(pi, '_company_name_override', '') or BRANDS.get(brand, BRANDS['klista'])
     company_address = getattr(pi, '_company_addr_override', '') or 'No. 158 Jinchuang Road, Yaoguan Town, Changzhou City, China'

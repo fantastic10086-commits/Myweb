@@ -101,7 +101,7 @@ function numericValue(elementId) {
 }
 
 function currentExchangeRate() {
-    if (piCurrency === 'RMB' || piCurrency === 'EUR') return savedExchangeRate;
+    if (piCurrency !== 'USD') return savedExchangeRate;
     return numericValue('businessRate');
 }
 
@@ -847,7 +847,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <label for="businessRate" class="form-label small mb-1">本单业务汇率</label>
                 <div class="input-group input-group-sm" style="width:220px;">
                     <span class="input-group-text">1 {{ pi.currency }} =</span>
-                    <input type="number" class="form-control" id="businessRate" min="0.0001" step="0.0001" value="{{ '%.4f'|format(pi_exchange_rate) }}" {% if pi.procurement_confirmed or pi.currency == 'EUR' %}disabled{% endif %}>
+                    <input type="number" class="form-control" id="businessRate" min="0.0001" step="0.0001" value="{{ '%.4f'|format(pi_exchange_rate) }}" {% if pi.procurement_confirmed or pi.currency not in ['USD','RMB'] %}disabled{% endif %}>
                     <span class="input-group-text">RMB</span>
                 </div>
             </div>

@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}币种管理{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+    <div><h2><i class="bi bi-currency-exchange me-2"></i>币种管理</h2><p class="text-muted mb-0">新增币种后，可用于收款账户、PI、回款及导出。汇率统一使用 Frankfurter。</p></div>
+    <a href="{{ url_for('account_list') }}" class="btn btn-outline-secondary">收款账户</a>
+</div>
+<div class="card mb-3"><div class="card-body">
+    <h5 class="mb-3">新增币种</h5>
+    <form method="post" action="{{ url_for('currency_add') }}" class="row g-2 align-items-end">
+        <div class="col-md-2"><label class="form-label">代码</label><input class="form-control text-uppercase" name="code" required pattern="[A-Za-z]{3}" maxlength="3" placeholder="如 GBP"></div>
+        <div class="col-md-3"><label class="form-label">名称</label><input class="form-control" name="name" required maxlength="50" placeholder="如 英镑"></div>
+        <div class="col-md-2"><label class="form-label">符号</label><input class="form-control" name="symbol" required maxlength="12" placeholder="如 £"></div>
+        <div class="col-md-3"><label class="form-label">当前登录密码</label><input class="form-control" type="password" name="current_password" required autocomplete="current-password"></div>
+        <div class="col-md-2 d-grid"><button class="btn btn-primary">验证汇率并添加</button></div>
+    </form>
+    <small class="text-muted d-block mt-2">使用3位英文代码；人民币沿用 RMB。系统验证能取得参考汇率后才会添加，无需填写汇率来源。</small>
+</div></div>
+<div class="card"><div class="table-responsive"><table class="table mb-0 align-middle">
+    <thead class="table-light"><tr><th>代码</th><th>名称</th><th>符号</th><th>状态</th><th>当前登录密码</th><th class="text-end">操作</th></tr></thead>
+    <tbody>{% for c in currencies %}<tr>
+        <td><strong>{{ c.code }}</strong></td>
+        <td><form id="currency-{{ c.code }}" method="post" action="{{ url_for('currency_edit',code=c.code) }}"><input class="form-control form-control-sm" name="name" value="{{ c.name }}" required maxlength="50"></form></td>
+        <td><input form="currency-{{ c.code }}" class="form-control form-control-sm" name="symbol" value="{{ c.symbol }}" required maxlength="12" style="min-width:70px;max-width:120px;"></td>
+        <td><span class="badge {{ 'bg-success' if c.enabled else 'bg-secondary' }}">{{ '启用' if c.enabled else '停用' }}</span></td>
+        <td><input form="currency-{{ c.code }}" class="form-control form-control-sm" type="password" name="current_password" required autocomplete="current-password" aria-label="{{ c.code }} 当前登录密码"></td>
+        <td class="text-end text-nowrap"><button form="currency-{{ c.code }}" class="btn btn-sm btn-outline-primary">保存</button>
+        {% if is_admin and c.code not in ['USD','RMB'] %}<form method="post" action="{{ url_for('currency_toggle',code=c.code) }}" class="d-inline"><button class="btn btn-sm btn-outline-secondary">{{ '停用' if c.enabled else '启用' }}</button></form>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+</table></div></div>
+<p class="small text-muted mt-2">币种代码固定；修改名称和符号不改变历史汇率。停用后不用于新订单，原订单可继续查看、编辑和登记同币种回款。美元和人民币是基础币种，保持启用。</p>
+{% endblock %}

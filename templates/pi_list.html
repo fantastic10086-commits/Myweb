@@ -1074,7 +1074,7 @@ function populatePaymentAccounts(currency, preferredAccountId) {
     select.disabled = eligible.length === 0;
     help.textContent = eligible.length
         ? '仅显示 ' + currency + ' 账户；同币种账户可以切换，请确认实际到账账户。'
-        : '尚未配置 ' + currency + ' 收款账户，请先让管理员在“字段管理”中添加。';
+        : '尚未配置 ' + currency + ' 收款账户，请先在用户菜单“收款账户与币种”中添加。';
     help.className = eligible.length ? 'text-muted' : 'text-danger';
 }
 function preparePaymentSubmit(form) {
@@ -1165,7 +1165,7 @@ document.addEventListener('paste', pastePaymentAttachment);
 function confirmPayment(id, total, currency, preferredAccountId) {
     currentPaymentPiId = id;
     showPaymentDetails();
-    var sym = ({RMB:'¥',USD:'$',EUR:'€'})[currency];
+    var sym = window.systemCurrencySymbol(currency);
     currentPITotal = total;
     document.getElementById('payModalTitle').textContent = '登记回款';
     document.getElementById('payPINumber').textContent = '#' + id;
@@ -1182,7 +1182,7 @@ function confirmPayment(id, total, currency, preferredAccountId) {
     document.getElementById('paymentForm').action = '/pi/' + id + '/toggle-paid';
     if (window.paymentLiveCheck) window.paymentLiveCheck.reset(id);
     var usdRow = document.getElementById('usdEquivRow');
-    if (currency === 'RMB' || currency === 'EUR') {
+    if (currency !== 'USD') {
         usdRow.style.display = '';
         updateUsdEquiv();
     } else {
@@ -1200,16 +1200,16 @@ async function updateUsdEquiv() {
     if (!day) { output.textContent = '请选择实际到账日期'; return; }
     output.textContent = '获取中…';
     try {
-        if (!receiptRateRequests[day]) {
-            receiptRateRequests[day] = fetch('/api/exchange-rates/current?date=' + encodeURIComponent(day))
+        if (!receiptRateRequests[currency + ':' + day]) {
+            receiptRateRequests[currency + ':' + day] = fetch('/api/exchange-rates/currency/' + encodeURIComponent(currency) + '?date=' + encodeURIComponent(day))
                 .then(function(response) { return response.json().then(function(data) {
                     if (!response.ok) throw Error(data.error || '获取失败');
                     return data;
-                }); }).catch(function(error) { delete receiptRateRequests[day]; throw error; });
+                }); }).catch(function(error) { delete receiptRateRequests[currency + ':' + day]; throw error; });
         }
-        var rates = await receiptRateRequests[day];
+        var rates = await receiptRateRequests[currency + ':' + day];
         if (document.getElementById('payReceivedOn').value !== day || document.getElementById('payCurrency').textContent !== currency) return;
-        var rate = Number(currency === 'RMB' ? rates.rmb_usd_rate : rates.eur_usd_rate);
+        var rate = Number(rates.currency_usd_rate);
         if (!(rate > 0 && Number.isFinite(rate))) throw Error('参考汇率无效');
         var amount = parseFloat(document.getElementById('payAmount').value) || 0;
         output.textContent = '$' + (amount * rate).toFixed(2) + ' · 1 ' + currency + ' = ' + rate.toFixed(6) + ' USD · 参考日期 ' + rates.fx_reference_date;
@@ -1223,7 +1223,7 @@ function viewPayments(id) {
     fetch('/api/pi/' + id + '/payments').then(function(r){return r.json();}).then(function(data){
         currentPaymentPiId = id;
         showPaymentDetails();
-        var sym = ({RMB:'¥',USD:'$',EUR:'€'})[data.currency];
+        var sym = window.systemCurrencySymbol(data.currency);
         var grandTotal = data.grand_total || data.total_amount;
         currentPITotal = grandTotal;
         document.getElementById('payModalTitle').textContent = '回款记录';
@@ -1237,7 +1237,7 @@ function viewPayments(id) {
         clearPaymentAttachment();
         populatePaymentAccounts(data.currency, data.default_account_id);
         document.getElementById('payAmount').value = (grandTotal - data.received).toFixed(2);
-        if (data.currency === 'RMB' || data.currency === 'EUR') {
+        if (data.currency !== 'USD') {
             document.getElementById('usdEquivRow').style.display = '';
             updateUsdEquiv();
         } else {

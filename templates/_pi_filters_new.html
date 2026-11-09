@@ -118,10 +118,7 @@
     {% if order_status %}，订单进度：<strong>{{ order_status_label }}</strong>{% endif %}
     {% if customs_status %}，报关登记：<strong>{{ customs_status_label }}</strong>{% endif %}
     &nbsp;|&nbsp; 订单总金额：
-    {% if filtered_totals.USD %}<strong>${{ '%.2f'|format(filtered_totals.USD) }}</strong>{% endif %}
-    {% if filtered_totals.USD and filtered_totals.RMB %} + {% endif %}
-    {% if filtered_totals.RMB %}<strong>¥{{ '%.2f'|format(filtered_totals.RMB) }}</strong>{% endif %}
-    {% if filtered_totals.EUR %} <strong>€{{ '%.2f'|format(filtered_totals.EUR) }}</strong>{% endif %}
+    {% for code, amount in filtered_totals.items() %}{% if amount %}<strong>{{ currency_symbol(code) }}{{ '%.2f'|format(amount) }}</strong> {% endif %}{% endfor %}
 </div>
 {% endif %}
 <script>

@@ -14,7 +14,7 @@ class EuroTests(unittest.TestCase):
  def setUpClass(cls):fixture.SecuritySmokeTests.setUpClass()
  def setUp(self):
   self.helper=fixture.SecuritySmokeTests();self.helper.setUp();self.helper.login('alice');self.client=self.helper.client
-  rate_mock=patch('fx_rates.usd_reference_rates',return_value={'eur_usd_rate':1.3,'rmb_usd_rate':1/7,'fx_reference_date':'2026-11-02','fx_source':'Frankfurter'})
+  rate_mock=patch('fx_rates.usd_reference_rates',return_value={'usd_rmb_rate':7,'eur_rmb_rate':9.1,'eur_usd_rate':1.3,'rmb_usd_rate':1/7,'fx_reference_date':'2026-11-02','fx_source':'Frankfurter'})
   rate_mock.start();self.addCleanup(rate_mock.stop)
  def test_euro_invoice_payment_and_reports(self):
   with application.app.app_context():

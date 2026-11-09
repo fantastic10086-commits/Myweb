@@ -17,7 +17,8 @@ application = fixture.application
 
 def reference(day):
     rate = 7.0 if day.month == 10 else 8.0
-    return dict(rmb_usd_rate=1/rate, eur_usd_rate=1.25 if day.month == 10 else 1.5,
+    eur = 1.25 if day.month == 10 else 1.5
+    return dict(usd_rmb_rate=rate, rmb_usd_rate=1/rate, eur_usd_rate=eur, eur_rmb_rate=eur*rate,
                 fx_reference_date=day.isoformat(), fx_source='Frankfurter')
 
 

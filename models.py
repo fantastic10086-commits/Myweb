@@ -313,6 +313,15 @@ class DocumentTemplate(db.Model):
         }
 
 
+class Currency(db.Model):
+    __tablename__ = 'currencies'
+    code = db.Column(db.String(3), primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    symbol = db.Column(db.String(12), nullable=False)
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    verified_at = db.Column(db.DateTime, nullable=True)
+
+
 class Payment(db.Model):
     __tablename__ = 'payments'
 
@@ -505,6 +514,8 @@ class PI(db.Model):
     # follow later changes to the system default because historical quotation,
     # procurement and profit figures need to remain reproducible.
     exchange_rate = db.Column(db.Float, nullable=False, default=6.5)
+    currency_usd_rate = db.Column(db.Float, nullable=True)
+    currency_rmb_rate = db.Column(db.Float, nullable=True)
     eur_usd_rate = db.Column(db.Float, nullable=True)
     eur_rmb_rate = db.Column(db.Float, nullable=True)
     fx_reference_date = db.Column(db.String(10), default='')
@@ -656,6 +667,7 @@ class PI(db.Model):
             'salesperson': self.salesperson,
             'currency': self.currency,
             'exchange_rate': self.exchange_rate,
+            'currency_usd_rate': self.currency_usd_rate, 'currency_rmb_rate': self.currency_rmb_rate,
             'eur_usd_rate': self.eur_usd_rate, 'eur_rmb_rate': self.eur_rmb_rate,
             'fx_reference_date': self.fx_reference_date, 'fx_source': self.fx_source,
             'total_amount': self.total_amount,

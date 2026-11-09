@@ -13,6 +13,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='lib/bootstrap-icons.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script>window.systemCurrencies = {{ currency_symbols|tojson }};
+    window.systemCurrencySymbol = function(code) { return window.systemCurrencies[code] || code; };</script>
     {% block extra_head %}{% endblock %}
 </head>
 <body translate="no" class="notranslate">
@@ -87,6 +89,7 @@
                         <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="bi bi-person-circle"></i> 我的资料</a></li>
                         <li><a class="dropdown-item" href="{{ url_for('account_list') }}"><i class="bi bi-bank"></i> 收款账户与币种</a></li>
                         <li><a class="dropdown-item" href="{{ url_for('exchange_rates_page') }}"><i class="bi bi-currency-exchange"></i> 系统汇率</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('currency_list') }}"><i class="bi bi-list-ul"></i> 币种管理</a></li>
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('admin_center') }}"><i class="bi bi-grid"></i> 管理中心</a></li>
                         <li><a class="dropdown-item" href="{{ url_for('finance_reconciliation') }}"><i class="bi bi-journal-check"></i> 财务核对</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
@@ -163,7 +166,7 @@
     })();
     </script>
     {% block extra_scripts %}{% endblock %}
-    <script src="{{ url_for('static', filename='eur_rates.js', v='20261103') }}"></script>
+    <script src="{{ url_for('static', filename='eur_rates.js', v='20261109-currencies') }}"></script>
     <script src="{{ url_for('static', filename='customer_adjustments.js', v='20261103') }}"></script>
 </body>
 </html>

@@ -55,7 +55,7 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label">本单业务汇率</label>
-                    <input type="text" class="form-control" value="{% if pi.currency == 'EUR' %}1 EUR = {{ pi.eur_usd_rate }} USD / {{ pi.eur_rmb_rate }} RMB{% else %}1 USD = {{ '%.4f'|format(pi.exchange_rate or exchange_rate) }} RMB{% endif %}" readonly>
+                    <input type="text" class="form-control" value="{% if pi.currency == 'EUR' %}1 EUR = {{ pi.eur_usd_rate }} USD / {{ pi.eur_rmb_rate }} RMB{% elif pi.currency not in ['USD','RMB'] %}1 {{ pi.currency }} = {{ pi.currency_usd_rate }} USD / {{ pi.currency_rmb_rate }} RMB{% else %}1 USD = {{ '%.4f'|format(pi.exchange_rate or exchange_rate) }} RMB{% endif %}" readonly>
                     <small class="text-muted">用于本单报价、采购和利润核算；不会随系统默认汇率变化。</small>
                 </div>
                 <div class="mb-3">
