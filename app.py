@@ -3781,6 +3781,17 @@ def sales_stats():
     results = sorted((SimpleNamespace(salesperson=name, total_amount=g['total'],
                        pi_count=len(g['pis']), customer_count=len(g['customers']))
                       for name, g in groups.items()), key=lambda r: r.total_amount, reverse=True)
+    if request.args.get('export') == 'xlsx':
+        from receipt_export import export_receipts
+        actual_ids = {r[0] for r in db.session.query(FinanceReview.record_id).filter(
+            FinanceReview.kind == 'payment', FinanceReview.occurred_on.isnot(None)).all()}
+        output = export_receipts(details, date_from, date_to,
+                                 sp_filter if is_admin() else [current_salesperson_name()], actual_ids)
+        response = send_file(output, as_attachment=True,
+            download_name='实际到账明细_' + date.today().isoformat() + '.xlsx',
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response.headers['Cache-Control'] = 'private, no-store'
+        return response
     return render_template('sales_stats.html', stats=results,
                            grand_total=sum(r.total_amount for r in results),
                            grand_pi_count=len({pi.id for _, pi, _ in rows}),
