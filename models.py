@@ -576,6 +576,10 @@ class PI(db.Model):
         return round(settled, 2) >= round(self.grand_total, 2)
 
     @property
+    def shipping_payment_shortfall(self):
+        return bool(self.shipping_completed and not self.actual_payment_complete)
+
+    @property
     def procurement_allowed(self):
         if self.advance_payment_required:
             return (self.advance_slip or {}).get('status') == 'approved' or self.actual_payment_complete

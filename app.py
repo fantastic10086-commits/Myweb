@@ -7962,6 +7962,85 @@ def payment_delete(id, pid):
     return redirect(request.referrer or url_for('pi_list'))
 
 
+def _payment_edit_revision(payment, pi, review=None):
+    if review is None:
+        review = FinanceReview.query.filter_by(kind='payment', record_id=payment.id).first()
+    state = _snapshot(payment, ['id', 'amount', 'fee', 'order_no', 'attachment', 'deleted_at',
+                               'performance_date', 'performance_usd_rate', 'receiving_account_id',
+                               'receiving_account_name', 'receiving_account_currency', 'note'])
+    state.update(pi_version=pi.version, review_version=review.version if review else 0,
+                 received_on=review.occurred_on if review else None)
+    return hashlib.sha256(json.dumps(state, sort_keys=True, default=str).encode()).hexdigest()
+
+
+@app.route('/api/pi/<int:id>/payments/<int:pid>/edit', methods=['POST'])
+@login_required
+def payment_edit(id, pid):
+    pi = PI.query.get_or_404(id)
+    require_pi_access(pi)
+    payment = Payment.query.filter_by(id=pid, pi_id=id).filter(Payment.deleted_at.is_(None)).first_or_404()
+    data = request.get_json(silent=True) or {}
+    if not isinstance(data, dict):
+        return jsonify(error='修改参数格式无效。'), 400
+    review = FinanceReview.query.filter_by(kind='payment', record_id=pid).first()
+    if data.get('revision') != _payment_edit_revision(payment, pi, review):
+        return jsonify(error='记录或订单已被修改，请刷新回款记录后重试。'), 409
+    reason = str(data.get('reason') or '').strip()
+    if not reason or len(reason) > 500:
+        return jsonify(error='请填写修改原因，最多500字。'), 400
+    try:
+        amount = _nonnegative_float(data.get('amount'), '回款金额')
+        if amount <= 0 or abs(amount - round(amount, 2)) > 0.000001:
+            raise ValueError('回款金额必须大于0，最多保留两位小数。')
+        received_on = date.fromisoformat(str(data.get('received_on') or ''))
+        if received_on > (datetime.utcnow() + timedelta(hours=8)).date():
+            raise ValueError('实际到账日期不能晚于今天。')
+    except (ValueError, TypeError) as exc:
+        return jsonify(error=str(exc) or '请填写有效金额和实际到账日期。'), 400
+    other_received = sum(p.amount for p in _active_payments(pi.id) if p.id != pid)
+    if round(other_received + amount, 2) > round(pi.grand_total, 2):
+        return jsonify(error='修改后累计实收不能超过订单总金额。'), 400
+    fields = ['amount', 'fee', 'order_no', 'attachment', 'created_at', 'performance_usd_rate',
+              'performance_date', 'performance_reference_date', 'performance_source']
+    before = _snapshot(payment, fields)
+    before.update(received_on=review.occurred_on if review else None,
+                  finance_checked=bool(review and review.checked), pi_paid=pi.paid)
+    # Preserve an existing frozen rate if only the amount changes on the same day.
+    try:
+        snapshot = (receipt_performance_snapshot(pi.currency, received_on)
+                    if payment.performance_date != received_on or not payment.performance_usd_rate
+                    else None)
+    except Exception:
+        return jsonify(error='无法获取到账日期的业绩参考汇率，修改尚未保存，请稍后重试。'), 503
+    try:
+        payment.amount = round(amount, 2)
+        if snapshot:
+            for key, value in snapshot.items():
+                setattr(payment, key, value)
+        if not review:
+            review = FinanceReview(kind='payment', record_id=pid)
+            db.session.add(review)
+        review.occurred_on = received_on
+        review.checked = False
+        review.checked_by = ''
+        review.checked_at = None
+        review.source_signature = ''
+        _recalculate_pi_payments(pi)
+        if pi.customer:
+            _recalculate_customer_deal(pi.customer)
+        after = _snapshot(payment, fields)
+        after.update(received_on=received_on, finance_checked=False, pi_paid=pi.paid,
+                     change_reason=reason, shipping_payment_shortfall=pi.shipping_payment_shortfall)
+        _audit('update', 'payment', pid, f'修改 {pi.pi_number} 回款金额／到账日期', before=before, after=after)
+        db.session.commit()
+    except (StaleDataError, IntegrityError):
+        db.session.rollback()
+        return jsonify(error='记录已被其他人修改，请刷新后重试。'), 409
+    return jsonify(success=True, shipping_payment_shortfall=pi.shipping_payment_shortfall,
+                   message='已保存。已发货但回款未付清，请及时核对；原发货记录已保留。'
+                   if pi.shipping_payment_shortfall else '回款修改已生效，相关统计已更新。')
+
+
 @app.route('/api/pi/<int:id>/payments')
 @login_required
 def api_pi_payments(id):
@@ -7980,7 +8059,23 @@ def api_pi_payments(id):
     if default_account_id is None:
         matching_account = _matching_account_for_pi(pi)
         default_account_id = matching_account.id if matching_account else None
-    return jsonify({
+    edit_events = {}
+    payment_ids = [p.id for p in payments]
+    if payment_ids:
+        logs = AuditLog.query.filter(AuditLog.entity_type == 'payment', AuditLog.action == 'update',
+                                     AuditLog.entity_id.in_(payment_ids)).order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).all()
+        for log in logs:
+            try:
+                before, after = json.loads(log.before_json or '{}'), json.loads(log.after_json or '{}')
+            except ValueError:
+                continue
+            if not after.get('change_reason'):
+                continue
+            edit_events.setdefault(log.entity_id, []).append(dict(actor=log.username,
+                time=(log.created_at + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M'),
+                reason=after['change_reason'], before_amount=before.get('amount'), after_amount=after.get('amount'),
+                before_date=before.get('received_on'), after_date=after.get('received_on')))
+    response = jsonify({
         'currency': pi.currency or 'USD',
         'total_amount': pi.total_amount,
         'product_subtotal': pi.product_subtotal,
@@ -7988,19 +8083,12 @@ def api_pi_payments(id):
         'received': pi.received_amount or 0,
         'paid': pi.paid,
         'default_account_id': default_account_id,
-        'payments': [{
-            'id': p.id,
-            'amount': p.amount,
-            'fee': p.fee or 0,
-            'order_no': p.order_no or '',
-            'receiving_account_id': p.receiving_account_id,
-            'receiving_account_name': p.receiving_account_name or '',
-            'receiving_account_currency': p.receiving_account_currency or '',
-            'has_attachment': bool(p.attachment),
-            'note': p.note or '',
-            'created_at': p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '',
-        } for p in payments]
+        'shipping_completed': bool(pi.shipping_completed),
+        'shipping_payment_shortfall': pi.shipping_payment_shortfall,
+        'payments': [dict(p.to_dict(), revision=_payment_edit_revision(p, pi), edits=edit_events.get(p.id, [])) for p in payments]
     })
+    response.headers['Cache-Control'] = 'no-store'
+    return response
 
 
 @app.route('/payments/<int:id>/attachment')

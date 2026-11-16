@@ -13,6 +13,7 @@
 {% endblock %}
 {% block content %}
 {% set sym = currency_symbol(pi.currency) %}
+{% if pi.shipping_payment_shortfall %}<div class="alert alert-danger" role="alert">异常：订单已发货，但当前回款未付清。原发货记录已保留，请及时核对。</div>{% endif %}
 <div class="row mb-3 align-items-center">
     <div class="col">
         <h2><i class="bi bi-eye me-2"></i>预览 PI {{ pi.pi_number }}</h2>

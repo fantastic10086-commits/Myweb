@@ -218,7 +218,7 @@
                                         title="{{ dispatch_status }} · {{ details }}">
                                     <span class="pi-list-workflow-dot"><i class="bi bi-truck"></i></span>
                                     <span class="pi-list-workflow-label">报关 / 发货</span>
-                                    <span class="pi-list-workflow-status">{{ dispatch_status }}</span>
+                                    <span class="pi-list-workflow-status">{{ dispatch_status }}</span>{% if pi.shipping_payment_shortfall %}<span class="badge bg-danger mt-1">已发货 · 回款未付清</span>{% endif %}
                                 </button>
                             </div>
                             {% if details %}<div class="dispatch-summary" title="{{ details }}">{{ details }}</div>{% endif %}
@@ -283,6 +283,7 @@
 {% include 'order_photos_modal.html' %}
 <script src="{{ url_for('static', filename='order_photos.js', v='20261012-1') }}" defer></script>
 <script src="{{ url_for('static', filename='pi_pdf_preview.js') }}" defer></script>
+<script src="{{ url_for('static', filename='payment_edit.js') }}" defer></script>
 <div class="modal fade" id="piPreviewModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl"><div class="modal-content">
         <div class="modal-header"><h5 class="modal-title">PI PDF 查看</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -1263,6 +1264,11 @@ function viewPayments(id) {
         var history = document.getElementById('payHistory');
         history.replaceChildren();
         var pmts = data.payments;
+        if (data.shipping_payment_shortfall) {
+            var warning = document.createElement('div'); warning.className = 'alert alert-danger py-2';
+            warning.textContent = '异常：订单已发货，但当前回款未付清。原发货记录已保留，请及时核对。';
+            history.appendChild(warning);
+        }
         if (pmts.length > 0) {
             var title = document.createElement('h6');
             title.textContent = '历史记录';
@@ -1340,6 +1346,10 @@ function viewPayments(id) {
                 var dateCell = row.insertCell();
                 dateCell.textContent = pmts[i].registered_at || pmts[i].created_at || '-';
                 var actionCell = row.insertCell();
+                var editButton = document.createElement('button');
+                editButton.type = 'button'; editButton.className = 'btn btn-sm btn-outline-primary me-1'; editButton.textContent = '编辑';
+                (function(payment, paymentRow) { editButton.onclick = function() { openPaymentEdit(paymentRow, payment, id, data.shipping_completed); }; })(pmts[i], row);
+                actionCell.appendChild(editButton);
                 var deleteButton = document.createElement('button');
                 deleteButton.type = 'button';
                 deleteButton.className = 'btn btn-sm btn-outline-danger';
@@ -1359,6 +1369,7 @@ function viewPayments(id) {
                     };
                 })(pmts[i]);
                 actionCell.appendChild(deleteButton);
+                appendPaymentEdits(tbody, pmts[i]);
                 row.cells[3].className = 'payment-amount';
                 row.cells[4].className = 'payment-amount';
                 if (pmts[i].note) {
