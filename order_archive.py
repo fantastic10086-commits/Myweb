@@ -8,6 +8,7 @@ from flask import current_app, has_app_context
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
+from export_filenames import stored_pi_filename
 from models import db, PI, PIItem, Payment, Expense, Procurement, CustomerFile
 
 
@@ -49,8 +50,12 @@ def sync_order_files(session, pi):
         finally:
             if os.path.exists(temporary):
                 os.remove(temporary)
+        display_name = name
+        if directory == 'PDF_DIR':
+            extension = os.path.splitext(name)[1][1:].lower()
+            display_name = stored_pi_filename(pi, extension)
         session.add(CustomerFile(customer_id=pi.customer_id, pi_id=pi.id,
-            stored_name=stored, original_name=name[:255],
+            stored_name=stored, original_name=display_name[:255],
             mime_type=mimetypes.guess_type(name)[0] or 'application/octet-stream',
             size_bytes=os.path.getsize(target), note=label, created_by='系统自动归档'))
         existing.add(stored)

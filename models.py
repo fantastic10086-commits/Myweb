@@ -276,6 +276,16 @@ class FieldOption(db.Model):
         }
 
 
+class ExportFilenameSettings(db.Model):
+    __tablename__ = 'export_filename_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    omit_pi_prefix = db.Column(db.Boolean, nullable=False, default=True)
+    patterns = db.Column(db.JSON, nullable=False, default=dict)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    __mapper_args__ = {'version_id_col': version}
+
+
 class DocumentTemplate(db.Model):
     """Administrator-managed PI export template.
 

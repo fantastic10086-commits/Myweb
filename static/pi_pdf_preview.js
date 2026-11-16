@@ -23,10 +23,11 @@
             }
             const blob = await response.blob();
             if (current !== revision) return;
-            objectUrl = URL.createObjectURL(blob);
+            const filename = responseFilename(response, 'PI.pdf');
+            objectUrl = URL.createObjectURL(new File([blob], filename, {type: 'application/pdf'}));
             body.replaceChildren();
             const link = document.createElement('a');
-            link.href = objectUrl;
+            link.href = response.url;
             link.target = '_blank';
             link.rel = 'noopener';
             link.className = 'btn btn-sm btn-outline-primary mb-2';

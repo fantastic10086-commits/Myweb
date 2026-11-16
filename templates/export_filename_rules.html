@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}导出文件名{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0">导出文件名</h2>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('document_template_list') }}">返回单据模板</a>
+</div>
+<form method="post" id="filenameRules">
+    <input type="hidden" name="version" value="{{ version }}">
+    <div class="card mb-3"><div class="card-body">
+        <div class="form-check form-switch">
+            <input type="checkbox" class="form-check-input" role="switch" id="omitPrefix" name="omit_prefix" value="1" {% if omit_prefix %}checked{% endif %}>
+            <label for="omitPrefix" class="form-check-label fw-bold">导出文件名省略 PI- 前缀</label>
+        </div>
+        <div class="small text-muted mt-1">适用于下方所有单据。单据正文始终使用完整订单编号。</div>
+    </div></div>
+    <div class="card mb-3"><div class="card-body">
+        <div class="row g-2 pb-2 border-bottom d-none d-md-flex small text-muted">
+            <div class="col-md-2">单据</div><div class="col-md-6">命名规则</div><div class="col-md-4">下载文件名示例</div>
+        </div>
+        {% for row in rows %}
+        <div class="row gy-1 gx-2 align-items-center py-2 {% if not loop.last %}border-bottom{% endif %}" data-code="{{ row.code }}">
+            <label class="col-md-2 fw-semibold" for="rule-{{ row.code }}">{{ row.label }}</label>
+            <div class="col-md-6">
+                <div class="input-group input-group-sm">
+                    <input id="rule-{{ row.code }}" class="form-control" name="rule_{{ row.code }}" value="{{ row.pattern }}" maxlength="160" required>
+                    <select class="form-select flex-grow-0 w-auto" aria-label="为{{ row.label }}插入字段">
+                        <option value="">插入字段</option>
+                        {% for field in row.fields %}<option value="{{ '{' ~ field ~ '}' }}">{{ field }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-4 small text-break">
+                <output class="text-secondary" for="rule-{{ row.code }} omitPrefix">{{ row.preview }}</output>
+                <span class="text-danger" role="status">{{ errors.get(row.code, '') }}</span>
+            </div>
+        </div>
+        {% endfor %}
+        <p class="form-text mb-0">扩展名按下载格式自动添加。装箱单和报关资料草稿会追加 -DRAFT，单独选箱时会附上箱子序号。</p>
+    </div></div>
+    <div class="d-flex flex-wrap align-items-end gap-2">
+        <div><label class="form-label" for="filenamePassword">当前管理员密码</label>
+            <input id="filenamePassword" class="form-control" type="password" name="current_password" autocomplete="current-password" required></div>
+        <button class="btn btn-primary" type="submit">保存命名规则</button>
+    </div>
+</form>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(() => {
+    const form = document.getElementById('filenameRules');
+    const rows = Array.from(form.querySelectorAll('[data-code]'));
+    let timer, revision = 0;
+    function preview() {
+        const current = ++revision;
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const data = new URLSearchParams();
+            data.set('action', 'preview');
+            if (form.omit_prefix.checked) data.set('omit_prefix', '1');
+            rows.forEach(row => {
+                const input = row.querySelector('input');
+                data.set(input.name, input.value);
+            });
+            try {
+                const result = await fetch(form.action, {method: 'POST', body: data});
+                if (!result.ok) throw new Error();
+                const response = await result.json();
+                if (current !== revision) return;
+                rows.forEach(row => {
+                    const code = row.dataset.code;
+                    row.querySelector('output').textContent = response.previews[code];
+                    row.querySelector('[role=status]').textContent = response.errors[code] || '';
+                });
+            } catch (error) {
+                if (current === revision) rows.forEach(row => { row.querySelector('output').textContent = '预览暂不可用'; });
+            }
+        }, 180);
+    }
+    form.omit_prefix.addEventListener('change', preview);
+    rows.forEach(row => {
+        const input = row.querySelector('input'), select = row.querySelector('select');
+        input.addEventListener('input', preview);
+        select.addEventListener('change', () => {
+            if (!select.value) return;
+            input.setRangeText(select.value, input.selectionStart, input.selectionEnd, 'end');
+            input.focus();
+            select.value = '';
+            preview();
+        });
+    });
+    if (form.omit_prefix.checked !== form.omit_prefix.defaultChecked ||
+        rows.some(row => {
+            const input = row.querySelector('input');
+            return input.value !== input.defaultValue;
+        })) preview();
+})();
+</script>
+{% endblock %}

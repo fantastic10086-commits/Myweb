@@ -66,6 +66,8 @@ from document_export import (
     create_placeholder_template,
     render_excel_template, validate_template,
 )
+import export_filenames
+from export_filenames import order_filename
 from supplier_statement_pdf import generate_supplier_statement
 from procurement_export import generate_supplier_purchase_order
 from packing_list_export import (
@@ -7246,19 +7248,20 @@ def _packing_export(pi_id, output_format):
         )
     suffix = '-DRAFT' if any(not batch.is_completed for batch in batches) else ''
     batch_label = '-'.join(str(batch.batch_no) for batch in batches)
-    base_name = secure_filename(
-        f'Packing-List-{pi.pi_number}-Batches-{batch_label}{suffix}'
-    ) or 'packing-list'
+    download_name = order_filename(
+        pi, 'packing-a4', output_format, batch=batch_label, suffix=suffix,
+        template_name=template.name if template else '',
+    )
     if output_format == 'xlsx':
         response = send_file(
             BytesIO(workbook_bytes),
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True, download_name=f'{base_name}.xlsx',
+            as_attachment=True, download_name=download_name,
         )
     else:
         with tempfile.TemporaryDirectory(prefix='packing-list-') as work_dir:
-            excel_path = os.path.join(work_dir, f'{base_name}.xlsx')
-            pdf_path = os.path.join(work_dir, f'{base_name}.pdf')
+            excel_path = os.path.join(work_dir, 'packing.xlsx')
+            pdf_path = os.path.join(work_dir, 'packing.pdf')
             with open(excel_path, 'wb') as output_file:
                 output_file.write(workbook_bytes)
             try:
@@ -7270,7 +7273,7 @@ def _packing_export(pi_id, output_format):
                 pdf_bytes = pdf_file.read()
         response = send_file(
             BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True,
-            download_name=f'{base_name}.pdf',
+            download_name=download_name,
         )
     response.headers['Cache-Control'] = 'no-store'
     return response
@@ -7314,9 +7317,11 @@ def _packing_compact_export(pi_id, output_format):
         selection_suffix = '-Cartons-' + '-'.join(
             str(index + 1) for index in box_indexes
         )
-    base_name = secure_filename(
-        f'Packing-List-{pi.pi_number}-Batch-{batch.batch_no}-Compact-100x150{selection_suffix}{suffix}'
-    ) or 'packing-list-compact-100x150'
+    template = DocumentTemplate.query.filter_by(code='packing-compact-100x150', active=True).first()
+    download_name = order_filename(
+        pi, 'packing-compact-100x150', output_format, batch=batch.batch_no,
+        template_name=template.name if template else '', suffix=selection_suffix + suffix,
+    )
     if output_format == 'pdf':
         # Keep the label PDF at its exact physical size. Applying an editable
         # Excel template before LibreOffice conversion can replace the custom
@@ -7329,9 +7334,6 @@ def _packing_compact_export(pi_id, output_format):
         content = generate_compact_packing_list_workbook(
             pi, batch, box_indexes=box_indexes
         )
-        template = DocumentTemplate.query.filter_by(
-            code='packing-compact-100x150', active=True
-        ).first()
         if template:
             content = apply_packing_template_style(
                 content, _template_file_path(template), compact=True
@@ -7339,7 +7341,7 @@ def _packing_compact_export(pi_id, output_format):
         mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     response = send_file(
         BytesIO(content), mimetype=mimetype, as_attachment=True,
-        download_name=f'{base_name}.{output_format}',
+        download_name=download_name,
     )
     response.headers['Cache-Control'] = 'no-store'
     return response
@@ -7571,7 +7573,7 @@ def customs_document_export(pi_id):
             'spreadsheetml.sheet'
         ),
         as_attachment=True,
-        download_name=f'Customs-{secure_filename(pi.pi_number)}{suffix}.xlsx',
+        download_name=order_filename(pi, 'customs', 'xlsx', suffix=suffix),
     )
     response.headers['Cache-Control'] = 'no-store'
     return response
@@ -7619,10 +7621,7 @@ def pi_download(id):
         flash('生成 PDF 失败，请联系管理员查看日志。', 'danger')
         return redirect(url_for('pi_detail', id=id))
 
-    download_name = (
-        f'{secure_filename(pi.pi_number) or "PI"}_'
-        f'{secure_filename(template.name) or "template"}.pdf'
-    )
+    download_name = order_filename(pi, template.code, 'pdf', template_name=template.name)
     response = send_file(
         output_path,
         mimetype=mimetype,
@@ -7661,7 +7660,8 @@ def pi_excel_download(id):
             flash(f'生成 Excel 失败：{e}', 'danger')
             return redirect(url_for('pi_detail', id=id))
     filepath = os.path.join(app.config['PDF_DIR'], pi.excel_path)
-    return send_file(filepath, as_attachment=True, download_name=pi.excel_path)
+    return send_file(filepath, as_attachment=True,
+                     download_name=export_filenames.stored_pi_filename(pi, 'xlsx'))
 
 
 @app.route('/pi/<int:pi_id>/advance-slip', methods=['GET', 'POST'])
@@ -9175,6 +9175,60 @@ def document_template_list():
     )
 
 
+@app.route('/document-templates/filenames', methods=['GET', 'POST'])
+@admin_required
+def document_filename_rules():
+    config = export_filenames.settings()
+    catalog = {t.code: t.name for t in DocumentTemplate.query.order_by(DocumentTemplate.id)
+               if t.template_type in ('xlsx', 'packing_a4', 'packing_compact')}
+    for code, (label, _, _, _) in export_filenames.DOCUMENTS.items():
+        catalog.setdefault(code, label)
+
+    posted = request.method == 'POST'
+    omit_prefix = request.form.get('omit_prefix') == '1' if posted else config.omit_pi_prefix
+    patterns = dict(config.patterns)
+    rows, errors = [], {}
+    for code, label in catalog.items():
+        _, default, extra, ext = export_filenames.definition(code, label)
+        pattern = request.form.get('rule_' + code, patterns.get(code, default)).strip()
+        sample = {'PI编号': 'PI-20261023-008', '客户名称': '示例客户',
+                  '开单日期': '2026-10-23', '模板名称': label, '供应商': '示例供应商', '批次': '1'}
+        try:
+            export_filenames.validate_pattern(pattern, extra)
+            preview = export_filenames.render_name(pattern, omit_prefix, sample, ext)
+        except ValueError as exc:
+            errors[code] = str(exc)
+            preview = ''
+        rows.append(dict(code=code, label=label, pattern=pattern, preview=preview,
+                         fields=export_filenames.COMMON_FIELDS + extra))
+        if pattern == default:
+            patterns.pop(code, None)
+        else:
+            patterns[code] = pattern
+    if posted and request.form.get('action') == 'preview':
+        return jsonify(previews={row['code']: row['preview'] for row in rows}, errors=errors)
+    if posted and not errors:
+        if request.form.get('version', type=int) != (config.version or 0):
+            flash('命名规则已被其他管理员修改，请刷新后重试。', 'warning')
+            return redirect(url_for('document_filename_rules'))
+        if _require_current_password():
+            before = dict(omit_pi_prefix=config.omit_pi_prefix, patterns=config.patterns)
+            config.omit_pi_prefix, config.patterns = omit_prefix, patterns
+            db.session.add(config)
+            _audit('update', 'export_filename_settings', 1, '更新订单导出文件名',
+                   before=before, after=dict(omit_pi_prefix=omit_prefix, patterns=patterns))
+            try:
+                db.session.commit()
+            except (IntegrityError, StaleDataError):
+                db.session.rollback()
+                flash('命名规则已被其他管理员修改，请刷新后重试。', 'warning')
+            else:
+                flash('导出文件名已保存，下次下载时生效。', 'success')
+            return redirect(url_for('document_filename_rules'))
+    return render_template('export_filename_rules.html', rows=rows, errors=errors,
+                           omit_prefix=omit_prefix, version=config.version or 0)
+
+
 @app.route('/document-templates/add', methods=['POST'])
 @admin_required
 def document_template_add():
@@ -9466,7 +9520,7 @@ def pi_export(id):
         shutil.rmtree(work_dir, ignore_errors=True)
         return response
 
-    download_name = f'{secure_filename(pi.pi_number) or "PI"}_{secure_filename(template.name) or "template"}.{actual_format}'
+    download_name = order_filename(pi, template.code, actual_format, template_name=template.name)
     response = send_file(
         output_path,
         mimetype=mimetype,
@@ -9672,15 +9726,6 @@ def _supplier_export_groups(pi, data):
     return purchase_date, groups
 
 
-def _supplier_order_filename(pi, supplier, extension='xlsx'):
-    label = ''.join(
-        character for character in (supplier.name or '')
-        if character not in '/\\\0\r\n'
-    ).strip()[:80] or f'供应商{supplier.id}'
-    pi_number = secure_filename(pi.pi_number) or f'PI-{pi.id}'
-    return f'采购单_{label}_{pi_number}.{extension}'
-
-
 @app.route('/procurement/<int:pi_id>/supplier-orders/export', methods=['POST'])
 @admin_required
 def procurement_supplier_orders_export(pi_id):
@@ -9742,21 +9787,33 @@ def procurement_supplier_orders_export(pi_id):
             contract_terms=contract_terms,
         )
 
-    def filename(group):
-        name = _supplier_order_filename(pi, group['supplier'])
-        return name.replace('采购单_', '采购合同_', 1) if is_contract else name
+    code = 'purchase-contract' if is_contract else 'purchase-order'
+    config = export_filenames.settings()
+    names = {}
+    used_names = set()
+    for supplier_id in sorted(groups):
+        supplier = groups[supplier_id]['supplier']
+        base = order_filename(pi, code, 'xlsx', supplier=supplier.name, config=config)
+        name = base
+        counter = 1
+        while name.casefold() in used_names:
+            counter += 1
+            name = export_filenames.safe_filename(base[:-5], 'xlsx', f' ({counter})')
+        used_names.add(name.casefold())
+        names[supplier_id] = name
 
-    generated = [(group, create_workbook(group)) for group in selected_groups.values()]
+    generated = [(names[sid], group, create_workbook(group))
+                 for sid, group in selected_groups.items()]
     if is_contract:
         saved = []
         try:
-            for group, content in generated:
+            for name, group, content in generated:
                 stored = f'{uuid.uuid4().hex}.xlsx'
                 saved.append(stored)
                 with open(os.path.join(current_app.config['UPLOAD_DIR'], stored), 'wb') as target:
                     target.write(content)
                 record = CustomerFile(customer_id=pi.customer_id, pi_id=pi.id,
-                    stored_name=stored, original_name=filename(group),
+                    stored_name=stored, original_name=name,
                     mime_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     size_bytes=len(content), note='采购合同', created_by=get_current_user().username)
                 db.session.add(record)
@@ -9771,26 +9828,23 @@ def procurement_supplier_orders_export(pi_id):
             raise
 
     if len(selected_groups) == 1 and requested_supplier_id not in (None, ''):
-        group, content = generated[0]
+        name, group, content = generated[0]
         response = send_file(
             BytesIO(content),
             as_attachment=True,
-            download_name=filename(group),
+            download_name=name,
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
     else:
         archive = BytesIO()
         with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
-            for group, content in generated:
-                bundle.writestr(
-                    filename(group),
-                    content,
-                )
+            for name, group, content in generated:
+                bundle.writestr(name, content)
         archive.seek(0)
         response = send_file(
             archive,
             as_attachment=True,
-            download_name=f'{"供应商采购合同" if is_contract else "供应商采购单"}_{secure_filename(pi.pi_number) or pi.id}.zip',
+            download_name=order_filename(pi, code, 'zip', supplier='全部供应商', config=config),
             mimetype='application/zip',
         )
     response.headers['Cache-Control'] = 'no-store'

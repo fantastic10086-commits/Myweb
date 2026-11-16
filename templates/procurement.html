@@ -582,16 +582,6 @@ function purchaseGroups(payload) {
     return Object.keys(groups).map(function(id) { return groups[id]; });
 }
 
-function responseFilename(response, fallback) {
-    var disposition = response.headers.get('Content-Disposition') || '';
-    var utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
-    if (utf8Match) {
-        try { return decodeURIComponent(utf8Match[1]); } catch (error) { /* use fallback */ }
-    }
-    var plainMatch = disposition.match(/filename="?([^";]+)"?/i);
-    return plainMatch ? plainMatch[1] : fallback;
-}
-
 function downloadSupplierOrders(supplierId, button, contract) {
     var payload;
     try {
