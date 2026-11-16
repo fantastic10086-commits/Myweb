@@ -4421,6 +4421,11 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertTrue(any('PI-TEST-001' in str(value) for value in values))
             self.assertIn('Original Product', values)
             self.assertIn('Packing Product', values)
+            sheet = workbook['装箱单']
+            self.assertEqual([sheet[f'B{row}'].value for row in (11, 12, 13)], [1, None, 1])
+            self.assertEqual(sheet.cell(sheet.max_row, 2).value, 2)
+            self.assertEqual(sheet.cell(sheet.max_row, 7).value,
+                             sum(sheet[f'G{row}'].value for row in (11, 12, 13)))
             self.assertTrue(str(workbook['装箱单'].print_area))
             workbook.close()
             excel.close()
@@ -4747,9 +4752,9 @@ class SecuritySmokeTests(unittest.TestCase):
             )
             grouped_full_book = load_workbook(BytesIO(grouped_full.data))
             grouped_sheet = grouped_full_book['装箱单']
-            self.assertEqual(grouped_sheet['A11'].value, '1-2 (2 cartons)')
-            self.assertEqual(grouped_sheet['E11'].value, 2)
-            self.assertIn('2 箱', str(grouped_sheet.cell(grouped_sheet.max_row, 1).value))
+            self.assertEqual(grouped_sheet['A11'].value, '1-2')
+            self.assertEqual([grouped_sheet[f'{col}11'].value for col in 'BFG'], [2, 1, 2])
+            self.assertEqual(grouped_sheet.cell(grouped_sheet.max_row, 2).value, 2)
             grouped_full_book.close()
             grouped_full.close()
 
@@ -4834,7 +4839,7 @@ class SecuritySmokeTests(unittest.TestCase):
             self.assertEqual(multi_batch_book.sheetnames, ['第1批', '第2批'])
             self.assertEqual(multi_batch_book['第1批']['B7'].value, '第一批地址')
             self.assertEqual(multi_batch_book['第2批']['B7'].value, '第二批地址')
-            self.assertEqual(multi_batch_book['第1批']['A11'].value, '1-2 (2 cartons)')
+            self.assertEqual(multi_batch_book['第1批']['A11'].value, '1-2')
             self.assertEqual(multi_batch_book['第2批']['A11'].value, '3')
             multi_batch_book.close()
             multi_batch_export.close()

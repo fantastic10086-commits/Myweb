@@ -7,7 +7,9 @@ import os
 import unicodedata
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.page import PageMargins
 from reportlab.lib.colors import HexColor
 from reportlab.lib.units import mm
@@ -242,6 +244,50 @@ def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None):
     return output.getvalue()
 
 
+def _apply_a4_master(source, target):
+    # Old A:N masters have no carton-count or per-carton columns. Map their
+    # table styles by field, while the information block keeps its own anchors.
+    legacy = source['O10'].value is None and source['P10'].value is None
+    table_columns = (
+        (1, 5, 2, 3, 4, 5, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
+        if legacy else range(1, 17)
+    )
+    for dest, origin in enumerate(table_columns, 1):
+        if legacy and dest in (2, 6):
+            continue
+        dimension = source.column_dimensions.get(get_column_letter(origin))
+        if dimension is not None:
+            col = target.column_dimensions[get_column_letter(dest)]
+            col.width, col.hidden = dimension.width, dimension.hidden
+
+    imported_styles = {}
+    for row in range(1, target.max_row):
+        src_row = min(row, 11)  # Row 11 is the master's sample item.
+        if row <= 10 and source.row_dimensions[row].height is not None:
+            target.row_dimensions[row].height = source.row_dimensions[row].height
+        for dest, origin in enumerate(table_columns, 1):
+            src = source.cell(src_row, dest if row < 10 else origin)
+            dst = target.cell(row, dest)
+            if isinstance(dst, MergedCell):
+                continue
+            live_value = 4 <= row <= 8 and dest in (2, 10)
+            new_heading = legacy and row == 10 and dest in (2, 6, 7)
+            if row <= 10 and not live_value and not new_heading and src.value is not None:
+                dst.value = src.value
+            if src.has_style and src.style_id not in imported_styles:
+                # Styles are indexed per workbook, including uploaded fonts.
+                dst._style = None
+                dst.font = copy(src.font)
+                dst.fill = copy(src.fill)
+                dst.border = copy(src.border)
+                dst.alignment = copy(src.alignment)
+                dst.number_format = src.number_format
+                dst.protection = copy(src.protection)
+                imported_styles[src.style_id] = dst._style
+            elif src.has_style:
+                dst._style = imported_styles[src.style_id]
+
+
 def apply_packing_template_style(workbook_bytes, template_path, compact=False):
     """Apply an administrator-maintained packing-list Excel master.
 
@@ -256,15 +302,15 @@ def apply_packing_template_style(workbook_bytes, template_path, compact=False):
     source = template_book.active
 
     for target in output_book.worksheets:
-        for key, dimension in source.column_dimensions.items():
-            target.column_dimensions[key].width = dimension.width
-            target.column_dimensions[key].hidden = dimension.hidden
         target.page_setup = copy(source.page_setup)
         target.page_margins = copy(source.page_margins)
         target.print_options = copy(source.print_options)
         target.sheet_properties = copy(source.sheet_properties)
 
         if compact:
+            for key, dimension in source.column_dimensions.items():
+                target.column_dimensions[key].width = dimension.width
+                target.column_dimensions[key].hidden = dimension.hidden
             # Header/information area is fixed. Preserve live values in C3:C5.
             live_cells = {'C3', 'C4', 'C5'}
             for row in range(1, min(7, source.max_row) + 1):
@@ -324,27 +370,7 @@ def apply_packing_template_style(workbook_bytes, template_path, compact=False):
                         color=COMPACT_WHITE if cell.row == 7 else COMPACT_BLACK,
                     )
         else:
-            live_cells = {'B4', 'J4', 'B5', 'J5', 'B6', 'J6', 'B7', 'J7'}
-            for row in range(1, min(10, source.max_row) + 1):
-                if source.row_dimensions[row].height is not None:
-                    target.row_dimensions[row].height = source.row_dimensions[row].height
-                for column in range(1, min(14, source.max_column) + 1):
-                    src = source.cell(row, column)
-                    dst = target.cell(row, column)
-                    if dst.coordinate not in live_cells and src.value is not None:
-                        dst.value = src.value
-                    if src.has_style:
-                        dst._style = copy(src._style)
-                    dst.alignment = copy(src.alignment)
-            prototype_row = 11 if source.max_row >= 11 else None
-            if prototype_row:
-                for row in range(11, target.max_row):
-                    for column in range(1, 15):
-                        src = source.cell(prototype_row, column)
-                        dst = target.cell(row, column)
-                        if src.has_style:
-                            dst._style = copy(src._style)
-                        dst.alignment = copy(src.alignment)
+            _apply_a4_master(source, target)
 
     result = BytesIO()
     output_book.save(result)
@@ -572,16 +598,16 @@ def generate_packing_list_workbook(
     normal = Font(name="Microsoft YaHei", size=9, color="1F2937")
     label = Font(name="Microsoft YaHei", size=9, bold=True, color="4A5568")
 
-    widths = [7, 14, 25, 15, 18, 9, 11, 11, 9, 9, 9, 11, 22, 22]
+    widths = [14, 8, 14, 25, 16, 11, 10, 10, 14, 8, 8, 8, 12, 12, 16, 16]
     for index, width in enumerate(widths, 1):
         sheet.column_dimensions[chr(64 + index)].width = width
 
-    sheet.merge_cells("A1:N2")
+    sheet.merge_cells("A1:P2")
     title = sheet["A1"]
     title.value = "PACKING LIST / 装箱单"
     title.font = Font(name="Arial", size=18, bold=True, color="FFFFFF")
     title.alignment = center
-    for row in sheet["A1:N2"]:
+    for row in sheet["A1:P2"]:
         for cell in row:
             cell.fill = PatternFill("solid", fgColor=NAVY)
 
@@ -597,9 +623,9 @@ def generate_packing_list_workbook(
         sheet.merge_cells(start_row=row_no, start_column=2, end_row=row_no, end_column=8)
         sheet.cell(row_no, 2, _text(left_value)).font = normal
         sheet.cell(row_no, 9, right_label).font = label
-        sheet.merge_cells(start_row=row_no, start_column=10, end_row=row_no, end_column=14)
+        sheet.merge_cells(start_row=row_no, start_column=10, end_row=row_no, end_column=16)
         sheet.cell(row_no, 10, _text(right_value)).font = normal
-        for col in range(1, 15):
+        for col in range(1, 17):
             sheet.cell(row_no, col).alignment = left
 
     # Shipment batches may have their own schedule and handling requirements.
@@ -616,14 +642,14 @@ def generate_packing_list_workbook(
     sheet.merge_cells(start_row=8, start_column=2, end_row=8, end_column=8)
     sheet.cell(8, 2, _text(getattr(packing_list, 'shipping_requirements', '') or '')).font = normal
     sheet.cell(8, 9, "Schedule / 日期").font = label
-    sheet.merge_cells(start_row=8, start_column=10, end_row=8, end_column=14)
+    sheet.merge_cells(start_row=8, start_column=10, end_row=8, end_column=16)
     sheet.cell(8, 10, ' · '.join(schedule)).font = normal
-    for col in range(1, 15):
+    for col in range(1, 17):
         sheet.cell(8, col).alignment = left
 
     headers = [
-        "箱号\nCarton No.", "产品编码\nCode", "产品\nProduct", "规格\nSpecification",
-        "数量\nQty", "净重(kg)\nN.W.", "毛重(kg)\nG.W.", "长(cm)\nL",
+        "箱号\nCarton No.", "箱数\nCartons", "产品编码\nCode", "产品\nProduct", "规格\nSpecification",
+        "每箱数量\nQty/Carton", "总数量\nTotal Qty", "净重(kg)\nN.W.", "毛重(kg)\nG.W.", "长(cm)\nL",
         "宽(cm)\nW", "高(cm)\nH", "体积(m³)\nCBM", "唛头\nShipping Mark",
         "箱备注\nCarton Notes", "产品备注\nItem Notes",
     ]
@@ -648,16 +674,20 @@ def generate_packing_list_workbook(
         physical_box_count += carton_count
         carton_label = (
             str(carton_start) if carton_count == 1
-            else f"{carton_start}-{carton_start + carton_count - 1} ({carton_count} cartons)"
+            else f"{carton_start}-{carton_start + carton_count - 1}"
         )
-        box_items = list(box.items)
+        box_items = list(box.items) or [None]  # Drafts may contain an empty carton.
         for item_index, item in enumerate(box_items):
+            quantity = int(item.quantity) if item else None
+            row_quantity = quantity * carton_count if item else None
             values = [
                 carton_label if item_index == 0 else "",
-                item.product_code,
-                item.product_name,
-                item.specification,
-                int(item.quantity) * carton_count,
+                carton_count if item_index == 0 else None,
+                item.product_code if item else None,
+                item.product_name if item else None,
+                item.specification if item else None,
+                quantity,
+                row_quantity,
                 ((f"{_compact_number(box.net_weight)} × {carton_count}")
                  if carton_count > 1 else box.net_weight) if item_index == 0 else "",
                 ((f"{_compact_number(box.gross_weight)} × {carton_count}")
@@ -669,36 +699,37 @@ def generate_packing_list_workbook(
                  if carton_count > 1 else box.volume_cbm) if item_index == 0 else "",
                 box.shipping_mark if item_index == 0 else "",
                 box.note if item_index == 0 else "",
-                item.note,
+                item.note if item else None,
             ]
             for col, value in enumerate(values, 1):
                 cell = sheet.cell(row_no, col, _text(value) if isinstance(value, str) else value)
                 cell.font = normal
                 cell.border = border
-                cell.alignment = center if col in (1, 2, 5, 6, 7, 8, 9, 10, 11) else left
+                cell.alignment = center if col <= 3 or 6 <= col <= 13 else left
                 if box_index % 2:
                     cell.fill = PatternFill("solid", fgColor=LIGHT_GRAY)
-                if col in (6, 7, 8, 9, 10):
+                if 8 <= col <= 12:
                     cell.number_format = '0.00'
-                if col == 11:
+                if col == 13:
                     cell.number_format = '0.0000'
             sheet.row_dimensions[row_no].height = 32
-            total_qty += int(item.quantity) * carton_count
+            total_qty += row_quantity or 0
             row_no += 1
         total_net += float(box.net_weight or 0) * carton_count
         total_gross += float(box.gross_weight or 0) * carton_count
         total_cbm += float(box.volume_cbm or 0) * carton_count
 
     total_row = row_no
-    sheet.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
-    sheet.cell(total_row, 1, f"合计 / Total — {physical_box_count} 箱 / cartons").alignment = right
-    sheet.cell(total_row, 5, total_qty)
-    sheet.cell(total_row, 6, round(total_net, 2))
-    sheet.cell(total_row, 7, round(total_gross, 2))
-    sheet.merge_cells(start_row=total_row, start_column=8, end_row=total_row, end_column=10)
-    sheet.cell(total_row, 11, round(total_cbm, 4))
-    sheet.merge_cells(start_row=total_row, start_column=12, end_row=total_row, end_column=14)
-    for col in range(1, 15):
+    sheet.cell(total_row, 1, "合计 / Total")
+    sheet.cell(total_row, 2, physical_box_count)
+    sheet.merge_cells(start_row=total_row, start_column=3, end_row=total_row, end_column=6)
+    sheet.cell(total_row, 7, total_qty)
+    sheet.cell(total_row, 8, round(total_net, 2))
+    sheet.cell(total_row, 9, round(total_gross, 2))
+    sheet.merge_cells(start_row=total_row, start_column=10, end_row=total_row, end_column=12)
+    sheet.cell(total_row, 13, round(total_cbm, 4))
+    sheet.merge_cells(start_row=total_row, start_column=14, end_row=total_row, end_column=16)
+    for col in range(1, 17):
         cell = sheet.cell(total_row, col)
         cell.font = Font(name="Microsoft YaHei", size=10, bold=True, color=GREEN)
         cell.fill = PatternFill("solid", fgColor=LIGHT_BLUE)
@@ -706,9 +737,9 @@ def generate_packing_list_workbook(
         cell.alignment = center if col != 1 else right
     sheet.row_dimensions[total_row].height = 28
 
-    sheet.auto_filter.ref = f"A{header_row}:N{max(header_row, row_no - 1)}"
+    sheet.auto_filter.ref = f"A{header_row}:P{max(header_row, row_no - 1)}"
     sheet.print_title_rows = f"1:{header_row}"
-    sheet.print_area = f"A1:N{total_row}"
+    sheet.print_area = f"A1:P{total_row}"
     sheet.oddFooter.center.text = "Page &P / &N"
     sheet.oddFooter.center.size = 8
 
