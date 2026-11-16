@@ -6412,6 +6412,10 @@ def pi_list():
     pi_number_filter = request.args.get('pi_number', '').strip()
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
+    payment_reference_filter = request.args.get('payment_reference', '').strip()
+    if payment_reference_filter:
+        query = query.filter(PI.payments.any(and_(Payment.deleted_at.is_(None),
+            Payment.order_no.contains(payment_reference_filter, autoescape=True))))
     tracking_no_filter = request.args.get('tracking_no', '').strip()
     if tracking_no_filter:
         query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
@@ -6462,7 +6466,7 @@ def pi_list():
     filtered_totals = {code: round(sum(pi.grand_total for pi in pis if (pi.currency or 'USD') == code),2)
                        for code in sorted({pi.currency or 'USD' for pi in pis})}
 
-    resp = make_response(render_template('pi_list.html', tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
+    resp = make_response(render_template('pi_list.html', payment_reference_filter=payment_reference_filter, tracking_no_filter=tracking_no_filter, customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis,
                            salesperson_filter=salesperson_filter,
                            date_from=date_from, date_to=date_to,
                            dispatch_summaries=dispatch_summaries,

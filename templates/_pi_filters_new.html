@@ -1,4 +1,4 @@
-{% set advanced_active = date_from or date_to or tracking_no_filter or payment_status or order_status or customs_status or active_record_filters %}
+{% set advanced_active = date_from or date_to or payment_reference_filter or tracking_no_filter or payment_status or order_status or customs_status or active_record_filters %}
 <div class="card mb-3">
 <form method="get" id="piFilters">
     <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
@@ -69,6 +69,10 @@
                 <label class="form-label small mb-1" for="trackingNoFilter">物流单号</label>
                 <input id="trackingNoFilter" type="text" class="form-control form-control-sm" name="tracking_no" value="{{ tracking_no_filter }}" placeholder="完整或部分物流单号">
             </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-1" for="paymentReferenceFilter">回款流水号</label>
+                <input id="paymentReferenceFilter" type="text" class="form-control form-control-sm" name="payment_reference" value="{{ payment_reference_filter }}" placeholder="完整或部分回款流水号">
+            </div>
 <div class="pi-filter-cell">
                 <label class="form-label small mb-1">回款状态</label>
                 <select class="form-select form-select-sm" name="payment_status">
@@ -104,11 +108,12 @@
 </form>
 </div>
 
-{% if stage or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status or active_record_filters %}
+{% if stage or payment_reference_filter or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status or active_record_filters %}
 <div class="pi-filter-results" role="status">
     {% for key, value in active_record_filters.items() %}<span class="me-2">{{ stage_labels[key][0] }}：<strong>{{ '有记录' if value == 'yes' else '无记录' }}</strong></span>{% endfor %}
     共找到 <strong>{{ pis|length }}</strong> 份 PI
     {% if stage %} · 当前筛选：<strong>有{{ stage_labels[stage][0] }}记录</strong>{% endif %}
+    {% if payment_reference_filter %}，回款流水号：<strong>{{ payment_reference_filter }}</strong>{% endif %}
     {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
     {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
