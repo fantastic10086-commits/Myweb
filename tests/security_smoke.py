@@ -4666,6 +4666,57 @@ class SecuritySmokeTests(unittest.TestCase):
                         pi.received_amount = original_received_amount
                 db.session.commit()
 
+    def test_pi_list_packing_return_preserves_filters_and_order(self):
+        from html import unescape
+        from urllib.parse import parse_qs, urlsplit
+        self.login('alice')
+        with application.app.app_context():
+            pi = PI(pi_number='PI-PACK-RETURN', customer_id=self.alice_customer,
+                    salesperson='Alice', currency='USD', total_amount=10)
+            db.session.add(pi)
+            db.session.commit()
+            pi_id = pi.id
+        path = f'/packing-list/{pi_id}'
+        filters = {'pi_number': 'PI-PACK-RETURN', 'salesperson': 'Alice'}
+        try:
+            listing = self.client.get('/pi/list', query_string=filters).get_data(as_text=True)
+            link = re.search(r'class="dropdown-menu dropdown-menu-end text-start">\s*<li>\s*'
+                             r'<a href="([^"]+)"[^>]*>\s*<i[^>]*></i>装箱单情况', listing)
+            self.assertIsNotNone(link)
+            packing_url = unescape(link.group(1))
+            self.assertEqual(urlsplit(packing_url).path, path)
+            page = self.client.get(packing_url).get_data(as_text=True)
+            self.assertIn('尚未创建装箱单', page)
+            self.assertNotIn('id="packingBoxes"', page)
+            back_href = unescape(re.search(
+                r'<a href="([^"]+)"[^>]*><i class="bi bi-arrow-left"></i> 返回 PI 列表',
+                page).group(1))
+            back = urlsplit(back_href)
+            self.assertEqual(back.path, '/pi/list')
+            self.assertEqual(parse_qs(back.query), {k: [v] for k, v in filters.items()})
+            self.assertEqual(back.fragment, f'pi-row-{pi_id}')
+            self.assertIn(f'id="{back.fragment}"', listing)
+
+            with application.app.app_context():
+                db.session.get(PI, pi_id).received_amount = 1
+                db.session.commit()
+            created = self.client.post(path + '/batches', query_string={'return_to': back_href},
+                                       data={'csrf_token': self.token(packing_url)})
+            self.assertEqual(created.status_code, 302)
+            self.assertEqual(parse_qs(urlsplit(created.location).query)['return_to'], [back_href])
+            batch_page = self.client.get(created.location).get_data(as_text=True)
+            batch_url = unescape(re.search(r'href="([^"]+)"[^>]*>\s*第 1 批', batch_page).group(1))
+            self.assertEqual(parse_qs(urlsplit(batch_url).query)['return_to'], [back_href])
+            self.assertIn('返回 PI 列表', self.client.get(batch_url).get_data(as_text=True))
+            direct = self.client.get(path).get_data(as_text=True)
+            self.assertIn('href="/packing-lists" class="btn btn-sm btn-outline-secondary"', direct)
+            self.login('bob')
+            self.assertEqual(self.client.get(packing_url).status_code, 403)
+        finally:
+            with application.app.app_context():
+                db.session.delete(db.session.get(PI, pi_id))
+                db.session.commit()
+
     def test_packing_list_supports_independent_partial_shipment_batches(self):
         original_received = None
         original_quantity = None

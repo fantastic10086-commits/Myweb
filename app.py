@@ -56,6 +56,7 @@ from models import (
     CustomsDocument, CustomsRevision, TranslationCache,
 )
 import order_archive  # Register transactional order attachment archival.
+from list_preferences import FILTERS as LIST_FILTERS, register_list_preferences
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 from document_export import (
@@ -6931,6 +6932,20 @@ def packing_list_index():
     )
 
 
+def _packing_return_to_pi_list(pi_id):
+    try:
+        source = urllib.parse.urlsplit(request.args.get('return_to', ''))
+    except ValueError:
+        return None
+    if source.scheme or source.netloc or source.path != url_for('pi_list'):
+        return None
+    query = urllib.parse.parse_qs(source.query, keep_blank_values=True)
+    filters = {key: values for key, values in query.items() if key in LIST_FILTERS['pi_list']}
+    # Explicit "all stages" also restores an unfiltered list if another tab
+    # has since changed the account's remembered filters.
+    return url_for('pi_list', _anchor=f'pi-row-{pi_id}', **(filters or {'stage': ''}))
+
+
 @app.route('/packing-list/<int:pi_id>')
 @login_required
 def packing_list_detail(pi_id):
@@ -6939,7 +6954,8 @@ def packing_list_detail(pi_id):
     packing_list = pi.packing_list
     batch = _packing_selected_batch(packing_list, request.args.get('batch'))
     has_payment = (pi.received_amount or 0) > 0
-    if packing_list is None and not has_payment:
+    return_to = _packing_return_to_pi_list(pi_id)
+    if packing_list is None and not has_payment and not return_to:
         flash('PI 尚未回款，不能创建装箱单。', 'warning')
         return redirect(url_for('packing_list_index'))
     data = _packing_list_payload(
@@ -6956,7 +6972,7 @@ def packing_list_detail(pi_id):
     )
     return render_template(
         'packing_list_edit.html', pi=pi, packing_list=packing_list,
-        packing_batch=batch, packing_data=data, can_edit=edit_mode,
+        packing_batch=batch, packing_data=data, can_edit=edit_mode, return_to=return_to,
     )
 
 
@@ -6992,6 +7008,7 @@ def packing_batch_create(pi_id):
     flash(f'已创建第 {next_no} 批发货，请填写本批信息并装箱。', 'success')
     return redirect(url_for(
         'packing_list_detail', pi_id=pi.id, batch=batch.id, show_batch=1,
+        return_to=_packing_return_to_pi_list(pi_id),
     ))
 
 
@@ -10585,7 +10602,6 @@ def eur_reference_rates():
         return jsonify(error='参考汇率暂时无法获取，请手动填写两项欧元汇率。'), 503
 
 
-from list_preferences import register_list_preferences
 register_list_preferences(app, get_current_user)
 
 if __name__ == '__main__':
