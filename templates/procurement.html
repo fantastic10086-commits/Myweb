@@ -592,7 +592,7 @@ function responseFilename(response, fallback) {
     return plainMatch ? plainMatch[1] : fallback;
 }
 
-function downloadSupplierOrders(supplierId, button) {
+function downloadSupplierOrders(supplierId, button, contract) {
     var payload;
     try {
         payload = procurementPayload(false);
@@ -601,6 +601,14 @@ function downloadSupplierOrders(supplierId, button) {
         return;
     }
     if (supplierId != null) payload.supplier_id = Number(supplierId);
+    if (contract) {
+        payload.document_type = 'contract';
+        payload.contract_terms = {};
+        ['payment', 'delivery', 'tax', 'acceptance', 'other'].forEach(function(key) {
+            payload.contract_terms[key] = document.getElementById('contract_' + key).value;
+        });
+    }
+
     var originalHtml = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在生成……';
@@ -665,6 +673,7 @@ function openProcurementPreview() {
             '<strong class="fs-6">' + escHtml(supplier.name) + '</strong>' +
             (contacts.length ? '<div class="small text-muted mt-1">' + contacts.join('　') + '</div>' : '') + '</div>' +
             '<button type="button" class="btn btn-success btn-sm" onclick="downloadSupplierOrders(' + Number(supplier.id) + ', this)"><i class="bi bi-file-earmark-excel me-1"></i>导出该供应商采购单</button>' +
+            '<button type="button" class="btn btn-outline-primary btn-sm" onclick="downloadSupplierOrders(' + Number(supplier.id) + ', this, true)">生成采购合同</button>' +
             '</div><div class="table-responsive"><table class="table table-bordered table-sm align-middle mb-0">' +
             '<thead class="table-light"><tr><th>#</th><th>照片</th><th>产品</th><th>编码</th><th>规格</th><th class="text-end">数量</th><th class="text-end">采购单价</th><th class="text-end">合计</th><th>备注</th></tr></thead><tbody>';
         group.items.forEach(function(entry, itemIndex) {
@@ -826,7 +835,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="d-flex gap-2 flex-wrap">
             {% if is_admin %}<a href="{{ url_for('supplier_list') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-truck me-1"></i>供应商管理</a>{% endif %}
             <button type="button" class="btn btn-outline-primary btn-sm" onclick="openProcurementPreview()">
-                <i class="bi bi-eye me-1"></i>预览采购汇总
+                <i class="bi bi-eye me-1"></i>预览采购汇总 / 采购合同
             </button>
             </div>
         </div>
@@ -1035,10 +1044,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title" id="procurementPreviewModalLabel"><i class="bi bi-clipboard-check me-1"></i>供应商采购单预览</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
+            <div class="px-3 pt-3">
+                <details>
+                    <summary class="text-primary fw-semibold">采购合同条款（生成前填写，适用于本次各供应商合同）</summary>
+                    <p class="small text-muted mt-2 mb-2">未填写的条款在合同中留空，可下载后编辑。合同自动存入对应订单文件夹。</p>
+                    <div class="row g-2 mt-1">
+<div class="col-md-6"><label class="form-label small" for="contract_payment">付款方式</label><textarea class="form-control form-control-sm" id="contract_payment" rows="2" maxlength="1500"></textarea></div>
+<div class="col-md-6"><label class="form-label small" for="contract_delivery">交货日期及地点</label><textarea class="form-control form-control-sm" id="contract_delivery" rows="2" maxlength="1500"></textarea></div>
+<div class="col-md-6"><label class="form-label small" for="contract_tax">税费及发票</label><textarea class="form-control form-control-sm" id="contract_tax" rows="2" maxlength="1500"></textarea></div>
+<div class="col-md-6"><label class="form-label small" for="contract_acceptance">质量及验收</label><textarea class="form-control form-control-sm" id="contract_acceptance" rows="2" maxlength="1500"></textarea></div>
+<div class="col-md-6"><label class="form-label small" for="contract_other">其他约定</label><textarea class="form-control form-control-sm" id="contract_other" rows="2" maxlength="1500"></textarea></div>
+                    </div>
+                </details>
+            </div>
             <div class="modal-body" id="procurementPreviewBody"></div>
             <div class="modal-footer">
                 <small class="text-muted me-auto">导出的供应商文件不包含客户、销售价格、汇率及利润等内部信息。</small>
                 <button type="button" class="btn btn-success" id="exportAllSupplierOrdersBtn" onclick="downloadSupplierOrders(null, this)" style="display:none"></button>
+                <button type="button" class="btn btn-outline-primary" onclick="downloadSupplierOrders(null, this, true)">全部生成采购合同（ZIP）</button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
             </div>
         </div>

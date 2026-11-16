@@ -50,6 +50,7 @@ def generate_supplier_purchase_order(
     buyer_company,
     buyer_address,
     upload_dir,
+    contract_terms=None,
 ):
     """Return one supplier-specific purchase order as XLSX bytes.
 
@@ -199,6 +200,78 @@ def generate_supplier_purchase_order(
     note.font = Font(name="Microsoft YaHei", size=9, color="4A5568")
     note.alignment = left
     note.fill = PatternFill("solid", fgColor="FFF8E1")
+
+    if contract_terms is not None:
+        sheet.title = "采购合同"
+        sheet.page_margins.top = 0.25
+        sheet.page_margins.bottom = 0.45
+        sheet.page_margins.footer = 0.25
+        sheet.row_dimensions[3].height = 6
+        sheet.row_dimensions[9].height = 6
+        sheet.row_dimensions[total_row + 1].height = 6
+        sheet.row_dimensions[note_row].height = 10
+        sheet.row_dimensions[note_row + 1].height = 10
+        sheet.row_dimensions[note_row + 2].height = 6
+        sheet["A1"] = "采购合同"
+        sheet["A1"].font = title_font
+        sheet["A1"].alignment = centered
+        sheet["A4"] = "合同编号"
+        sheet["B4"] = f"{pi.pi_number}-CG-{supplier.id}"
+        sheet["A5"] = "买方（甲方）"
+        sheet["E5"] = "卖方（乙方）"
+        sheet["E8"] = "卖方地址"
+        sheet["F8"] = supplier.address or ""
+        for detail_row in range(4, 9):
+            value = sheet.cell(detail_row, 2).value
+            sheet.unmerge_cells(start_row=detail_row, start_column=2, end_row=detail_row, end_column=4)
+            sheet.cell(detail_row, 2).value = None
+            sheet.merge_cells(start_row=detail_row, start_column=1, end_row=detail_row, end_column=2)
+            sheet.merge_cells(start_row=detail_row, start_column=3, end_row=detail_row, end_column=4)
+            cell = sheet.cell(detail_row, 3, value)
+            cell.font = normal_font
+            cell.alignment = left
+            sheet.cell(detail_row, 1).alignment = left
+        for detail_row in range(4, 9):
+            values = [str(sheet.cell(detail_row, column).value or '') for column in (3, 6)]
+            sheet.row_dimensions[detail_row].height = max(22, 16 * max(
+                sum(max(1, (len(line) + 44) // 45) for line in value.split('\n'))
+                for value in values))
+        for item_row in range(first_item_row, total_row):
+            lines = max(sum(max(1, (len(line) + width - 1) // width)
+                            for line in str(sheet.cell(item_row, column).value or '').split('\n'))
+                        for column, width in ((3, 20), (4, 12), (5, 16), (9, 18)))
+            sheet.row_dimensions[item_row].height = max(44, lines * 16 + 8)
+        row = note_row + 3
+        fields = [('payment', '付款方式'), ('delivery', '交货日期及地点'),
+                  ('tax', '税费及发票'), ('acceptance', '质量及验收'), ('other', '其他约定')]
+        for key, label in fields:
+            sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+            sheet.cell(row, 1, label).font = label_font
+            sheet.merge_cells(start_row=row, start_column=3, end_row=row, end_column=9)
+            cell = sheet.cell(row, 3, contract_terms.get(key, ''))
+            cell.font = normal_font
+            cell.alignment = left
+            text = str(cell.value or '')
+            lines = sum(max(1, (len(line) + 69) // 70) for line in text.split('\n'))
+            sheet.row_dimensions[row].height = max(26, 16 * lines + 8)
+            for column in range(1, 10):
+                sheet.cell(row, column).border = border
+            row += 1
+        row += 1
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        sheet.merge_cells(start_row=row, start_column=5, end_row=row, end_column=9)
+        sheet.cell(row, 1, '甲方签字／盖章：').font = label_font
+        sheet.cell(row, 5, '乙方签字／盖章：').font = label_font
+        sheet.row_dimensions[row].height = 36
+        row += 1
+        sheet.cell(row, 1, '签署日期：').font = normal_font
+        sheet.cell(row, 5, '签署日期：').font = normal_font
+        note_row = row - 1
+        # Supplier-facing user text must remain literal, including leading '='.
+    for cells in sheet.iter_rows():
+        for cell in cells:
+            if isinstance(cell.value, str):
+                cell.data_type = 's'
 
     sheet.auto_filter.ref = f"A{header_row}:I{header_row + len(entries)}"
     sheet.print_title_rows = f"1:{header_row}"

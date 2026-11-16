@@ -9562,6 +9562,19 @@ def procurement_supplier_orders_export(pi_id):
     except ValueError as exc:
         return jsonify({'success': False, 'error': str(exc)}), 400
 
+    is_contract = data.get('document_type') == 'contract'
+    contract_terms = None
+    if is_contract:
+        raw_terms = data.get('contract_terms', {})
+        if not isinstance(raw_terms, dict):
+            return jsonify(error='合同条款格式无效。'), 400
+        contract_terms = {}
+        for key in ('payment', 'delivery', 'tax', 'acceptance', 'other'):
+            value = raw_terms.get(key, '')
+            if not isinstance(value, str) or len(value) > 1500:
+                return jsonify(error='每项合同条款最多1500字。'), 400
+            contract_terms[key] = value.strip()
+
     requested_supplier_id = data.get('supplier_id')
     if requested_supplier_id not in (None, ''):
         try:
@@ -9588,29 +9601,58 @@ def procurement_supplier_orders_export(pi_id):
             buyer_company=buyer_company,
             buyer_address=COMPANY_CONFIG.get('address', ''),
             upload_dir=current_app.config['UPLOAD_DIR'],
+            contract_terms=contract_terms,
         )
 
+    def filename(group):
+        name = _supplier_order_filename(pi, group['supplier'])
+        return name.replace('采购单_', '采购合同_', 1) if is_contract else name
+
+    generated = [(group, create_workbook(group)) for group in selected_groups.values()]
+    if is_contract:
+        saved = []
+        try:
+            for group, content in generated:
+                stored = f'{uuid.uuid4().hex}.xlsx'
+                saved.append(stored)
+                with open(os.path.join(current_app.config['UPLOAD_DIR'], stored), 'wb') as target:
+                    target.write(content)
+                record = CustomerFile(customer_id=pi.customer_id, pi_id=pi.id,
+                    stored_name=stored, original_name=filename(group),
+                    mime_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    size_bytes=len(content), note='采购合同', created_by=get_current_user().username)
+                db.session.add(record)
+                db.session.flush()
+                _audit('create', 'customer_file', record.id, '生成采购合同并归档',
+                       after={'pi_id': pi.id, 'supplier_id': group['supplier'].id})
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            for stored in saved:
+                _remove_upload(stored)
+            raise
+
     if len(selected_groups) == 1 and requested_supplier_id not in (None, ''):
-        group = next(iter(selected_groups.values()))
+        group, content = generated[0]
         response = send_file(
-            BytesIO(create_workbook(group)),
+            BytesIO(content),
             as_attachment=True,
-            download_name=_supplier_order_filename(pi, group['supplier']),
+            download_name=filename(group),
             mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         )
     else:
         archive = BytesIO()
         with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
-            for group in selected_groups.values():
+            for group, content in generated:
                 bundle.writestr(
-                    _supplier_order_filename(pi, group['supplier']),
-                    create_workbook(group),
+                    filename(group),
+                    content,
                 )
         archive.seek(0)
         response = send_file(
             archive,
             as_attachment=True,
-            download_name=f'供应商采购单_{secure_filename(pi.pi_number) or pi.id}.zip',
+            download_name=f'{"供应商采购合同" if is_contract else "供应商采购单"}_{secure_filename(pi.pi_number) or pi.id}.zip',
             mimetype='application/zip',
         )
     response.headers['Cache-Control'] = 'no-store'
