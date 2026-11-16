@@ -20,6 +20,14 @@
                     <input type="text" class="form-control" id="name" name="name" required value="{{ s.name if s else '' }}" placeholder="例如：深圳华强电子">
                 </div>
                 <div class="col-md-6">
+                    <label for="company_name" class="form-label">供应商公司名称 <small class="text-muted">（选填）</small></label>
+                    <input type="text" class="form-control" id="company_name" name="company_name" maxlength="300" value="{{ s.company_name or '' if s else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label for="tax_number" class="form-label">公司税号 <small class="text-muted">（选填）</small></label>
+                    <input type="text" class="form-control" id="tax_number" name="tax_number" maxlength="100" value="{{ s.tax_number or '' if s else '' }}">
+                </div>
+                <div class="col-md-6">
                     <label for="contact_person" class="form-label">联系人</label>
                     <input type="text" class="form-control" id="contact_person" name="contact_person" value="{{ s.contact_person if s else '' }}">
                 </div>

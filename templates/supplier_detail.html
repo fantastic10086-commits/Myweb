@@ -16,6 +16,8 @@
         <div class="card">
             <div class="card-body py-2">
                 <table class="table table-sm mb-0 small">
+                    <tr><td class="text-muted">供应商公司名称</td><td class="text-break">{{ supplier.company_name or '-' }}</td></tr>
+                    <tr><td class="text-muted">公司税号</td><td class="text-break">{{ supplier.tax_number or '-' }}</td></tr>
                     {% if supplier.contact_person %}
                     <tr><td class="text-muted" style="width:100px;">联系人</td><td>{{ supplier.contact_person }}</td></tr>
                     {% endif %}

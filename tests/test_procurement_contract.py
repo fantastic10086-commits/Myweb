@@ -13,7 +13,7 @@ class ContractTests(unittest.TestCase):
   h=fixture.SecuritySmokeTests();h.setUp();h.login('admin-test')
   with fixture.application.app.app_context():
    pi=db.session.get(PI,h.alice_pi);pi.received_amount=1
-   supplier=Supplier(name='测试供应商',address='供应商地址',phone='123')
+   supplier=Supplier(name='测试供应商',address='供应商地址',phone='123',company_name='合同公司全称',tax_number='001234567890123456789')
    db.session.add(supplier);db.session.commit()
    sid=supplier.id;item=PIItem.query.filter_by(pi_id=pi.id).first();iid=item.id
   url=f'/procurement/{h.alice_pi}/supplier-orders/export'
@@ -23,6 +23,7 @@ class ContractTests(unittest.TestCase):
   self.assertEqual(response.status_code,200,response.data[:100])
   book=load_workbook(BytesIO(response.data));sheet=book.active
   self.assertEqual(sheet.title,'采购合同');self.assertEqual(sheet['A1'].value,'采购合同')
+  self.assertEqual(sheet['F5'].value,'合同公司全称');self.assertEqual(sheet['F9'].value,'001234567890123456789');self.assertEqual(sheet['F9'].data_type,'s')
   self.assertIn('-CG-',sheet['C4'].value);self.assertEqual(sheet['H12'].value,21.75)
   cells=[c for row in sheet for c in row if c.value is not None]
   cell=next(c for c in cells if c.value=='=付款时确认');self.assertEqual(cell.data_type,'s')

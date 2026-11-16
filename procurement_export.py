@@ -1,6 +1,7 @@
 """Generate supplier-facing purchase orders as editable Excel workbooks."""
 
 import os
+import unicodedata
 from io import BytesIO
 
 from openpyxl import Workbook
@@ -219,9 +220,21 @@ def generate_supplier_purchase_order(
         sheet["B4"] = f"{pi.pi_number}-CG-{supplier.id}"
         sheet["A5"] = "买方（甲方）"
         sheet["E5"] = "卖方（乙方）"
+        sheet["F5"] = getattr(supplier, 'company_name', '') or supplier.name
+        sheet["A9"] = '供应商名称'
+        sheet.merge_cells('B9:D9')
+        sheet["B9"] = supplier.name
+        sheet["E9"] = '公司税号'
+        sheet.merge_cells('F9:I9')
+        sheet["F9"] = getattr(supplier, 'tax_number', '') or ''
+        for column in (1, 5):
+            sheet.cell(9, column).font = label_font
+            sheet.cell(9, column).alignment = left
+        sheet["F9"].font = normal_font
+        sheet["F9"].alignment = left
         sheet["E8"] = "卖方地址"
         sheet["F8"] = supplier.address or ""
-        for detail_row in range(4, 9):
+        for detail_row in range(4, 10):
             value = sheet.cell(detail_row, 2).value
             sheet.unmerge_cells(start_row=detail_row, start_column=2, end_row=detail_row, end_column=4)
             sheet.cell(detail_row, 2).value = None
@@ -231,10 +244,10 @@ def generate_supplier_purchase_order(
             cell.font = normal_font
             cell.alignment = left
             sheet.cell(detail_row, 1).alignment = left
-        for detail_row in range(4, 9):
+        for detail_row in range(4, 10):
             values = [str(sheet.cell(detail_row, column).value or '') for column in (3, 6)]
             sheet.row_dimensions[detail_row].height = max(22, 16 * max(
-                sum(max(1, (len(line) + 44) // 45) for line in value.split('\n'))
+                sum(max(1, (sum(2 if unicodedata.east_asian_width(ch) in ('W', 'F') else 1 for ch in line) + 44) // 45) for line in value.split('\n'))
                 for value in values))
         for item_row in range(first_item_row, total_row):
             lines = max(sum(max(1, (len(line) + width - 1) // width)

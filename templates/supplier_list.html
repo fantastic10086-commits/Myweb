@@ -31,7 +31,7 @@
                 <tbody>
                     {% for s in suppliers %}
                     <tr>
-                        <td><a href="{{ url_for('supplier_detail', id=s.id) }}" class="text-decoration-none"><strong>{{ s.name }}</strong></a></td>
+                        <td><a href="{{ url_for('supplier_detail', id=s.id) }}" class="text-decoration-none"><strong>{{ s.name }}</strong></a>{% if s.company_name %}<div class="small text-muted text-break">{{ s.company_name }}</div>{% endif %}</td>
                         <td>{{ s.contact_person or '-' }}</td>
                         <td>{{ s.phone or '-' }}</td>
                         <td>{{ s.email or '-' }}</td>

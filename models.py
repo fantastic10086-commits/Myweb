@@ -983,6 +983,8 @@ class Supplier(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
+    company_name = db.Column(db.String(300), default='')
+    tax_number = db.Column(db.String(100), default='')
     contact_person = db.Column(db.String(100), default='')
     phone = db.Column(db.String(50), default='')
     email = db.Column(db.String(200), default='')
@@ -994,6 +996,8 @@ class Supplier(db.Model):
         return {
             'id': self.id,
             'name': self.name,
+            'company_name': self.company_name or '',
+            'tax_number': self.tax_number or '',
             'contact_person': self.contact_person,
             'phone': self.phone,
             'email': self.email,

@@ -432,7 +432,7 @@ def _migrate_db():
         },
         'field_options': {'english_value': 'VARCHAR(200)'},
         'pi_items': {'unit_weight_kg': ('FLOAT', 'NULL'), 'image_override': ('VARCHAR(500)', 'NULL'), 'name_override': ('VARCHAR(200)', 'NULL'), 'spec_override': ('VARCHAR(200)', 'NULL'), 'code_override': ('VARCHAR(200)', 'NULL'), 'sort_order': ('INTEGER', '0')},
-        'suppliers': {},  # table auto-created by create_all
+        'suppliers': {'company_name': ('VARCHAR(300)', "''"), 'tax_number': ('VARCHAR(100)', "''")},
         'procurements': {
             'product_name_snapshot': ('VARCHAR(200)', 'NULL'),
             'product_code_snapshot': ('VARCHAR(200)', 'NULL'),
@@ -5849,6 +5849,14 @@ def _supplier_name_error(name, exclude_id=None):
     return None
 
 
+def _supplier_company_error(values):
+    if len(values.get('company_name') or '') > 300:
+        return '供应商公司名称不能超过300个字符。'
+    if len(values.get('tax_number') or '') > 100:
+        return '公司税号不能超过100个字符。'
+    return None
+
+
 @app.route('/suppliers/add', methods=['GET', 'POST'])
 @admin_required
 def supplier_add():
@@ -5856,13 +5864,15 @@ def supplier_add():
     if request.method == 'POST':
         s = Supplier(
             name=request.form.get('name','').strip(),
+            company_name=request.form.get('company_name','').strip(),
+            tax_number=request.form.get('tax_number','').strip(),
             contact_person=request.form.get('contact_person','').strip(),
             phone=request.form.get('phone','').strip(),
             email=request.form.get('email','').strip(),
             address=request.form.get('address','').strip(),
             notes=request.form.get('notes','').strip(),
         )
-        error = _supplier_name_error(s.name)
+        error = _supplier_name_error(s.name) or _supplier_company_error(s.to_dict())
         if error:
             flash(error, 'danger')
             return render_template('supplier_form.html', s=s, editing=False)
@@ -5879,8 +5889,8 @@ def supplier_edit(id):
     s = Supplier.query.get_or_404(id)
     if request.method == 'POST':
         values = {field: request.form.get(field, '').strip() for field in
-                  ('name', 'contact_person', 'phone', 'email', 'address', 'notes')}
-        error = _supplier_name_error(values['name'], exclude_id=s.id)
+                  ('name', 'company_name', 'tax_number', 'contact_person', 'phone', 'email', 'address', 'notes')}
+        error = _supplier_name_error(values['name'], exclude_id=s.id) or _supplier_company_error(values)
         if error:
             flash(error, 'danger')
             return render_template('supplier_form.html', s=SimpleNamespace(id=s.id, **values), editing=True)
@@ -5915,8 +5925,14 @@ def api_supplier_list():
             if existing:
                 payload['supplier'] = existing.to_dict()
             return jsonify(payload), 409 if existing else 400
+        company_values = {key: str(data.get(key, '') or '').strip()
+                          for key in ('company_name', 'tax_number')}
+        error = _supplier_company_error(company_values)
+        if error:
+            return jsonify(success=False, error=error), 400
         supplier = Supplier(
             name=name,
+            **company_values,
             contact_person=str(data.get('contact_person', '') or '').strip()[:100],
             phone=str(data.get('phone', '') or '').strip()[:50],
             email=str(data.get('email', '') or '').strip()[:200],
@@ -5929,7 +5945,7 @@ def api_supplier_list():
             'create', 'supplier', supplier.id,
             f'在采购页面新增供应商 {supplier.name}',
             after=_snapshot(supplier, [
-                'name', 'contact_person', 'phone', 'email', 'address', 'notes',
+                'name', 'company_name', 'tax_number', 'contact_person', 'phone', 'email', 'address', 'notes',
             ]),
         )
         db.session.commit()
