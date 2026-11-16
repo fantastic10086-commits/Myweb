@@ -55,6 +55,7 @@ from models import (
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
+import order_archive  # Register transactional order attachment archival.
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 from document_export import (
