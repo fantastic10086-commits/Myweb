@@ -12,7 +12,7 @@ FILTERS = {
     'pi_list': REPORT | {'pi_number','customer_name','country','payment_status','order_status','customs_status','freight_forwarder','tracking_no','payment_reference','stage','transition'},
     'procurement_select': REPORT | {'pi_number','customer_name','country','order_status'},
     'packing_list_index': REPORT | {'pi_number','customer_name','country','status'},
-    'fees_report': REPORT | {'profit_status'},
+    'fees_report': REPORT | {'profit_status','customer_name','country'},
     'sales_stats': {'sp','date_from','date_to','preset'},
     'audit_logs': {'entity_type','action','page'},
     'finance_reconciliation': {'tab','month','basis','q','salesperson','account','category','status','checked','missing','page'},

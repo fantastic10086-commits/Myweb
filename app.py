@@ -3899,6 +3899,13 @@ def fees_report():
     default_exchange_rate = _get_exchange_rate()
     salesperson_filter, date_from, date_to, preset = _report_filter_values()
 
+    customer_name_filter = request.args.get('customer_name', '').strip()
+    country_filter = normalize_country(request.args.get('country', ''))
+    country_options = sorted({row[0] for row in db.session.query(Customer.country)
+        .join(PI, PI.customer_id == Customer.id)
+        .filter(PI.received_amount > 0, PI.deleted_at.is_(None)).distinct().all()
+        if row[0] and row[0].strip()})
+
     # An order enters this report after any payment. Profit is calculated from
     # the full order revenue, but is only shown once all PI items have purchase
     # quantities so an incomplete purchase order cannot inflate profit.
@@ -3915,6 +3922,10 @@ def fees_report():
     pi_query = _apply_report_filters(
         pi_query, salesperson_filter, date_from, date_to
     )
+    if customer_name_filter:
+        pi_query = pi_query.filter(_pi_customer_contact_filter(customer_name_filter))
+    if country_filter:
+        pi_query = pi_query.filter(PI.customer.has(Customer.country == country_filter))
     pis = pi_query.order_by(PI.created_at.desc()).all()
 
     def finite_amount(amount):
@@ -4097,6 +4108,7 @@ def fees_report():
     resp = make_response(render_template(
         'fees.html',
         profit_status=profit_status, profit_status_labels=profit_status_labels,
+        customer_name_filter=customer_name_filter, country_filter=country_filter, country_options=country_options,
         pi_list=pi_list,
         summary=summary,
         default_exchange_rate=default_exchange_rate,

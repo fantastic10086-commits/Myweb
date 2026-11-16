@@ -1,24 +1,25 @@
+{% set report_input_class = 'col-md-3 col-xl' if filter_endpoint == 'fees_report' else 'col-md-3 col-xl-2' %}
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" action="{{ url_for(filter_endpoint) }}" class="row g-2 align-items-end">
 {% if pi_number_filter is defined %}
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
                 <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
             </div>
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1" for="countryFilter">国家</label>
                 <input id="countryFilter" name="country" type="text" class="form-control form-control-sm" list="countryFilterOptions" value="{{ country_filter }}" placeholder="输入或选择国家；留空为全部">
                 <datalist id="countryFilterOptions">
                     {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
                 </datalist>
             </div>
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1" for="customerNameFilter">客户／联系人</label>
                 <input id="customerNameFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
             </div>
 {% endif %}
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1">业务员</label>
                 <select class="form-select form-select-sm" name="salesperson">
                     <option value="">— 全部 —</option>
@@ -27,14 +28,27 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1">开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1">结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
+            {% if filter_endpoint == 'fees_report' %}
+            <div class="{{ report_input_class }}">
+                <label class="form-label small mb-1" for="profitCustomerFilter">客户</label>
+                <input id="profitCustomerFilter" name="customer_name" type="text" class="form-control form-control-sm" value="{{ customer_name_filter }}" placeholder="客户名称或联系人姓名">
+            </div>
+            <div class="{{ report_input_class }}">
+                <label class="form-label small mb-1" for="profitCountryFilter">国家</label>
+                <input id="profitCountryFilter" name="country" type="text" class="form-control form-control-sm" list="profitCountryOptions" value="{{ country_filter }}" placeholder="输入或选择国家">
+                <datalist id="profitCountryOptions">
+                    {% for country in country_options %}<option value="{{ country }}"></option>{% endfor %}
+                </datalist>
+            </div>
+            {% endif %}
             {% if order_labels is defined %}
             {% if filter_endpoint == 'procurement_select' %}
             <div class="col-12 col-xl-auto">
@@ -51,7 +65,7 @@
                 </div>
             </div>
             {% else %}
-            <div class="col-md-3 col-xl-2">
+            <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1" for="orderStatusFilter">订单进度</label>
                 <select id="orderStatusFilter" name="order_status" class="form-select form-select-sm">
                     <option value="">— 全部 —</option>
@@ -97,6 +111,7 @@
             当前结果：<strong>{{ filtered_count }}</strong> 份 PI
             {% if profit_status %} · 状态：<strong>{{ profit_status_labels[profit_status] }}</strong>{% endif %}
             {% if customer_name_filter %} · 客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
+            {% if filter_endpoint == 'fees_report' and country_filter %} · 国家：<strong>{{ country_filter }}</strong>{% endif %}
             {% if order_status %} · 订单进度：<strong>{% if filter_endpoint == 'procurement_select' %}{% for key in selected_statuses %}{{ '、' if not loop.first else '' }}{{ order_labels[key] }}{% endfor %}{% else %}{{ order_labels[order_status] }}{% endif %}</strong>{% endif %}
             {% if salesperson_filter %} · 业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
             {% if date_from or date_to %} · 开单日期：<strong>{{ date_from or '不限' }}</strong> 至 <strong>{{ date_to or '不限' }}</strong>{% endif %}
