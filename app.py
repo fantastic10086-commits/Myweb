@@ -3727,7 +3727,7 @@ def sales_stats():
     date_from = request.args.get('date_from', '').strip()
     date_to = request.args.get('date_to', '').strip()
     preset = request.args.get('preset', '').strip()
-    sp_filter = request.args.get('sp', '').strip()
+    sp_filter = list(dict.fromkeys(v.strip() for v in request.args.getlist('sp') if v.strip()))
 
     # Apply preset date ranges
     today = date.today()
@@ -3755,7 +3755,7 @@ def sales_stats():
     if not is_admin():
         receipts = receipts.filter(PI.salesperson == current_salesperson_name())
     if sp_filter:
-        receipts = receipts.filter(PI.salesperson == sp_filter)
+        receipts = receipts.filter(PI.salesperson.in_(sp_filter))
     receipts = receipts.filter(receipt_date.isnot(None))
     for value, lower in ((date_from, True), (date_to, False)):
         try:

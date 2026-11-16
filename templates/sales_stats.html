@@ -19,12 +19,14 @@
         <form method="get" class="row g-2 align-items-end">
             <div class="col-md-2">
                 <label class="form-label small mb-1">业务员</label>
-                <select class="form-select form-select-sm" name="sp">
-                    <option value="">— 全部 —</option>
-                    {% for sp in all_salespersons %}
-                    <option value="{{ sp.name }}" {% if sp_filter == sp.name %}selected{% endif %}>{{ sp.name }}</option>
-                    {% endfor %}
-                </select>
+                <div class="dropdown">
+                    <button class="form-select form-select-sm text-start" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="salespersonSummary">{{ sp_filter|join('、') if sp_filter else '— 全部 —' }}</button>
+                    <div class="dropdown-menu p-2" style="max-height:300px;overflow-y:auto;min-width:220px;">
+                        <button type="button" class="btn btn-sm btn-light w-100 mb-2" id="clearSalespersons">全部业务员</button>
+                        <input type="hidden" name="sp" value="">
+                        {% for sp in all_salespersons %}<label class="dropdown-item d-flex gap-2 align-items-center"><input type="checkbox" class="form-check-input m-0 salesperson-choice" name="sp" value="{{ sp.name }}" {% if sp.name in sp_filter %}checked{% endif %}>{{ sp.name }}</label>{% endfor %}
+                    </div>
+                </div>
             </div>
             <div class="col-md-2">
                 <label class="form-label small mb-1">到账开始日期</label>
@@ -54,7 +56,7 @@
 </div>
 {% if date_from or date_to or preset or sp_filter %}
 <div class="alert alert-info py-1 small mb-3">
-    {% if sp_filter %}业务员: <strong>{{ sp_filter }}</strong>{% endif %}
+    {% if sp_filter %}业务员: <strong>{{ sp_filter|join('、') }}</strong>{% endif %}
     {% if date_from or date_to %} | 显示区间： <strong>{{ date_from or '...' }}</strong> 至 <strong>{{ date_to or '...' }}</strong>{% endif %}
     {% if preset %}({{ preset|replace('_',' ')|title }}){% endif %}
 </div>
@@ -210,3 +212,12 @@
 </div>
 {% endif %}
 {% endblock %}
+
+{% block extra_scripts %}<script>
+(() => {
+ const choices = Array.from(document.querySelectorAll('.salesperson-choice'));
+ function summary() { const names = choices.filter(c => c.checked).map(c => c.value); document.getElementById('salespersonSummary').textContent = names.length ? names.join('、') : '— 全部 —'; }
+ choices.forEach(c => c.addEventListener('change', summary));
+ document.getElementById('clearSalespersons').addEventListener('click', () => { choices.forEach(c => {c.checked=false;}); summary(); });
+})();
+</script>{% endblock %}
