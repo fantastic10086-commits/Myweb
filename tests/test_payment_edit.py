@@ -50,6 +50,14 @@ class PaymentEditTests(unittest.TestCase):
    r=self.h.client.post(self.url,json=payload,headers=self.headers)
   self.assertEqual(r.status_code,409,r.data)
   with fixture.application.app.app_context():self.assertEqual(db.session.get(Payment,self.pid).amount,90)
+ def test_history_reads_saved_date_before_any_edit(self):
+  r=self.h.client.get(f'/api/pi/{self.h.alice_pi}/payments')
+  self.assertEqual(r.status_code,200)
+  self.assertEqual(r.json['payments'][0]['received_on'],'2026-11-01')
+  self.assertTrue(r.json['payments'][0]['registered_at'])
+  self.assertIn('no-store',r.headers['Cache-Control'])
+  self.assertEqual(r.json['payments'][0]['edits'],[])
+  self.assertIn("{cache: 'no-store'}",self.h.client.get('/pi/list?stage=&transition=').text)
  def test_validation_and_ownership(self):
   for fields in [dict(reason=' '),dict(amount=0),dict(amount=-1),dict(amount='NaN'),dict(amount=1.001),dict(amount=101),dict(received_on='bad'),dict(received_on='2099-01-01')]:
    r=self.h.client.post(self.url,json=self.payload(**fields),headers=self.headers);self.assertEqual(r.status_code,400,r.data)
