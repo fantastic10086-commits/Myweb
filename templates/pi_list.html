@@ -340,6 +340,14 @@
                               placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
                 </div>
             </fieldset>
+            <div class="border-top pt-3 mt-3 mb-3">
+                <label class="form-label fw-semibold" for="customsAttachments">报关资料附件</label>
+                <div class="d-flex gap-2"><input type="file" class="form-control" id="customsAttachments" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"><button type="button" class="btn btn-outline-primary text-nowrap" id="customsUploadBtn" onclick="uploadCustomsAttachments()">上传附件</button></div>
+                <small class="text-muted">每次最多8个，单个20MB以内，每批合计建议不超过30MB。点击上传后直接保存到当前客户的本单文件夹。</small>
+                <div id="customsAttachmentStatus" class="small mt-1" role="status"></div>
+                <div id="customsAttachmentList" class="mt-2"></div>
+                <a id="customsFolderLink" class="small d-none" target="_blank">打开客户订单文件资料</a>
+            </div>
             <small class="text-muted" id="customsRecordMeta">正在读取记录……</small>
             <div class="d-flex flex-wrap gap-2 mt-3">
             <a href="#" class="btn btn-outline-success d-none" id="customsDocumentsBtn">
@@ -852,6 +860,11 @@ function openCustomsRecord(piId, piNumber) {
     document.getElementById('dispatchSaveMessage').textContent = '保存信息不会改变发货状态';
     document.getElementById('dispatchInfoBtn').disabled = true;
     currentCustomsPiId = piId;
+    document.getElementById('customsAttachments').value = '';
+    document.getElementById('customsAttachmentList').replaceChildren();
+    document.getElementById('customsFolderLink').classList.add('d-none');
+    document.getElementById('customsAttachmentStatus').textContent = '正在读取附件…';
+    loadCustomsAttachments(piId);
     openShippingRecord(piId, piNumber);
     openExpense(piId, piNumber);
     document.getElementById('customsPINumber').textContent = piNumber;
@@ -1370,4 +1383,28 @@ function viewPayments(id) {
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='payment_live_check.js') }}"></script>
+
+<script>
+function renderCustomsAttachments(data, piId) {
+ if (currentCustomsPiId !== piId) return;
+ var list=document.getElementById('customsAttachmentList');list.replaceChildren();
+ data.files.forEach(function(file){var row=document.createElement('div');row.className='d-flex gap-2 align-items-center mb-1';var link=document.createElement('a');link.href=file.url;link.target='_blank';link.textContent=file.name;link.className='text-break';var size=document.createElement('small');size.className='text-muted';size.textContent=file.size;var download=document.createElement('a');download.href=file.download_url;download.textContent='下载';download.className='small text-nowrap';row.append(link,size,download);list.appendChild(row);});
+ var folder=document.getElementById('customsFolderLink');folder.href=data.folder_url;folder.classList.remove('d-none');
+ document.getElementById('customsAttachmentStatus').textContent=data.files.length?'已归档 '+data.files.length+' 个附件':'暂无附件';
+}
+async function loadCustomsAttachments(piId) {
+ try {var response=await fetch('/api/pi/'+piId+'/customs-attachments');var data=await response.json();if(!response.ok)throw Error(data.error||'读取附件失败');renderCustomsAttachments(data,piId);}
+ catch(error){if(currentCustomsPiId===piId)document.getElementById('customsAttachmentStatus').textContent=error.message;}
+}
+async function uploadCustomsAttachments() {
+ var piId=currentCustomsPiId,input=document.getElementById('customsAttachments'),button=document.getElementById('customsUploadBtn'),status=document.getElementById('customsAttachmentStatus');
+ var files=Array.from(input.files||[]);if(!files.length||files.length>8){status.textContent='请选择1至8个文件';return;}
+ if(files.some(f=>f.size>20*1024*1024)||files.reduce((s,f)=>s+f.size,0)>30*1024*1024){status.textContent='单个文件最大20MB，每批合计最大30MB';return;}
+ var form=new FormData();files.forEach(f=>form.append('files',f));button.disabled=true;status.textContent='正在上传…';
+ try {var response=await fetch('/api/pi/'+piId+'/customs-attachments',{method:'POST',body:form});var data=await response.json();if(!response.ok)throw Error(data.error||'上传失败');if(currentCustomsPiId===piId){input.value='';renderCustomsAttachments(data,piId);}}
+ catch(error){if(currentCustomsPiId===piId)status.textContent=error.message||'上传失败，请重试';}
+ finally {button.disabled=false;}
+}
+</script>
+
 {% endblock %}

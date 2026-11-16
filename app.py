@@ -3659,6 +3659,44 @@ def customer_file_upload(id):
     return redirect(url_for('customer_detail', id=id, _anchor='customer-files'))
 
 
+@app.route('/api/pi/<int:pi_id>/customs-attachments', methods=['GET','POST'])
+@login_required
+def customs_attachments(pi_id):
+    pi = PI.query.filter_by(id=pi_id).filter(PI.deleted_at.is_(None)).first_or_404()
+    require_pi_access(pi)
+    require_customer_access(pi.customer)
+    if request.method == 'POST':
+        uploads = [f for f in request.files.getlist('files') if f.filename]
+        if not uploads or len(uploads) > 8:
+            return jsonify(error='请选择文件，每次最多8个。'),400
+        try:
+            validated = [(f,*_validate_customer_file(f)) for f in uploads]
+        except ValueError as exc:
+            return jsonify(error=str(exc)),400
+        saved = []
+        try:
+            for f,name,ext,size,mime in validated:
+                stored = _save_customer_file(f,ext); saved.append(stored)
+                record = CustomerFile(customer_id=pi.customer_id,pi_id=pi.id,stored_name=stored,
+                    original_name=name,mime_type=mime,size_bytes=size,note='报关资料',
+                    created_by=get_current_user().username)
+                db.session.add(record);db.session.flush()
+                _audit('create','customer_file',record.id,'上传报关资料到订单文件夹',
+                       after=dict(customer_id=pi.customer_id,pi_id=pi.id,original_name=name,size_bytes=size))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            for name in saved:_remove_upload(name)
+            raise
+    files = CustomerFile.query.filter_by(pi_id=pi.id,customer_id=pi.customer_id,note='报关资料').filter(
+        CustomerFile.deleted_at.is_(None)).order_by(CustomerFile.created_at.desc()).all()
+    response = jsonify(files=[dict(name=f.original_name,size=f.size_label,
+        url=url_for('customer_file_view',id=f.id),download_url=url_for('customer_file_view',id=f.id,download=1)) for f in files],
+        folder_url=url_for('customer_detail',id=pi.customer_id,_anchor='customer-files'))
+    response.headers['Cache-Control']='private, no-store'
+    return response
+
+
 @app.route('/customer-files/<int:id>')
 @login_required
 def customer_file_view(id):
