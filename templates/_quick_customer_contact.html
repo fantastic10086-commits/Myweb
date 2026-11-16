@@ -1,0 +1,16 @@
+<div class="mb-2">
+    <label class="form-label" for="qa_cust_contact">联系人姓名 <span class="text-danger">*</span></label>
+    <input type="text" class="form-control" id="qa_cust_contact" placeholder="联系人姓名（必填）" maxlength="100" required>
+</div>
+<details id="qaContactDetails" class="mb-3">
+    <summary class="text-primary small py-1">展开联系人其他信息（选填）</summary>
+    <div class="row g-2 mt-1">
+        {% for key,label,limit in [('position','职位',100),('phone','电话',50),('email','邮箱',200),('whatsapp','WhatsApp',50),('wechat','微信',100),('note','备注',1000)] %}
+        <div class="{{ 'col-12' if key == 'note' else 'col-md-6' }}">
+            <label class="form-label small" for="qa_cust_{{ key }}">{{ label }}</label>
+            {% if key == 'note' %}<textarea class="form-control" id="qa_cust_{{ key }}" maxlength="{{ limit }}" rows="2"></textarea>
+            {% else %}<input class="form-control" id="qa_cust_{{ key }}" type="{{ 'email' if key == 'email' else 'text' }}" maxlength="{{ limit }}">{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</details>

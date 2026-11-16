@@ -3148,7 +3148,7 @@ def _pi_customer_contact_filter(keyword):
 def _customer_contacts_from_form(customer):
     raw = request.form.get('contacts_json')
     if raw is None:
-        return list(customer.contact_entries)
+        raw = json.dumps(list(customer.contact_entries))
     try:
         entries = json.loads(raw)
     except (TypeError, ValueError):
@@ -3162,8 +3162,8 @@ def _customer_contacts_from_form(customer):
         if not isinstance(entry, dict):
             raise ValueError('联系人资料格式无效。')
         item = {key: str(entry.get(key) or '').strip() for key in limits}
-        if not any(item.values()):
-            continue
+        if not item['name']:
+            raise ValueError('每位联系人的姓名都必须填写。')
         if any(len(item[key]) > limit for key, limit in limits.items()):
             raise ValueError('联系人字段超过允许长度，请缩短后保存。')
         identity = str(entry.get('id') or uuid.uuid4().hex)
@@ -3172,6 +3172,8 @@ def _customer_contacts_from_form(customer):
         seen.add(identity)
         item.update(id=identity, is_default=entry.get('is_default') is True)
         result.append(item)
+    if not result:
+        raise ValueError('请至少添加一位联系人并填写姓名。')
     default = next((item for item in result if item['is_default']), result[0] if result else None)
     for item in result:
         item['is_default'] = item is default
@@ -3354,7 +3356,10 @@ def api_customer_add():
         customer_type_option=customer_type,
     )
     _sync_legacy_customer_priority(customer)
-    _apply_customer_contacts(customer, list(customer.contact_entries))
+    try:
+        _apply_customer_contacts(customer, _customer_contacts_from_form(customer))
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
     db.session.add(customer)
     db.session.flush()
     _audit('create', 'customer', customer.id, f'快速新增客户：{customer.name}', after=_snapshot(customer, ['name', 'country', 'contact_person', 'email', 'phone', 'salesperson']))
