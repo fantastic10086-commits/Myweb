@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_packing_company.html" import company_select %}
 {% block title %}装箱单 {{ pi.pi_number }}{% endblock %}
 
 {% block extra_head %}
@@ -334,6 +335,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body vstack gap-2">
+                <div class="mb-2">{{ company_select('fullExportCompany', pi.company) }}</div>
                 <label class="border-bottom pb-2 mb-1 d-flex align-items-center gap-2">
                     <input class="form-check-input m-0" type="checkbox" id="fullExportAll">
                     <span class="fw-bold">选择全部批次</span>
@@ -364,6 +366,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
             </div>
             <div class="modal-body">
+                <div class="mb-3">{{ company_select('compactExportCompany', pi.company) }}</div>
                 <label class="form-label fw-bold" for="compactExportBatch">发货批次</label>
                 <select id="compactExportBatch" class="form-select mb-3">
                     {% for batch in packing_list.batches %}
@@ -435,6 +438,7 @@
         const selected = fullBatchChecks.filter(check => check.checked);
         if (!fullExportUrl || !selected.length) return;
         const url = new URL(fullExportUrl, window.location.href);
+        url.searchParams.set('company_header', document.getElementById('fullExportCompany').value);
         selected.forEach(check => url.searchParams.append('batch', check.value));
         bootstrap.Modal.getOrCreateInstance(fullModal).hide();
         window.location.assign(url.toString());
@@ -495,6 +499,7 @@
         const selected = activeBoxChecks().filter(check => check.checked);
         if (!exportUrl || !selected.length) return;
         const url = new URL(exportUrl, window.location.href);
+        url.searchParams.set('company_header', document.getElementById('compactExportCompany').value);
         url.searchParams.set('batch', batchSelect.value);
         selected.forEach(check => url.searchParams.append('box', check.value));
         bootstrap.Modal.getOrCreateInstance(modal).hide();

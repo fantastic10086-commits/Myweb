@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_packing_company.html" import company_select %}
 {% block title %}装箱单{% endblock %}
 
 {% block content %}
@@ -129,26 +130,17 @@
                             <span class="text-muted small">尚未回款，暂不能创建</span>
                             {% endif %}
                             {% if pi.packing_list %}
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-sm btn-outline-success dropdown-toggle" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
-                                    <i class="bi bi-file-earmark-excel"></i> Excel
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">选择 Excel 模板</h6></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_export_excel', pi_id=pi.id) }}">完整 A4</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_compact_export_excel', pi_id=pi.id) }}">精简 100×150（每箱一页）</a></li>
-                                </ul>
-                            </div>
-                            <div class="btn-group">
-                                <button type="button" class="btn btn-sm btn-outline-danger dropdown-toggle" data-bs-toggle="dropdown" data-bs-boundary="viewport" aria-expanded="false">
-                                    <i class="bi bi-file-earmark-pdf"></i> PDF
-                                </button>
-                                <ul class="dropdown-menu dropdown-menu-end">
-                                    <li><h6 class="dropdown-header">选择 PDF 模板</h6></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_export_pdf', pi_id=pi.id) }}">完整 A4</a></li>
-                                    <li><a class="dropdown-item" href="{{ url_for('packing_list_compact_export_pdf', pi_id=pi.id) }}">精简 100×150（每箱一页）</a></li>
-                                </ul>
-                            </div>
+                            {% for format, color in [('Excel', 'success'), ('PDF', 'danger')] %}
+                            <button type="button" class="btn btn-sm btn-outline-{{ color }}"
+                                    data-bs-toggle="modal" data-bs-target="#packingQuickExport"
+                                    data-format="{{ format }}" data-pi="{{ pi.pi_number }}"
+                                    data-company="{{ 'qisuo' if (pi.company or '')|lower == 'qisuo' else 'klista' }}"
+                                    data-full-url="{{ url_for('packing_list_export_' ~ format|lower, pi_id=pi.id) }}"
+                                    data-compact-url="{{ url_for('packing_list_compact_export_' ~ format|lower, pi_id=pi.id) }}"
+                                    aria-label="选择 {{ format }} 模板">
+                                <i class="bi bi-file-earmark-{{ format|lower }}"></i> {{ format }}
+                            </button>
+                            {% endfor %}
                             {% endif %}
                         </td>
                     </tr>
@@ -161,4 +153,48 @@
         {% endif %}
     </div>
 </div>
+<div class="modal fade" id="packingQuickExport" tabindex="-1" aria-labelledby="packingQuickTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="get">
+            <div class="modal-header">
+                <h5 class="modal-title" id="packingQuickTitle">导出装箱单</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">{{ company_select('quickExportCompany') }}</div>
+                <label class="form-label fw-semibold" for="quickExportLayout">装箱单模板</label>
+                <select class="form-select" id="quickExportLayout">
+                    <option value="full">完整 A4</option>
+                    <option value="compact">精简 100×150（每箱一页）</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">导出</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(() => {
+    const modal = document.getElementById('packingQuickExport');
+    const form = modal.querySelector('form');
+    const layout = document.getElementById('quickExportLayout');
+    modal.addEventListener('show.bs.modal', event => {
+        const {format, pi, company, fullUrl, compactUrl} = event.relatedTarget.dataset;
+        document.getElementById('packingQuickTitle').textContent = '导出装箱单 · ' + pi;
+        document.getElementById('quickExportCompany').value = company;
+        layout.options[0].value = fullUrl;
+        layout.options[1].value = compactUrl;
+        layout.selectedIndex = 0;
+        form.querySelector('[type=submit]').textContent = '导出 ' + format;
+    });
+    form.addEventListener('submit', () => {
+        form.action = layout.value;
+        bootstrap.Modal.getInstance(modal).hide();
+    });
+})();
+</script>
 {% endblock %}

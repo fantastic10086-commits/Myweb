@@ -6587,12 +6587,13 @@ def _packing_pi_query():
 
 
 def _packing_company(pi):
-    if (pi.company or '').lower() == 'qisuo':
-        return (
-            'Changzhou Qisuo welding and cutting Equipment Co., LTD',
-            'No. 158, Jingchuang Road, Yaoguan Town, Changzhou District, '
-            'Jiangsu Province',
-        )
+    selected = request.args.getlist('company_header')
+    if selected and (len(selected) != 1 or selected[0] not in ('klista', 'qisuo')):
+        abort(400, description='装箱单公司抬头无效。')
+    brand = selected[0] if selected else (pi.company or '').lower()
+    if brand == 'qisuo':
+        profile = SimpleNamespace(company=brand)
+        return _company_name(profile), _company_address(profile)
     return COMPANY_CONFIG['name'], COMPANY_CONFIG.get('address', '')
 
 
@@ -7227,10 +7228,8 @@ def _packing_export(pi_id, output_format):
     company_name, company_address = _packing_company(pi)
     workbook = None
     for batch in batches:
-        export_pi = copy.copy(pi)
-        export_pi.shipping_address = batch.shipping_address or pi.shipping_address
         workbook = generate_packing_list_workbook(
-            export_pi, batch, company_name, company_address,
+            pi, batch, company_name, company_address,
             workbook=workbook,
             sheet_title=(
                 '装箱单' if len(batches) == 1 else f'第{batch.batch_no}批'
@@ -7298,6 +7297,7 @@ def _packing_compact_export(pi_id, output_format):
     batch = _packing_requested_export_batch(packing_list)
     if not packing_list or not batch:
         abort(404)
+    company_name, _ = _packing_company(pi)
     requested_boxes = request.args.getlist('box')
     box_indexes = None
     if requested_boxes:
@@ -7327,12 +7327,12 @@ def _packing_compact_export(pi_id, output_format):
         # Excel template before LibreOffice conversion can replace the custom
         # 100 x 150 mm page with A4 and shrink the label into its centre.
         content = generate_compact_packing_list_pdf(
-            pi, batch, box_indexes=box_indexes
+            pi, batch, box_indexes=box_indexes, company_name=company_name
         )
         mimetype = 'application/pdf'
     else:
         content = generate_compact_packing_list_workbook(
-            pi, batch, box_indexes=box_indexes
+            pi, batch, box_indexes=box_indexes, company_name=company_name
         )
         if template:
             content = apply_packing_template_style(

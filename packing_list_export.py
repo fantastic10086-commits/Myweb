@@ -18,6 +18,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from pdf_generator import _FONT as COMPACT_PDF_FONT
+from document_export import _company_name
 
 
 NAVY = "1F4E78"
@@ -100,7 +101,7 @@ def _expanded_cartons(boxes, box_indexes=None):
     return expanded, physical_number - 1
 
 
-def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
+def _compact_excel_sheet(sheet, pi, company_name, box, box_index, box_count):
     """Lay out one 100 x 150 mm compact carton page on one worksheet."""
     sheet.sheet_view.showGridLines = False
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
@@ -126,13 +127,17 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     normal = Font(name="Microsoft YaHei", size=10, bold=True, color=COMPACT_BLACK)
     label = Font(name="Microsoft YaHei", size=10, bold=True, color=COMPACT_BLACK)
 
-    sheet.merge_cells("A1:F2")
+    sheet.merge_cells("A1:F1")
+    sheet.merge_cells("A2:F2")
     sheet["A1"] = "PACKING LIST / 装箱单"
     sheet["A1"].font = Font(
         name="Microsoft YaHei", size=17, bold=True, color=COMPACT_BLACK
     )
     sheet["A1"].alignment = center
     sheet["A1"].fill = PatternFill("solid", fgColor=COMPACT_WHITE)
+    sheet["A2"] = _text(company_name)
+    sheet["A2"].font = normal
+    sheet["A2"].alignment = Alignment(horizontal="center", vertical="center", shrink_to_fit=True)
     for row in sheet["A1:F2"]:
         for cell in row:
             cell.fill = PatternFill("solid", fgColor=COMPACT_WHITE)
@@ -225,17 +230,18 @@ def _compact_excel_sheet(sheet, pi, packing_list, box, box_index, box_count):
     sheet.print_area = f"A1:F{last_row}"
 
 
-def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None):
+def generate_compact_packing_list_workbook(pi, packing_list, box_indexes=None, *, company_name=None):
     """Generate the compact 100 x 150 mm workbook, one carton per sheet/page."""
     workbook = Workbook()
     workbook.remove(workbook.active)
     used_titles = set()
     boxes = list(packing_list.boxes)
+    company_name = company_name or _company_name(pi)
     expanded, total_cartons = _expanded_cartons(boxes, box_indexes)
     for box, box_index in expanded:
         title = _compact_sheet_title(box_index, box_index, used_titles)
         sheet = workbook.create_sheet(title)
-        _compact_excel_sheet(sheet, pi, packing_list, box, box_index, total_cartons)
+        _compact_excel_sheet(sheet, pi, company_name, box, box_index, total_cartons)
 
     output = BytesIO()
     workbook.save(output)
@@ -311,14 +317,19 @@ def apply_packing_template_style(workbook_bytes, template_path, compact=False):
             for key, dimension in source.column_dimensions.items():
                 target.column_dimensions[key].width = dimension.width
                 target.column_dimensions[key].hidden = dimension.hidden
-            # Header/information area is fixed. Preserve live values in C3:C5.
+            # Older compact masters merge rows 1 and 2 for the title. Keep
+            # the generated company line and its fit-to-width alignment.
             live_cells = {'C3', 'C4', 'C5'}
             for row in range(1, min(7, source.max_row) + 1):
+                if row == 2:
+                    continue
                 if source.row_dimensions[row].height is not None:
                     target.row_dimensions[row].height = source.row_dimensions[row].height
                 for column in range(1, min(6, source.max_column) + 1):
                     src = source.cell(row, column)
                     dst = target.cell(row, column)
+                    if isinstance(dst, MergedCell):
+                        continue
                     if dst.coordinate not in live_cells and src.value is not None:
                         dst.value = src.value
                     if src.has_style:
@@ -428,7 +439,7 @@ def _draw_compact_right_text(document, x, y, value):
     document.drawRightString(x - 0.22, y, text)
 
 
-def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
+def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None, *, company_name=None):
     """Generate an exact 100 x 150 mm PDF with one carton on every page."""
     font_name = _ensure_compact_pdf_font()
     output = BytesIO()
@@ -437,6 +448,9 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
     page_width, page_height = COMPACT_PAGE_SIZE
     margin = 5 * mm
     content_width = page_width - 2 * margin
+    company_name = company_name or _company_name(pi)
+    available_width = content_width - 8 * mm
+    company_size = min(10, available_width / pdfmetrics.stringWidth(company_name, font_name, 1))
     boxes = list(packing_list.boxes)
     expanded, total_cartons = _expanded_cartons(boxes, box_indexes)
     for box, box_index in expanded:
@@ -450,13 +464,8 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         document.setFont(font_name, 15)
         _draw_compact_text(document, margin + 4 * mm, page_height - 13 * mm, "PACKING LIST / 装箱单")
-        document.setFont(font_name, 9)
-        _draw_compact_right_text(
-            document,
-            page_width - margin - 4 * mm,
-            page_height - 20 * mm,
-            f"Carton {box_index}/{total_cartons}",
-        )
+        document.setFont(font_name, company_size)
+        _draw_compact_text(document, margin + 4 * mm, page_height - 20 * mm, company_name)
 
         document.setFillColor(HexColor(f"#{COMPACT_BLACK}"))
         info_y = page_height - 30 * mm
@@ -485,7 +494,7 @@ def generate_compact_packing_list_pdf(pi, packing_list, box_indexes=None):
         _draw_compact_text(
             document,
             margin + 27 * mm, info_y,
-            _fit_pdf_text(str(box_index), font_name, 12, content_width - 27 * mm),
+            _fit_pdf_text(f"{box_index}/{total_cartons}", font_name, 12, content_width - 27 * mm),
         )
 
         table_top = page_height - 51 * mm
@@ -612,11 +621,12 @@ def generate_packing_list_workbook(
             cell.fill = PatternFill("solid", fgColor=NAVY)
 
     customer = pi.customer
+    ship_to = getattr(packing_list, 'shipping_address', '') or pi.shipping_address or (customer.address if customer else '')
     details = [
         (4, "Exporter / 出口商", company_name, "PI No. / PI 编号", pi.pi_number),
         (5, "Address / 地址", company_address, "Packing Date / 装箱日期", packing_list.packing_date.isoformat() if packing_list.packing_date else ""),
         (6, "Buyer / 客户", customer.name if customer else "", "Salesperson / 业务员", pi.salesperson),
-        (7, "Ship To / 收货地址", pi.shipping_address or (customer.address if customer else ""), "Status / 状态", "Completed / 已完成" if packing_list.is_completed else "Draft / 草稿"),
+        (7, "Ship To / 收货地址", ship_to, "Status / 状态", "Completed / 已完成" if packing_list.is_completed else "Draft / 草稿"),
     ]
     for row_no, left_label, left_value, right_label, right_value in details:
         sheet.cell(row_no, 1, left_label).font = label

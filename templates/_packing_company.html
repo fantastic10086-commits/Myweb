@@ -1,0 +1,7 @@
+{% macro company_select(id, company='klista') %}
+<label class="form-label fw-semibold" for="{{ id }}">出口公司</label>
+<select class="form-select" id="{{ id }}" name="company_header">
+    <option value="klista"{% if (company or '')|lower != 'qisuo' %} selected{% endif %}>克利斯达（KLISTA）</option>
+    <option value="qisuo"{% if (company or '')|lower == 'qisuo' %} selected{% endif %}>戚所（QISUO）</option>
+</select>
+{% endmacro %}
