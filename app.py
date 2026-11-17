@@ -51,11 +51,12 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Currency, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
-    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission, PayrollSlip,
+    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission, PayrollProfile, PayrollSlip,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
 import order_archive  # Register transactional order attachment archival.
+from payroll import migrate_payroll_accounts, register_payroll
 from list_preferences import FILTERS as LIST_FILTERS, register_list_preferences
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
@@ -1428,6 +1429,7 @@ def create_app():
     with app.app_context():
         with db.engine.connect() as connection:
             connection.exec_driver_sql('PRAGMA journal_mode=WAL')
+        migrate_payroll_accounts(db.engine)
         db.create_all()
         _migrate_db()
         seed_currencies()
@@ -5110,11 +5112,13 @@ def salesperson_edit(id):
 @admin_required
 def salesperson_delete(id):
     sp = Salesperson.query.get_or_404(id)
-    if PayrollSlip.query.filter_by(employee_id=id).first():
-        flash('该业务员有工资记录，请保留业务员档案。', 'warning')
-        return redirect(url_for('salesperson_list'))
     db.session.delete(sp)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('该业务员仍有关联记录，请保留业务员档案。', 'warning')
+        return redirect(url_for('salesperson_list'))
     flash('业务员删除成功。', 'success')
     return redirect(url_for('salesperson_list'))
 
@@ -5223,8 +5227,16 @@ def user_delete(id):
     if (user.account or '').lower() == 'admin':
         flash('不能删除管理员账号。', 'danger')
         return redirect(url_for('user_list'))
+    if db.session.get(PayrollProfile, id) or PayrollSlip.query.filter_by(user_id=id).first():
+        flash('该用户有计薪档案或工资单，请使用「停用」保留工资记录。', 'warning')
+        return redirect(url_for('user_list'))
     db.session.delete(user)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('该用户仍有关联记录，请使用「停用」。', 'warning')
+        return redirect(url_for('user_list'))
     flash('用户已删除。', 'success')
     return redirect(url_for('user_list'))
 
@@ -10585,7 +10597,6 @@ def inject_globals():
 # ═══════════════════════════════════════════════════════════════════════
 
 from finance_web import register_finance_web
-from payroll import register_payroll
 register_payroll(app, admin_required=admin_required, current_user=get_current_user,
                  audit=_audit, receipt_query=performance_receipts)
 register_finance_web(app, admin_required=admin_required, current_user=get_current_user, audit=_audit,

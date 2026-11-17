@@ -3,6 +3,7 @@ import calendar
 import hashlib
 import json
 import re
+from collections import Counter
 from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -10,7 +11,7 @@ from flask import Blueprint, abort, flash, redirect, render_template, request, u
 
 from fx_rates import payment_to_usd
 from models import (db, PI, Payment, PayrollDefaults, PayrollExclusion, PayrollHoliday,
-                    PayrollProfile, PayrollSlip, Salesperson)
+                    PayrollProfile, PayrollSlip, User)
 
 D = Decimal
 CENT = D('0.01')
@@ -22,6 +23,41 @@ STATUTORY = {date(2026, month, day): name
                                        (9, [25], '中秋节'), (10, [1, 2, 3], '国庆节')] for day in days}
 TIERS = [(7500, '0.01'), (10000, '0.012'), (15000, '0.014'),
          (20000, '0.016'), (25000, '0.018')]
+
+
+def migrate_payroll_accounts(engine):
+    """Copy the previous release's payroll once, leaving the source intact for rollback."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql('BEGIN IMMEDIATE')
+        tables = {r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'payroll_profiles' not in tables or 'user_payroll_profiles' in tables:
+            return
+        users = conn.exec_driver_sql('SELECT id, username, salesperson_name FROM users').fetchall()
+        staff = conn.exec_driver_sql("""
+            SELECT old.employee_id, s.name
+              FROM (SELECT employee_id FROM payroll_profiles UNION SELECT employee_id FROM payroll_slips) old
+              LEFT JOIN salespersons s ON s.id = old.employee_id
+        """).fetchall()
+        PayrollProfile.__table__.create(conn)
+        PayrollSlip.__table__.create(conn)
+        for old_id, name in staff:
+            if not name:
+                raise RuntimeError(f'工资档案 {old_id} 缺少原业务员，无法对应用户。')
+            matches = [uid for uid, _, binding in users if binding == name]
+            if not matches:
+                matches = [uid for uid, username, binding in users if not binding and username == name]
+            if len(matches) != 1:
+                raise RuntimeError(f'工资档案「{name}」无法唯一对应用户，请核对账号关联业务员后重试。')
+            params = (matches[0], old_id)
+            conn.exec_driver_sql("""
+                INSERT INTO user_payroll_profiles (user_id, staff_no, mode, base, social, fund)
+                SELECT ?, staff_no, mode, base, social, fund FROM payroll_profiles WHERE employee_id=?
+            """, params)
+            conn.exec_driver_sql("""
+                INSERT INTO user_payroll_slips (user_id, month, inputs, confirmed, confirmed_by, confirmed_at, version)
+                SELECT ?, month, inputs, confirmed, confirmed_by, confirmed_at, version
+                FROM payroll_slips WHERE employee_id=?
+            """, params)
 
 
 def money(value):
@@ -78,6 +114,18 @@ def commission(orders):
     return dict(total_usd=str(all_usd), excluded_usd=str(all_usd - eligible), eligible=str(eligible),
                 percent=format(rate * 100, 'f').rstrip('0').rstrip('.'), commission=str(money(eligible * rate * 7)),
                 orders=[dict(row, usd=str(money(row['usd']))) for row in orders])
+
+
+def settled_pi_ids(slips):
+    return {row['id'] for slip in slips if slip.confirmed
+            for row in slip.confirmed['orders'] if not row['reason']}
+
+
+def user_commission(user, orders, binding_counts, settled):
+    linked_orders = orders.get(user.salesperson_name, {}) if user.salesperson_name else {}
+    rows = [row for row in linked_orders.values() if row['id'] not in settled]
+    conflict = bool(rows and binding_counts[user.salesperson_name] > 1)
+    return dict(commission([] if conflict else rows), binding_conflict=conflict)
 
 
 def calculate(profile, inputs, days, default_social, sales):
@@ -139,38 +187,57 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
         month = request.args.get('month', previous.strftime('%Y-%m'))
         return month, month_dates(month)
 
-    def employee_page(month, employee_id, **kwargs):
-        return url_for('payroll.sheet', month=month, employee_id=employee_id, **kwargs)
+    def employee_page(month, user_id, **kwargs):
+        return url_for('payroll.sheet', month=month, user_id=user_id, **kwargs)
 
     def restore_order(excluded):
         audit('restore', 'payroll_commission', excluded.pi_id, '恢复 PI 计提', before={'reason': excluded.reason})
         db.session.delete(excluded)
 
+    def sheet_sales(user, month, first, last):
+        if not user.salesperson_name:
+            return commission([])
+        orders = month_orders(receipt_query, first, last, user.salesperson_name)
+        counts = {user.salesperson_name: User.query.filter_by(salesperson_name=user.salesperson_name).count()}
+        slips = PayrollSlip.query.filter_by(month=month).filter(PayrollSlip.confirmed.isnot(None)).all()
+        return user_commission(user, orders, counts, settled_pi_ids(slips))
+
+    @bp.get('/<month>/<int:legacy_employee_id>')
+    def legacy_sheet(month, legacy_employee_id):
+        month_dates(month)
+        return redirect(url_for('payroll.index', month=month))
+
     @bp.get('')
     def index():
         month, (first, last, payday) = period()
-        employees = Salesperson.query.order_by(Salesperson.name).all()
-        profiles = {p.employee_id: p for p in PayrollProfile.query.all()}
-        slips = {s.employee_id: s for s in PayrollSlip.query.filter_by(month=month).all()}
+        employees = User.query.order_by(User.active.desc(), User.username).all()
+        profiles = {p.user_id: p for p in PayrollProfile.query.all()}
+        slips = {s.user_id: s for s in PayrollSlip.query.filter_by(month=month).all()}
         orders = month_orders(receipt_query, first, last)
         days, social = paid_dates(first, last), default_social()
+        counts = Counter(emp.salesperson_name for emp in employees if emp.salesperson_name)
+        settled = settled_pi_ids(slips.values())
+        show_inactive = request.args.get('inactive') == '1'
         rows = []
         for emp in employees:
+            if not emp.active and emp.id not in slips and not show_inactive:
+                continue
             slip, profile = slips.get(emp.id), profiles.get(emp.id)
             result = slip.confirmed if slip else None
             if result is None:
-                sales = commission(list(orders.get(emp.name, {}).values()))
+                sales = user_commission(emp, orders, counts, settled)
                 result = calculate(profile, slip.inputs, days, social, sales) if slip and profile else sales
             rows.append(dict(emp=emp, result=result, profile=profile, slip=slip))
-        return render_template('payroll/index.html', month=month, payday=payday, rows=rows, modes=MODES)
+        return render_template('payroll/index.html', month=month, payday=payday, rows=rows, modes=MODES,
+                               show_inactive=show_inactive, has_inactive=any(not u.active for u in employees))
 
     @bp.route('/settings', methods=['GET', 'POST'])
     def settings():
         month, (first, _, _) = period()
         year = first.year
         defaults = default_social()
-        employees = Salesperson.query.order_by(Salesperson.name).all()
-        profiles = {p.employee_id: p for p in PayrollProfile.query.all()}
+        employees = User.query.order_by(User.active.desc(), User.username).all()
+        profiles = {p.user_id: p for p in PayrollProfile.query.all()}
         error = ''
         if request.method == 'POST':
             action = request.form.get('action')
@@ -180,11 +247,11 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
                     amount = number(request.form, 'social', '公司默认社保')
                     db.session.merge(PayrollDefaults(id=1, social=D(amount)))
                     audit('update', 'payroll_defaults', 1, '调整默认个人社保', before={'social': defaults}, after={'social': amount})
-                elif action == 'employee':
-                    emp = db.get_or_404(Salesperson, request.form.get('employee', type=int))
+                elif action == 'user_profile':
+                    emp = db.get_or_404(User, request.form.get('user_id', type=int))
                     profile = profiles.get(emp.id)
                     before = profile_data(profile)
-                    check_current(before)
+                    check_current([emp.id, before])
                     mode = request.form.get('mode')
                     if mode not in MODES:
                         raise ValueError('请选择计薪方式。')
@@ -194,11 +261,11 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
                     base = D(number(request.form, 'base', '基本工资'))
                     social = number(request.form, 'social', '个人社保', optional=True)
                     fund = number(request.form, 'fund', '个人公积金')
-                    profile = profile or PayrollProfile(employee_id=emp.id)
+                    profile = profile or PayrollProfile(user_id=emp.id)
                     profile.mode, profile.staff_no, profile.base = mode, staff_no, base
                     profile.social, profile.fund = D(social) if social is not None else None, D(fund)
                     db.session.add(profile)
-                    audit('update', 'payroll_profile', emp.id, '保存员工计薪设置', before=before, after=profile_data(profile))
+                    audit('update', 'user_payroll_profile', emp.id, '保存员工计薪设置', before=before, after=profile_data(profile))
                 elif action == 'restore_order':
                     excluded = db.get_or_404(PayrollExclusion, request.form.get('pi_id', type=int))
                     check_current([excluded.reason, excluded.operator, excluded.changed_at])
@@ -237,11 +304,11 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
                                exclusions=exclusions, error=error, year=year, token=token,
                                profile_data=profile_data), (422 if error else 200)
 
-    @bp.route('/<month>/<int:employee_id>', methods=['GET', 'POST'])
-    def sheet(month, employee_id):
+    @bp.route('/<month>/users/<int:user_id>', methods=['GET', 'POST'])
+    def sheet(month, user_id):
         first, last, payday = month_dates(month)
-        emp = db.get_or_404(Salesperson, employee_id)
-        slip = db.session.get(PayrollSlip, (month, employee_id))
+        emp = db.get_or_404(User, user_id)
+        slip = db.session.get(PayrollSlip, (month, user_id))
         frozen = slip.confirmed if slip else None
         if request.method == 'POST' and frozen:
             abort(409, '本月工资已确认。')
@@ -250,12 +317,12 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
         if frozen:
             sales = result = frozen
         else:
-            orders = month_orders(receipt_query, first, last, emp.name)
-            sales = commission(list(orders.get(emp.name, {}).values()))
+            sales = sheet_sales(emp, month, first, last)
             result = calculate(profile, slip.inputs, days, defaults, sales) if slip and profile else None
             if result:
-                result['employee'] = emp.name
-        revision = [slip.version if slip else 0, profile_data(profile), defaults, days, sales]
+                result['employee'] = emp.username
+                result['salesperson'] = emp.salesperson_name
+        revision = [emp.id, emp.username, emp.salesperson_name, slip.version if slip else 0, profile_data(profile), defaults, days, sales]
         inputs = dict(slip.inputs) if slip else dict(required='', actual='', merit='0', bonus='0')
         error = ''
         if request.method == 'POST':
@@ -264,10 +331,12 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
             if not profile:
                 abort(409, '请先设置该员工的基本工资和计薪方式。')
             if action == 'confirm':
+                if sales.get('binding_conflict'):
+                    abort(409, '多个用户关联了同一业务员，请先核对提成归属。')
                 if not result or result['net'] is None:
                     abort(409, '请先保存考勤并核对个人社保。')
                 slip.confirmed, slip.confirmed_by, slip.confirmed_at = result, current_user().username, datetime.utcnow()
-                audit('confirm', 'payroll_slip', emp.id, f'确认 {month} 工资', after={'gross': result['gross'], 'net': result['net']})
+                audit('confirm', 'user_payroll_slip', emp.id, f'确认 {month} 工资', after={'gross': result['gross'], 'net': result['net']})
             elif action == 'save':
                 fields = [('required', '应出勤天数', last.day, False), ('actual', '实际出勤天数', last.day, False),
                           ('paid', '带薪假天数', last.day, True), ('hours', '实际工时', last.day * 24, True),
@@ -283,10 +352,10 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
                     error = str(exc)
                 else:
                     before = slip.inputs if slip else None
-                    slip = slip or PayrollSlip(month=month, employee_id=emp.id)
+                    slip = slip or PayrollSlip(month=month, user_id=emp.id)
                     slip.inputs = parsed
                     db.session.add(slip)
-                    audit('update', 'payroll_slip', emp.id, f'保存 {month} 工资草稿', before=before, after=parsed)
+                    audit('update', 'user_payroll_slip', emp.id, f'保存 {month} 工资草稿', before=before, after=parsed)
             else:
                 abort(400)
             if not error:
@@ -299,14 +368,15 @@ def register_payroll(app, *, admin_required, current_user, audit, receipt_query)
                                defaults=defaults, error=error, token=token, revision=token(revision),
                                show_orders=request.args.get('orders') == '1'), (422 if error else 200)
 
-    @bp.post('/<month>/<int:employee_id>/orders/<int:pi_id>')
-    def exclusion(month, employee_id, pi_id):
+    @bp.post('/<month>/users/<int:user_id>/orders/<int:pi_id>')
+    def exclusion(month, user_id, pi_id):
         first, last, _ = month_dates(month)
-        emp = db.get_or_404(Salesperson, employee_id)
+        emp = db.get_or_404(User, user_id)
         slip = db.session.get(PayrollSlip, (month, emp.id))
         if slip and slip.confirmed:
             abort(409, '本月工资已确认。请从未确认月份的提成明细处理。')
-        order = month_orders(receipt_query, first, last, emp.name).get(emp.name, {}).get(pi_id)
+        sales = sheet_sales(emp, month, first, last)
+        order = next((row for row in sales['orders'] if row['id'] == pi_id), None)
         if not order:
             abort(404)
         check_current([order['reason'], order['operator'], order['changed_at']])

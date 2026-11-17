@@ -6,12 +6,13 @@
 {% block content %}
 <a href="{{ url_for('payroll.index', month=month) }}" class="btn btn-sm btn-outline-secondary mb-2">← 工资核算</a>
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-    <div><h1 class="h3 mb-1">{{ result.employee if result else emp.name }} · {{ month }} 工资</h1>
+    <div><h1 class="h3 mb-1">{{ emp.username }} · {{ month }} 工资</h1>
     <span class="text-muted">发薪日 {{ payday }}{% if locked %} · 已由 {{ slip.confirmed_by }} 确认{% endif %}</span></div>
-    {% if not locked %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('payroll.settings', month=month, employee=emp.id) }}">员工计薪设置</a>{% endif %}
+    {% if not locked %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('payroll.settings', month=month, user_id=emp.id) }}">员工计薪设置</a>{% endif %}
 </div>
 {% if error %}<p class="alert alert-danger" role="alert">{{ error }}</p>{% endif %}
 {% if not locked %}
+{% if sales.binding_conflict %}<p class="alert alert-warning">多个用户关联了业务员「{{ emp.salesperson_name }}」。请在用户管理中核对归属后再确认工资。</p>{% endif %}
 {% if not profile %}<div class="alert alert-warning">请先在「员工计薪设置」填写计薪方式和基本工资。</div>
 {% else %}
 <form class="card card-body mb-3" method="post" id="attendance-form">
@@ -46,7 +47,7 @@
         <li>提成：{{ result.eligible }} USD × {{ result.percent }}% × 7 ＝ {{ result.commission }} 元</li>
         <li>应发工资 ＝ 计发基本工资 ＋ 饭补 ＋ 全勤奖 ＋ 提成 ＋ 绩效 ＋ 奖金</li>
     </ul></details>
-    {% if not locked and result.net is not none and not error %}
+    {% if not locked and result.net is not none and not error and not sales.binding_conflict %}
     <form method="post" class="mt-3" id="confirm-form"><input type="hidden" name="action" value="confirm"><input type="hidden" name="revision" value="{{ revision }}">
         <button class="btn btn-success">确认并锁定本月工资</button>
         <small class="text-muted ms-2" id="confirm-hint">确认后保留本次明细和金额。</small>
@@ -54,6 +55,8 @@
 </div></section>{% endif %}
 <details id="commission" class="card p-3 mb-3" {% if show_orders %}open{% endif %}>
     <summary><strong>提成明细</strong><span class="ms-2">¥{{ sales.commission }}</span></summary>
+    {% set binding = result.salesperson if locked else emp.salesperson_name %}
+    {% if binding %}<div class="text-muted small mt-2">关联业务员 · {{ binding }}</div>{% endif %}
     <div class="mt-3">当月到账 <b>{{ sales.total_usd }} USD</b> · 已排除 {{ sales.excluded_usd }} USD · 计提业绩 <b>{{ sales.eligible }} USD</b></div>
     <p class="mb-2">{{ sales.eligible }} USD × {{ sales.percent }}% × 7 ＝ <strong>¥{{ sales.commission }}</strong></p>
     <details class="small text-muted mb-3"><summary>提成比例</summary>
@@ -64,7 +67,7 @@
     {% for order in sales.orders %}<tr><td class="text-nowrap">{{ order.pi }}</td><td>{{ order.customer }}</td><td class="text-end">{{ order.usd }}</td><td>
         {% if order.reason %}<strong class="text-warning-emphasis">已排除</strong><div class="small text-break">{{ order.reason }} · {{ order.operator }} · {{ order.changed_at|replace('T',' ') }}</div>{% else %}计入{% endif %}</td>
         {% if not locked %}<td><details><summary class="text-nowrap">更多</summary>
-            <form class="mt-2" method="post" action="{{ url_for('payroll.exclusion', month=month, employee_id=emp.id, pi_id=order.id) }}">
+            <form class="mt-2" method="post" action="{{ url_for('payroll.exclusion', month=month, user_id=emp.id, pi_id=order.id) }}">
                 <input type="hidden" name="revision" value="{{ token([order.reason, order.operator, order.changed_at]) }}">
                 {% if order.reason %}<button class="btn btn-sm btn-outline-primary" name="action" value="restore">恢复计提</button>{% else %}
                 <label class="small">排除原因<input name="reason" maxlength="200" required class="form-control form-control-sm"></label>
@@ -72,7 +75,7 @@
                 <div class="form-text">适用于此 PI 各月未确认的工资。</div>
             </form>
         </details></td>{% endif %}
-    </tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">该业务员本月没有到账记录。</p>{% endif %}
+    </tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">{{ '该账号未关联业务员，回款提成为 0。' if not locked and not emp.salesperson_name else ('提成归属待核对。' if sales.binding_conflict else '本月没有可计提的到账记录。') }}</p>{% endif %}
 </details>
 {% endblock %}
 {% block extra_scripts %}

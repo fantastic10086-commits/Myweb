@@ -7,11 +7,47 @@ from types import SimpleNamespace
 
 import security_smoke as fixture
 from models import (db, AuditLog, FinanceReview, Payment, PI, PayrollSlip, Salesperson, User)
-from payroll import calculate, commission, month_dates, paid_dates, token
+from sqlalchemy import create_engine
+from payroll import calculate, commission, migrate_payroll_accounts, month_dates, paid_dates, token
 
 
 def order(usd):
     return dict(usd=D(usd), reason='')
+
+
+class PayrollMigration(unittest.TestCase):
+    def test_atomic_migration_uses_bindings_and_preserves_locked_data(self):
+        engine = create_engine('sqlite://')
+        with engine.begin() as conn:
+            for sql in (
+                'CREATE TABLE users(id INTEGER PRIMARY KEY, username TEXT, salesperson_name TEXT)',
+                'CREATE TABLE salespersons(id INTEGER PRIMARY KEY, name TEXT)',
+                'CREATE TABLE payroll_profiles(employee_id INTEGER PRIMARY KEY, staff_no, mode, base, social, fund)',
+                'CREATE TABLE payroll_slips(employee_id, month, inputs, confirmed, confirmed_by, confirmed_at, version)',
+                "INSERT INTO users VALUES (7,'Office',''), (9,'Account','Sales')",
+                "INSERT INTO salespersons VALUES (7,'Sales'), (9,'Office'), (10,'Missing')",
+                "INSERT INTO payroll_profiles VALUES (7,'01','hourly',4150,NULL,0), (9,'02','monthly',8300,512,200)",
+                """INSERT INTO payroll_slips VALUES (7,'2026-10','{}','{"net":"4100.00"}','admin','2026-11-01',3),
+                     (10,'2026-10','{}',NULL,NULL,NULL,1)""",
+            ):
+                conn.exec_driver_sql(sql)
+        with self.assertRaisesRegex(RuntimeError, 'Missing'):
+            migrate_payroll_accounts(engine)
+        with engine.begin() as conn:
+            self.assertFalse(conn.exec_driver_sql(
+                "SELECT 1 FROM sqlite_master WHERE name='user_payroll_profiles'").first())
+            conn.exec_driver_sql("INSERT INTO users VALUES(25,'Staff','Missing')")
+        migrate_payroll_accounts(engine)
+        with engine.begin() as conn:
+            self.assertEqual(conn.exec_driver_sql(
+                "SELECT user_id, staff_no FROM user_payroll_profiles ORDER BY user_id").fetchall(), [(7,'02'),(9,'01')])
+            self.assertEqual(conn.exec_driver_sql(
+                'SELECT user_id,confirmed,confirmed_by,version FROM user_payroll_slips ORDER BY user_id').fetchall(),
+                [(9,'{"net":"4100.00"}','admin',3),(25,None,None,1)])
+            conn.exec_driver_sql('UPDATE user_payroll_profiles SET base=6000 WHERE user_id=7')
+        migrate_payroll_accounts(engine)
+        with engine.begin() as conn:
+            self.assertEqual(conn.exec_driver_sql('SELECT base FROM user_payroll_profiles WHERE user_id=7').scalar(), 6000)
 
 
 class PayrollMath(unittest.TestCase):
@@ -48,9 +84,11 @@ class PayrollRoutes(unittest.TestCase):
         cls.app = fixture.application.app
         with cls.app.app_context():
             emp = Salesperson(name='Payroll test')
-            db.session.add(emp)
+            account = User(account='payroll-login', username='Payroll account', salesperson_name=emp.name,
+                           password_hash='synthetic', role='salesperson')
+            db.session.add_all([emp, account])
             db.session.flush()
-            cls.eid = emp.id
+            cls.eid = account.id
             for serial, amount in [('A', 7500), ('B', 500)]:
                 pi = PI(pi_number='PAYROLL-' + serial, salesperson=emp.name, currency='USD',
                         customer_id=fixture.SecuritySmokeTests.alice_customer)
@@ -71,7 +109,7 @@ class PayrollRoutes(unittest.TestCase):
         self.client = self.app.test_client()
         self.login('admin-test')
         self.settings = '/admin/payroll/settings?month=2026-09'
-        self.sheet = f'/admin/payroll/2026-09/{self.eid}'
+        self.sheet = f'/admin/payroll/2026-09/users/{self.eid}'
         html = self.client.get(self.settings).text
         self.csrf = re.search(r'<meta name="csrf-token" content="([^"]+)"', html)[1]
 
@@ -108,8 +146,8 @@ class PayrollRoutes(unittest.TestCase):
 
     def test_draft_exclude_confirm_restore(self):
         self.assertEqual(self.post(self.settings, action='social', social='512.30', revision=token(None)).status_code, 302)
-        self.assertEqual(self.post(self.settings, action='employee', employee=self.eid, mode='monthly',
-                                   base='4000', social='', fund='0', staff_no='01', revision=token(None)).status_code, 302)
+        self.assertEqual(self.post(self.settings, action='user_profile', user_id=self.eid, mode='monthly',
+                                   base='4000', social='', fund='0', staff_no='01', revision=token([self.eid, None])).status_code, 302)
         self.assertIn('8000.00 USD', self.client.get(self.sheet).text)
         data = dict(action='save', required='22', actual='21', merit='83.43', bonus='20',
                     social='', fund='', hours='', paid='', unpaid='')
@@ -152,3 +190,65 @@ class PayrollRoutes(unittest.TestCase):
         with self.app.app_context():
             actions = {row.action for row in AuditLog.query.filter_by(entity_type='payroll_commission', entity_id=self.pi_id).all()}
             self.assertEqual(actions, {'exclude', 'restore'})
+
+    def test_account_roster_inactive_and_non_sales_pay(self):
+        with self.app.app_context():
+            u = User(account='office-qa', username='Office QA', password_hash='synthetic', role='admin')
+            sp = Salesperson(name='Directory entry only')
+            db.session.add_all([u, sp])
+            db.session.commit()
+            uid, spid = u.id, sp.id
+        index = '/admin/payroll?month=2026-11'
+        page = f'/admin/payroll/2026-11/users/{uid}'
+        self.assertIn('Office QA', self.client.get(index).text)
+        self.assertNotIn('Directory entry only', self.client.get(index).text)
+        self.assertIn('该账号未关联业务员', self.client.get(page).text)
+        self.assertEqual(self.client.get(f'/admin/payroll/2026-11/{spid}').location, index)
+        self.assertEqual(self.post(self.settings, action='user_profile', user_id=uid, mode='monthly',
+                                   base='4200', social='100', fund='0', staff_no='', revision=token([uid, None])).status_code, 302)
+        self.assertEqual(self.post(page, action='save', revision=self.revision('save', page), required='20',
+                                   actual='20', merit='88', bonus='0').status_code, 302)
+        self.assertEqual(self.post(page, action='confirm', revision=self.revision('confirm', page)).status_code, 302)
+        self.assertEqual(self.post(f'/users/{uid}/toggle-active').status_code, 302)
+        self.assertEqual(self.post(f'/users/{uid}/delete').status_code, 302)
+        with self.app.app_context():
+            self.assertFalse(db.session.get(User, uid).active)
+            frozen = db.session.get(PayrollSlip, ('2026-11', uid)).confirmed
+            self.assertEqual((frozen['employee'], frozen['commission'], frozen['net']), ('Office QA', '0.00', '4588.00'))
+        self.assertIn('Office QA', self.client.get(index).text)
+        other_month = index.replace('2026-11', '2026-12')
+        self.assertNotIn('Office QA', self.client.get(other_month).text)
+        self.assertIn('Office QA', self.client.get(other_month + '&inactive=1').text)
+
+    def test_conflicting_bindings_and_changed_owner(self):
+        with self.app.app_context():
+            owner = db.session.get(User, self.eid)
+            other = User(account='binding-qa', username='Binding QA', salesperson_name=owner.salesperson_name,
+                         password_hash='synthetic')
+            db.session.add(other)
+            db.session.commit()
+            uid = other.id
+        page = f'/admin/payroll/2026-10/users/{uid}'
+        try:
+            self.assertIn('多个用户关联了业务员', self.client.get(page).text)
+            self.assertNotIn('PAYROLL-A', self.client.get(page).text)
+            self.assertEqual(self.post(page + f'/orders/{self.pi_id}', action='exclude',
+                                       revision=token(['','','']), reason='test').status_code, 404)
+            with self.app.app_context():
+                owner = db.session.get(User, self.eid)
+                owner.salesperson_name = ''
+                frozen = dict(commission([dict(id=self.pi_id, usd=D(500), reason='')]), employee=owner.username)
+                db.session.add(PayrollSlip(month='2026-10', user_id=self.eid, inputs={}, confirmed=frozen))
+                db.session.commit()
+            html = self.client.get(page).text
+            self.assertIn('PAYROLL-A', html)
+            self.assertNotIn('PAYROLL-B', html)
+            self.assertIn('¥525.00', html)
+        finally:
+            with self.app.app_context():
+                frozen = db.session.get(PayrollSlip, ('2026-10', self.eid))
+                if frozen:
+                    db.session.delete(frozen)
+                db.session.get(User, self.eid).salesperson_name = 'Payroll test'
+                db.session.delete(db.session.get(User, uid))
+                db.session.commit()

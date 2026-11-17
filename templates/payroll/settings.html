@@ -14,11 +14,11 @@
 <section class="card mb-3"><div class="card-header"><h2 class="h5 mb-0">员工计薪档案</h2></div>
 <div class="list-group list-group-flush">
 {% for emp in employees %}{% set p = profiles.get(emp.id) %}
-<details class="list-group-item py-2" {% if request.args.get('employee', type=int)==emp.id or (error and request.form.get('employee',type=int)==emp.id) %}open{% endif %}>
-    <summary class="py-1"><strong>{{ emp.name }}</strong><span class="text-muted ms-3">{{ modes[p.mode] ~ ' · ¥' ~ p.base if p else '待设置' }}</span></summary>
+<details class="list-group-item py-2" {% if request.args.get('user_id', type=int)==emp.id or (error and request.form.get('user_id',type=int)==emp.id) %}open{% endif %}>
+    <summary class="py-1"><strong>{{ emp.username }}</strong>{% if not emp.active %} <small class="text-muted">已停用</small>{% endif %}<span class="text-muted ms-3">{{ modes[p.mode] ~ ' · ¥' ~ p.base if p else '待设置' }}</span></summary>
     <form method="post" class="row g-2 mt-1 mb-2 align-items-end">
-        <input type="hidden" name="action" value="employee"><input type="hidden" name="employee" value="{{ emp.id }}">
-        <input type="hidden" name="revision" value="{{ token(profile_data(p)) }}">
+        <input type="hidden" name="action" value="user_profile"><input type="hidden" name="user_id" value="{{ emp.id }}">
+        <input type="hidden" name="revision" value="{{ token([emp.id, profile_data(p)]) }}">
         <label class="col-sm-3 col-md-2">工号<input class="form-control" name="staff_no" maxlength="32" value="{{ p.staff_no if p else '' }}"></label>
         <label class="col-sm-3 col-md-2">计薪方式<select name="mode" class="form-select" required><option value="">请选择</option>{% for key, name in modes.items() %}<option value="{{ key }}" {% if p and p.mode==key %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
         <label class="col-sm-3 col-md-2">基本工资（元）<input class="form-control" type="number" name="base" min="0" step=".01" required value="{{ p.base if p else '' }}"></label>
