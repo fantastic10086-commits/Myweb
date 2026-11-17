@@ -93,7 +93,7 @@ var pickerItems = {};
 var pickerPage = 1;
 var pickerPages = 1;
 var pickerPageSize = 40;
-var pickerLoading = false;
+var pickerRequestId = 0;
 var adjustmentUsd = 0;
 var defaultBusinessRate = {{ exchange_rate|tojson }};
     var productSearch, selectedTableBody, noProductMsg, totalDisplay, totalInput;
@@ -410,22 +410,25 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         selectAll.disabled = available.length === 0;
         selectAll.checked = available.length > 0 && available.length === checkedAvailable.length;
         selectAll.indeterminate = checkedAvailable.length > 0 && checkedAvailable.length < available.length;
-        document.getElementById('picker_page_info').textContent = '第 ' + pickerPage + ' / ' + pickerPages + ' 页';
+        var pageInput = document.getElementById('picker_page');
+        pageInput.value = pickerPage;
+        pageInput.max = pickerPages;
+        document.getElementById('picker_page_info').textContent = '/ ' + pickerPages + ' 页';
         document.getElementById('picker_prev').disabled = pickerPage <= 1;
         document.getElementById('picker_next').disabled = pickerPage >= pickerPages;
         updatePickerSelectionState();
     }
 
     function loadPickerProducts(page) {
-        if (pickerLoading) return;
-        pickerLoading = true;
-        pickerPage = page || 1;
+        var requestId = ++pickerRequestId;
+        var navigation = document.getElementById('picker_navigation');
+        navigation.disabled = true;
         var body = document.getElementById('product_picker_body');
         var error = document.getElementById('product_picker_error');
         var query = document.getElementById('picker_search').value.trim();
         error.classList.add('d-none');
         body.innerHTML = '<tr><td colspan="7" class="text-center py-5"><span class="spinner-border text-primary" role="status"></span><div class="mt-2 text-muted">正在加载产品……</div></td></tr>';
-        fetch('/api/products/search?picker=1&page=' + pickerPage + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
+        fetch('/api/products/search?picker=1&page=' + page + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
             headers: {'Accept': 'application/json'}
         })
         .then(function(response) {
@@ -433,16 +436,20 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
             return response.json();
         })
         .then(function(data) {
+            if (requestId !== pickerRequestId) return;
             pickerPage = data.page || 1;
             pickerPages = data.pages || 1;
             renderPickerRows(data.items || [], data.total || 0);
         })
         .catch(function(err) {
+            if (requestId !== pickerRequestId) return;
             body.innerHTML = '';
             error.textContent = err.message || '加载产品失败，请稍后重试。';
             error.classList.remove('d-none');
         })
-        .finally(function() { pickerLoading = false; });
+        .finally(function() {
+            if (requestId === pickerRequestId) navigation.disabled = false;
+        });
     }
 
     function openProductPicker() {
@@ -474,6 +481,10 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         });
         document.getElementById('picker_prev').addEventListener('click', function() { if (pickerPage > 1) loadPickerProducts(pickerPage - 1); });
         document.getElementById('picker_next').addEventListener('click', function() { if (pickerPage < pickerPages) loadPickerProducts(pickerPage + 1); });
+        document.getElementById('picker_page_form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            loadPickerProducts(document.getElementById('picker_page').valueAsNumber);
+        });
         document.getElementById('product_picker_body').addEventListener('change', function(e) {
             if (!e.target.classList.contains('picker-check')) return;
             var row = e.target.closest('tr');
@@ -962,11 +973,19 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
             <div class="modal-footer d-flex flex-wrap justify-content-between gap-2">
-                <div class="d-flex align-items-center gap-2">
-                    <button type="button" class="btn btn-outline-secondary" id="picker_prev"><i class="bi bi-chevron-left"></i> 上一页</button>
-                    <span class="text-muted" id="picker_page_info">第 1 / 1 页</span>
-                    <button type="button" class="btn btn-outline-secondary" id="picker_next">下一页 <i class="bi bi-chevron-right"></i></button>
-                </div>
+                <form id="picker_page_form" aria-label="产品分页">
+                    <fieldset id="picker_navigation" class="d-flex flex-wrap align-items-center gap-2" disabled>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="picker_prev" disabled><i class="bi bi-chevron-left"></i> 上一页</button>
+                        <div class="d-flex align-items-center gap-1 text-muted">
+                            <label for="picker_page">第</label>
+                            <input type="number" id="picker_page" class="form-control form-control-sm text-center" style="width:4.5rem"
+                                   aria-label="跳转页码" aria-describedby="picker_page_info" inputmode="numeric" min="1" max="1" step="1" value="1" required>
+                            <span class="text-nowrap" id="picker_page_info">/ 1 页</span>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-primary">跳转</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="picker_next" disabled>下一页 <i class="bi bi-chevron-right"></i></button>
+                    </fieldset>
+                </form>
                 <div class="d-flex gap-2">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
                     <button type="button" class="btn btn-success" id="picker_add_selected" disabled><i class="bi bi-plus-circle me-1"></i>加入已选产品</button>
