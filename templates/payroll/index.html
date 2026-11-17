@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}工资核算{% endblock %}
+{% block content %}
+<header class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0"><i class="bi bi-calculator me-2"></i>工资核算</h1>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('payroll.settings', month=month) }}"><i class="bi bi-gear me-1"></i>计薪设置</a>
+</header>
+<form class="card card-body mb-3" method="get">
+    <div class="d-flex flex-wrap align-items-end gap-3">
+        <label class="form-label mb-0">工资所属月份<input class="form-control mt-1" type="month" name="month" required value="{{ month }}"></label>
+        <button class="btn btn-primary">查看</button>
+        <span class="text-muted align-self-end pb-2">发薪日 {{ payday }}</span>
+    </div>
+</form>
+<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+    <thead><tr><th>业务员</th><th>计薪方式</th><th>实际 / 应出勤</th><th class="text-end">提成（元）</th><th class="text-end">应发工资（元）</th><th class="text-end">扣社保、公积金后（元）</th><th>状态</th><th></th></tr></thead>
+    <tbody>{% for row in rows %}{% set r = row.result %}
+    <tr><td>{{ r.employee or row.emp.name }}{% if r.staff_no %}<small class="d-block text-muted">{{ r.staff_no }}</small>{% endif %}</td>
+        <td>{{ modes.get(r.mode or (row.profile.mode if row.profile else ''), '待设置') }}</td>
+        <td>{{ (r.actual ~ ' / ' ~ r.required) if r.actual is defined else '—' }}</td>
+        <td class="text-end"><a href="{{ url_for('payroll.sheet', month=month, employee_id=row.emp.id, orders=1, _anchor='commission') }}">{{ r.commission }}</a></td>
+        <td class="text-end">{{ r.gross or '—' }}</td><td class="text-end fw-bold">{{ r.net or '—' }}</td>
+        <td>{% if row.slip and row.slip.confirmed %}<span class="badge bg-success">已确认</span>{% elif row.slip %}草稿{% else %}待录入{% endif %}</td>
+        <td class="text-end"><a class="btn btn-sm btn-outline-primary text-nowrap" href="{{ url_for('payroll.sheet', month=month, employee_id=row.emp.id) }}">{{ '查看' if row.slip and row.slip.confirmed else '核算' }}</a></td>
+    </tr>{% else %}<tr><td colspan="8" class="text-center text-muted">暂无业务员</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% endblock %}

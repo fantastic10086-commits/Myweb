@@ -51,7 +51,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Currency, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
-    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission,
+    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission, PayrollSlip,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
@@ -3767,6 +3767,18 @@ def customer_file_delete(id):
     return redirect(url_for('customer_detail', id=customer.id, _anchor='customer-files'))
 
 
+def performance_receipts():
+    """Active receipts and their shared performance date for stats and payroll."""
+    received_on = func.coalesce(FinanceReview.occurred_on, func.date(Payment.created_at, '+8 hours'))
+    query = (db.session.query(Payment, PI, received_on.label('received_on'))
+             .join(PI, Payment.pi_id == PI.id)
+             .outerjoin(FinanceReview, and_(FinanceReview.kind == 'payment', FinanceReview.record_id == Payment.id))
+             .options(joinedload(PI.customer))
+             .filter(Payment.deleted_at.is_(None), PI.deleted_at.is_(None), Payment.amount > 0,
+                     received_on.isnot(None)))
+    return query, received_on
+
+
 @app.route('/sales-stats')
 @login_required
 def sales_stats():
@@ -3790,20 +3802,11 @@ def sales_stats():
         date_from = today.replace(month=1, day=1).strftime('%Y-%m-%d')
         date_to = today.strftime('%Y-%m-%d')
 
-    # Preserve explicit arrival dates; legacy receipts use Beijing registration date.
-    receipt_date = func.coalesce(FinanceReview.occurred_on,
-                                 func.date(Payment.created_at, '+8 hours'))
-    receipts = (db.session.query(Payment, PI, receipt_date.label('received_on'))
-        .join(PI, Payment.pi_id == PI.id)
-        .outerjoin(FinanceReview, and_(FinanceReview.kind == 'payment',
-                                     FinanceReview.record_id == Payment.id))
-        .options(joinedload(PI.customer))
-        .filter(Payment.deleted_at.is_(None), PI.deleted_at.is_(None), Payment.amount > 0))
+    receipts, receipt_date = performance_receipts()
     if not is_admin():
         receipts = receipts.filter(PI.salesperson == current_salesperson_name())
     if sp_filter:
         receipts = receipts.filter(PI.salesperson.in_(sp_filter))
-    receipts = receipts.filter(receipt_date.isnot(None))
     for value, lower in ((date_from, True), (date_to, False)):
         try:
             boundary = datetime.strptime(value, '%Y-%m-%d').date()
@@ -5107,6 +5110,9 @@ def salesperson_edit(id):
 @admin_required
 def salesperson_delete(id):
     sp = Salesperson.query.get_or_404(id)
+    if PayrollSlip.query.filter_by(employee_id=id).first():
+        flash('该业务员有工资记录，请保留业务员档案。', 'warning')
+        return redirect(url_for('salesperson_list'))
     db.session.delete(sp)
     db.session.commit()
     flash('业务员删除成功。', 'success')
@@ -10579,6 +10585,9 @@ def inject_globals():
 # ═══════════════════════════════════════════════════════════════════════
 
 from finance_web import register_finance_web
+from payroll import register_payroll
+register_payroll(app, admin_required=admin_required, current_user=get_current_user,
+                 audit=_audit, receipt_query=performance_receipts)
 register_finance_web(app, admin_required=admin_required, current_user=get_current_user, audit=_audit,
                      recalculate_customer=_recalculate_customer_deal)
 

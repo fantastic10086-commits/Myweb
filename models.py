@@ -394,6 +394,49 @@ class Salesperson(db.Model):
         }
 
 
+class PayrollProfile(db.Model):
+    __tablename__ = 'payroll_profiles'
+    employee_id = db.Column(db.Integer, db.ForeignKey('salespersons.id', ondelete='CASCADE'), primary_key=True)
+    staff_no = db.Column(db.String(32), nullable=False, default='')
+    mode = db.Column(db.String(12), nullable=False)
+    base = db.Column(db.Numeric(14, 2), nullable=False)
+    social = db.Column(db.Numeric(14, 2))  # NULL inherits the company default.
+    fund = db.Column(db.Numeric(14, 2), nullable=False, default=0)
+
+
+class PayrollDefaults(db.Model):
+    __tablename__ = 'payroll_defaults'
+    id = db.Column(db.Integer, primary_key=True)
+    social = db.Column(db.Numeric(14, 2), nullable=False)
+
+
+class PayrollHoliday(db.Model):
+    """Administrator-added paid days, in addition to the statutory calendar."""
+    __tablename__ = 'payroll_holidays'
+    day = db.Column(db.Date, primary_key=True)
+    name = db.Column(db.String(60), nullable=False)
+
+
+class PayrollExclusion(db.Model):
+    __tablename__ = 'payroll_exclusions'
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id', ondelete='CASCADE'), primary_key=True)
+    reason = db.Column(db.String(200), nullable=False)
+    operator = db.Column(db.String(100), nullable=False)
+    changed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class PayrollSlip(db.Model):
+    __tablename__ = 'payroll_slips'
+    month = db.Column(db.String(7), primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('salespersons.id'), primary_key=True)
+    inputs = db.Column(db.JSON, nullable=False)
+    confirmed = db.Column(db.JSON(none_as_null=True))
+    confirmed_by = db.Column(db.String(100))
+    confirmed_at = db.Column(db.DateTime)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    __mapper_args__ = {'version_id_col': version}
+
+
 class User(db.Model):
     __tablename__ = 'users'
 

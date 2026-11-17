@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}计薪设置{% endblock %}
+{% block content %}
+<a href="{{ url_for('payroll.index', month=month) }}" class="btn btn-sm btn-outline-secondary mb-2">← 工资核算</a>
+<h1 class="h3 mb-3">计薪设置</h1>
+{% if error %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endif %}
+<div class="card card-body mb-3">
+    <form method="post" class="d-flex flex-wrap align-items-end gap-2">
+        <input type="hidden" name="action" value="social"><input type="hidden" name="revision" value="{{ token(defaults) }}">
+        <label>公司默认个人社保（元/月）<input class="form-control mt-1" name="social" type="number" min="0" step=".01" required value="{{ defaults if defaults is not none else '' }}"></label>
+        <button class="btn btn-outline-primary">保存默认值</button>
+    </form>
+</div>
+<section class="card mb-3"><div class="card-header"><h2 class="h5 mb-0">员工计薪档案</h2></div>
+<div class="list-group list-group-flush">
+{% for emp in employees %}{% set p = profiles.get(emp.id) %}
+<details class="list-group-item py-2" {% if request.args.get('employee', type=int)==emp.id or (error and request.form.get('employee',type=int)==emp.id) %}open{% endif %}>
+    <summary class="py-1"><strong>{{ emp.name }}</strong><span class="text-muted ms-3">{{ modes[p.mode] ~ ' · ¥' ~ p.base if p else '待设置' }}</span></summary>
+    <form method="post" class="row g-2 mt-1 mb-2 align-items-end">
+        <input type="hidden" name="action" value="employee"><input type="hidden" name="employee" value="{{ emp.id }}">
+        <input type="hidden" name="revision" value="{{ token(profile_data(p)) }}">
+        <label class="col-sm-3 col-md-2">工号<input class="form-control" name="staff_no" maxlength="32" value="{{ p.staff_no if p else '' }}"></label>
+        <label class="col-sm-3 col-md-2">计薪方式<select name="mode" class="form-select" required><option value="">请选择</option>{% for key, name in modes.items() %}<option value="{{ key }}" {% if p and p.mode==key %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+        <label class="col-sm-3 col-md-2">基本工资（元）<input class="form-control" type="number" name="base" min="0" step=".01" required value="{{ p.base if p else '' }}"></label>
+        <label class="col-sm-3 col-md-2">个人社保（元）<input class="form-control" type="number" name="social" min="0" step=".01" placeholder="跟随公司默认" value="{{ p.social if p and p.social is not none else '' }}"></label>
+        <label class="col-sm-3 col-md-2">个人公积金（元）<input class="form-control" type="number" name="fund" min="0" step=".01" required value="{{ p.fund if p else 0 }}"></label>
+        <div class="col-auto"><button class="btn btn-primary">保存档案</button></div>
+    </form>
+</details>{% endfor %}</div></section>
+<section class="card card-body">
+    <h2 class="h5">{{ year }} 年带薪假日历</h2>
+    <form class="d-flex align-items-end flex-wrap gap-2 mb-3" method="get">
+        <label>查看年月<input class="form-control form-control-sm" type="month" name="month" required value="{{ month }}"></label>
+        <button class="btn btn-sm btn-outline-secondary">切换</button>
+    </form>
+    <div class="d-flex gap-2 flex-wrap mb-3">{% for day, name in days.items() %}
+        <div class="border rounded px-2 py-1">{{ day[5:] }} {{ name }}
+        {% if day not in statutory %}<form class="d-inline" method="post"><input type="hidden" name="action" value="remove_day"><input type="hidden" name="day" value="{{ day }}"><input type="hidden" name="revision" value="{{ token(name) }}"><button class="btn btn-sm btn-link text-danger p-0" aria-label="移除 {{ day }} {{ name }}">移除</button></form>{% endif %}</div>
+    {% else %}<span class="text-muted">该年尚未设置带薪假日。</span>{% endfor %}</div>
+    <form method="post" class="d-flex flex-wrap align-items-end gap-2">
+        <input type="hidden" name="action" value="add_day">
+        <label>带薪假日期<input type="date" class="form-control" name="day" min="{{ year }}-01-01" max="{{ year }}-12-31" required></label>
+        <label>假期名称<input class="form-control" name="name" required maxlength="60"></label>
+        <button class="btn btn-outline-primary">添加日期</button>
+    </form>
+</section>
+{% if exclusions %}
+<details class="card p-3 mt-3"><summary>已排除提成的订单（{{ exclusions|length }}）</summary>
+    <div class="list-group list-group-flush">{% for excluded, pi_number in exclusions %}
+        <form method="post" class="list-group-item d-flex flex-wrap align-items-center gap-2">
+            <input type="hidden" name="action" value="restore_order"><input type="hidden" name="pi_id" value="{{ excluded.pi_id }}">
+            <input type="hidden" name="revision" value="{{ token([excluded.reason, excluded.operator, excluded.changed_at]) }}">
+            <strong>{{ pi_number }}</strong><span>{{ excluded.reason }}</span><small class="text-muted">{{ excluded.operator }}</small>
+            <button class="btn btn-sm btn-outline-secondary ms-auto">恢复计提</button>
+        </form>{% endfor %}</div>
+</details>{% endif %}
+{% endblock %}

@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}{{ month }} 工资明细{% endblock %}
+{% macro field(key, label, hint='', required=false, limit='999999999') -%}
+<label class="col-6 col-lg-3">{{ label }}<input type="number" class="form-control mt-1" name="{{ key }}" step=".01" min="0" max="{{ limit }}" {% if required %}required{% endif %} value="{{ inputs.get(key) if inputs.get(key) is not none else '' }}" placeholder="{{ hint }}"></label>
+{%- endmacro %}
+{% block content %}
+<a href="{{ url_for('payroll.index', month=month) }}" class="btn btn-sm btn-outline-secondary mb-2">← 工资核算</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div><h1 class="h3 mb-1">{{ result.employee if result else emp.name }} · {{ month }} 工资</h1>
+    <span class="text-muted">发薪日 {{ payday }}{% if locked %} · 已由 {{ slip.confirmed_by }} 确认{% endif %}</span></div>
+    {% if not locked %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('payroll.settings', month=month, employee=emp.id) }}">员工计薪设置</a>{% endif %}
+</div>
+{% if error %}<p class="alert alert-danger" role="alert">{{ error }}</p>{% endif %}
+{% if not locked %}
+{% if not profile %}<div class="alert alert-warning">请先在「员工计薪设置」填写计薪方式和基本工资。</div>
+{% else %}
+<form class="card card-body mb-3" method="post" id="attendance-form">
+    <input type="hidden" name="action" value="save"><input type="hidden" name="revision" value="{{ revision }}">
+    <h2 class="h5 mb-1">本月考勤与工资项目</h2>
+    <p class="text-muted mb-3">{{ modes[profile.mode] }} · 基本工资 ¥{{ profile.base }} · 本月带薪假 {{ days|length }} 天{% if days %}（{{ days.keys()|join('、') }}）{% endif %}</p>
+    <div class="row g-3">
+        {{ field('required','应出勤天数（不含带薪假）','',true,31) }}
+        {{ field('actual','实际出勤天数','',true,31) }}
+        {{ field('hours','实际工时（小时）','默认 实际出勤 × 8',false,744) }}
+        {{ field('paid','带薪假（天）','日历：' ~ days|length ~ ' 天',false,31) }}
+        {% if profile.mode=='monthly' %}{{ field('unpaid','无薪缺勤（天）','默认 应出勤 − 实际出勤',false,31) }}{% endif %}
+        {{ field('merit','绩效（元）','',true) }}{{ field('bonus','奖金（元）','',true) }}
+        {{ field('social','个人社保（元）', ('默认 ' ~ profile.social) if profile.social is not none else (('默认 ' ~ defaults) if defaults is not none else '请填金额或设置默认值')) }}
+        {{ field('fund','个人公积金（元）','默认 ' ~ profile.fund) }}
+    </div>
+    <div class="mt-3"><button class="btn btn-primary">保存并试算</button></div>
+</form>{% endif %}{% endif %}
+{% if result %}
+<section class="card mb-3"><div class="card-header"><h2 class="h5 mb-0">{{ '已确认工资单' if locked else '试算结果' }}</h2></div>
+<div class="card-body">
+    <div class="row g-3 mb-3">
+        <div class="col-sm-6"><span>应发工资（元）</span><strong class="d-block fs-4">{{ result.gross }}</strong></div>
+        <div class="col-sm-6"><span>扣社保、公积金后（元）</span><strong class="d-block fs-4 text-primary">{{ result.net if result.net is not none else '待填写个人社保' }}</strong></div>
+    </div>
+    <div class="table-responsive"><table class="table table-sm mb-2"><thead><tr><th>基本工资</th><th>应出勤 / 实出勤</th><th>带薪假</th><th>工时</th><th>计发基本工资</th><th>饭补</th><th>全勤奖</th><th>提成</th><th>绩效</th><th>奖金</th><th>个人社保</th><th>个人公积金</th></tr></thead><tbody>
+        <tr><td>{{ result.base }}</td><td>{{ result.required }} / {{ result.actual }} 天</td><td>{{ result.paid }} 天</td><td>{{ result.hours }} h</td><td>{{ result.earned }}</td><td>{{ result.meal }}</td><td>{{ result.award }}</td><td><a href="#commission" data-show-commission>{{ result.commission }}</a></td><td>{{ result.merit }}</td><td>{{ result.bonus }}</td><td>{{ result.social if result.social is not none else '待填' }}</td><td>{{ result.fund }}</td></tr>
+    </tbody></table></div>
+    <details><summary>查看工资计算过程</summary><ul class="mt-2 mb-0">
+        <li>{{ modes[result.mode] }}：{% if result.mode=='hourly' %}{{ result.base }} ÷ 23.75 ÷ 8 ×（{{ result.hours }} ＋ {{ result.paid }} × 8）{% else %}{{ result.base }} − {{ result.base }} ÷ 21.75 × {{ result.unpaid }} 天无薪缺勤（最低为 0）{% endif %}＝ {{ result.earned }} 元</li>
+        <li>饭补：{{ result.actual }} 天 × 10 元 ＝ {{ result.meal }} 元。全勤奖：当月有应出勤且达到应出勤天数，计 200 元。</li>
+        <li>提成：{{ result.eligible }} USD × {{ result.percent }}% × 7 ＝ {{ result.commission }} 元</li>
+        <li>应发工资 ＝ 计发基本工资 ＋ 饭补 ＋ 全勤奖 ＋ 提成 ＋ 绩效 ＋ 奖金</li>
+    </ul></details>
+    {% if not locked and result.net is not none and not error %}
+    <form method="post" class="mt-3" id="confirm-form"><input type="hidden" name="action" value="confirm"><input type="hidden" name="revision" value="{{ revision }}">
+        <button class="btn btn-success">确认并锁定本月工资</button>
+        <small class="text-muted ms-2" id="confirm-hint">确认后保留本次明细和金额。</small>
+    </form>{% endif %}
+</div></section>{% endif %}
+<details id="commission" class="card p-3 mb-3" {% if show_orders %}open{% endif %}>
+    <summary><strong>提成明细</strong><span class="ms-2">¥{{ sales.commission }}</span></summary>
+    <div class="mt-3">当月到账 <b>{{ sales.total_usd }} USD</b> · 已排除 {{ sales.excluded_usd }} USD · 计提业绩 <b>{{ sales.eligible }} USD</b></div>
+    <p class="mb-2">{{ sales.eligible }} USD × {{ sales.percent }}% × 7 ＝ <strong>¥{{ sales.commission }}</strong></p>
+    <details class="small text-muted mb-3"><summary>提成比例</summary>
+        <p class="mb-0">按整月计提业绩选一档。至 7,500 USD 为 1%，至 10,000 为 1.2%，至 15,000 为 1.4%，至 20,000 为 1.6%，至 25,000 为 1.8%，超过 25,000 为 2%。各档均包含上限。</p>
+    </details>
+    {% if sales.orders %}
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>PI 编号</th><th>客户</th><th class="text-end">当月到账（USD）</th><th>计提情况</th>{% if not locked %}<th></th>{% endif %}</tr></thead><tbody>
+    {% for order in sales.orders %}<tr><td class="text-nowrap">{{ order.pi }}</td><td>{{ order.customer }}</td><td class="text-end">{{ order.usd }}</td><td>
+        {% if order.reason %}<strong class="text-warning-emphasis">已排除</strong><div class="small text-break">{{ order.reason }} · {{ order.operator }} · {{ order.changed_at|replace('T',' ') }}</div>{% else %}计入{% endif %}</td>
+        {% if not locked %}<td><details><summary class="text-nowrap">更多</summary>
+            <form class="mt-2" method="post" action="{{ url_for('payroll.exclusion', month=month, employee_id=emp.id, pi_id=order.id) }}">
+                <input type="hidden" name="revision" value="{{ token([order.reason, order.operator, order.changed_at]) }}">
+                {% if order.reason %}<button class="btn btn-sm btn-outline-primary" name="action" value="restore">恢复计提</button>{% else %}
+                <label class="small">排除原因<input name="reason" maxlength="200" required class="form-control form-control-sm"></label>
+                <button class="btn btn-sm btn-outline-secondary my-1" name="action" value="exclude">不计提成</button>{% endif %}
+                <div class="form-text">适用于此 PI 各月未确认的工资。</div>
+            </form>
+        </details></td>{% endif %}
+    </tr>{% endfor %}</tbody></table></div>{% else %}<p class="text-muted mb-0">该业务员本月没有到账记录。</p>{% endif %}
+</details>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+const attendance = document.getElementById('attendance-form');
+const confirmForm = document.getElementById('confirm-form');
+attendance?.addEventListener('input', () => {
+    if (confirmForm) {
+        confirmForm.querySelector('button').disabled = true;
+        document.getElementById('confirm-hint').textContent = '请先保存并试算本次修改。';
+    }
+});
+document.querySelector('[data-show-commission]')?.addEventListener('click', () => {
+    document.getElementById('commission').open = true;
+});
+</script>
+{% endblock %}

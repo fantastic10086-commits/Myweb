@@ -91,7 +91,8 @@
                         <li><a class="dropdown-item" href="{{ url_for('exchange_rates_page') }}"><i class="bi bi-currency-exchange"></i> 系统汇率</a></li>
                         <li><a class="dropdown-item" href="{{ url_for('currency_list') }}"><i class="bi bi-list-ul"></i> 币种管理</a></li>
                         {% if is_admin %}<li><a class="dropdown-item" href="{{ url_for('admin_center') }}"><i class="bi bi-grid"></i> 管理中心</a></li>
-                        <li><a class="dropdown-item" href="{{ url_for('finance_reconciliation') }}"><i class="bi bi-journal-check"></i> 财务核对</a></li>{% endif %}
+                        <li><a class="dropdown-item" href="{{ url_for('finance_reconciliation') }}"><i class="bi bi-journal-check"></i> 财务核对</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('payroll.index') }}"><i class="bi bi-calculator"></i> 工资核算</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="bi bi-box-arrow-right"></i> 退出登录</a></li>
                     </ul>
