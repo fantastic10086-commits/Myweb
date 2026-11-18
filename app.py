@@ -79,6 +79,7 @@ from packing_list_export import (
 )
 from customs_export import build_customs_snapshot, generate_customs_workbook
 from customer_history import DEFAULT_CUTOFF, FIELDS as HISTORY_FIELDS, history_values, preview_workbook
+from customer_adjustments import has_international_freight
 
 # ── Configuration ────────────────────────────────────────────────────
 # Detect the app root directory (where this file lives)
@@ -6377,6 +6378,9 @@ def pi_list():
     payment_status = request.args.get('payment_status', '').strip()
     order_status = request.args.get('order_status', '').strip()
     customs_status = request.args.get('customs_status', '').strip()
+    international_freight = request.args.get('international_freight', '').strip()
+    if international_freight not in ('yes', 'no'):
+        international_freight = ''
     payment_labels = {
         'unpaid': '未回款',
         'slip_pending': '有水单未到账',
@@ -6524,6 +6528,8 @@ def pi_list():
     if tracking_no_filter:
         query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
     pis = query.order_by(PI.created_at.desc()).all()
+    if international_freight:
+        pis = [pi for pi in pis if has_international_freight(pi) == (international_freight == 'yes')]
     if order_status:
         expected_order_status = order_labels[order_status]
         pis = [
@@ -6580,6 +6586,7 @@ def pi_list():
                            payment_status=payment_status,
                            order_status=order_status,
                            customs_status=customs_status,
+                           international_freight=international_freight,
                            payment_status_label=payment_labels.get(payment_status, ''),
                            order_status_label=order_labels.get(order_status, ''),
                            customs_status_label=customs_labels.get(customs_status, ''),

@@ -9,7 +9,7 @@ FILTERS = {
     'customer_detail': {'pi_number','date_from','date_to','product','amount_min','amount_max'},
     'customer_list': {'search','sort','sp','deal_min','deal_max','date_from','date_to','customer_type','follow','page'},
     'product_list': {'search','filter','sort','page'},
-    'pi_list': REPORT | {'pi_number','customer_name','country','payment_status','order_status','customs_status','freight_forwarder','tracking_no','payment_reference','stage','transition'},
+    'pi_list': REPORT | {'pi_number','customer_name','country','payment_status','order_status','customs_status','freight_forwarder','tracking_no','payment_reference','stage','transition','international_freight'},
     'procurement_select': REPORT | {'pi_number','customer_name','country','order_status'},
     'packing_list_index': REPORT | {'pi_number','customer_name','country','status'},
     'fees_report': REPORT | {'profit_status','customer_name','country'},

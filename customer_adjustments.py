@@ -10,6 +10,17 @@ def adjustment_rows(pi):
              'english': getattr(pi, 'shipping_note_en', '') or getattr(pi, 'shipping_note', '') or 'Other Charges'}]
 
 
+def has_international_freight(pi):
+    """A positive international-freight charge on the customer invoice."""
+    labels = {'国际运费', 'international freight'}
+    return any(
+        row['amount'] > 0 and any(
+            (row.get(key) or '').strip().casefold() in labels for key in ('name', 'english')
+        )
+        for row in adjustment_rows(pi)
+    )
+
+
 def adjustment_description(pi):
     rows = adjustment_rows(pi)
     if len(rows) <= 1:

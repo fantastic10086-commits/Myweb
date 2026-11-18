@@ -1,4 +1,4 @@
-{% set advanced_active = forwarder_filter or date_from or date_to or payment_reference_filter or tracking_no_filter or payment_status or order_status or customs_status %}
+{% set advanced_active = forwarder_filter or date_from or date_to or payment_reference_filter or tracking_no_filter or payment_status or order_status or customs_status or international_freight %}
 <div class="card mb-3">
 <form method="get" id="piFilters">
     <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
@@ -108,12 +108,20 @@
                     <option value="not_required" {% if customs_status == 'not_required' %}selected{% endif %}>无需报关</option>
                 </select>
             </div>
+            <div class="pi-filter-cell">
+                <label class="form-label small mb-1" for="internationalFreightFilter">PI 国际运费</label>
+                <select id="internationalFreightFilter" class="form-select form-select-sm" name="international_freight" title="按 PI 中金额大于 0 的国际运费项目筛选">
+                    <option value="">— 全部 —</option>
+                    <option value="yes" {% if international_freight == 'yes' %}selected{% endif %}>有国际运费</option>
+                    <option value="no" {% if international_freight == 'no' %}selected{% endif %}>无国际运费</option>
+                </select>
+            </div>
         </div>
     </div>
 </form>
 </div>
 
-{% if forwarder_filter or transition or stage or payment_reference_filter or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status %}
+{% if forwarder_filter or transition or stage or payment_reference_filter or tracking_no_filter or customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or payment_status or order_status or customs_status or international_freight %}
 <div class="pi-filter-results" role="status">
     {% if forwarder_filter %}货代：<strong>{{ forwarder_filter }}</strong> · {% endif %}
     共找到 <strong>{{ pis|length }}</strong> 份 PI
@@ -128,6 +136,7 @@
     {% if payment_status %}，回款状态：<strong>{{ payment_status_label }}</strong>{% endif %}
     {% if order_status %}，订单进度：<strong>{{ order_status_label }}</strong>{% endif %}
     {% if customs_status %}，报关登记：<strong>{{ customs_status_label }}</strong>{% endif %}
+    {% if international_freight %}，PI 国际运费：<strong>{{ '有' if international_freight == 'yes' else '无' }}</strong>{% endif %}
     &nbsp;|&nbsp; 订单总金额：
     {% for code, amount in filtered_totals.items() %}{% if amount %}<strong>{{ currency_symbol(code) }}{{ '%.2f'|format(amount) }}</strong> {% endif %}{% endfor %}
 </div>
