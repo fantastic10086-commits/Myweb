@@ -4811,7 +4811,8 @@ def api_product_search():
         }
 
     query = Product.query.filter(Product.active.is_(True))
-    ordering = [Product.name.asc(), Product.id.asc()]
+    ordering = ([Product.created_at.desc(), Product.id.desc()] if picker_mode
+                else [Product.name.asc(), Product.id.asc()])
     if q:
         query, relevance = _search_product_keywords(query, q)
         ordering.insert(0, relevance)
