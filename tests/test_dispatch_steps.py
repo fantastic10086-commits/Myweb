@@ -106,6 +106,64 @@ class DispatchStepTests(unittest.TestCase):
             self.assertFalse(db.session.get(PI, self.pi_id).shipping_completed)
             self.assertEqual(Expense.query.filter_by(pi_id=self.pi_id).count(), 0)
 
+    def test_no_expense_confirmation_is_saved_audited_and_idempotent(self):
+        saved = self.payload(action='confirm_no_expenses', step='expenses')
+        result = self.post(saved)
+        self.assertEqual(result.status_code, 200, result.get_json())
+        self.assertTrue(result.get_json()['no_expenses_confirmed'])
+        self.assertEqual(result.get_json()['expense_count'], 1)
+        self.assertFalse(result.get_json()['shipping_completed'])
+        # Replaying the same request or pressing again with a new token adds no duplicate.
+        self.assertEqual(self.post(saved).status_code, 200)
+        self.assertEqual(self.post(self.payload(action='confirm_no_expenses', step='expenses')).status_code, 200)
+        history = self.client.get('/api/expenses?pi_id=' + str(self.pi_id)).get_json()
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]['note'], '已确认无费用产生')
+        self.assertEqual(history[0]['amount'], 0)
+        self.assertEqual(history[0]['currency'], 'RMB')
+        self.assertTrue(history[0]['is_no_expense_confirmation'])
+        with application.app.app_context():
+            pi = db.session.get(PI, self.pi_id)
+            self.assertTrue(pi.dispatch_no_expenses)
+            self.assertEqual(AuditLog.query.filter_by(action='create', entity_type='expense', entity_id=history[0]['id'],
+                                                     summary='PI {} 确认无费用产生'.format(pi.pi_number)).count(), 1)
+        self.assertEqual(self.post(self.payload(action='next', step='expenses')).status_code, 200)
+        complete = self.post(self.payload(action='complete', step='shipping'))
+        self.assertEqual(complete.status_code, 200, complete.get_json())
+        self.assertTrue(complete.get_json()['shipping_completed'])
+
+    def test_no_expense_confirmation_rejects_conflicting_costs_and_preserves_later_costs(self):
+        for change in ({'step': 'forwarder'}, {'expenses': [self.expense(15)]}):
+            data = self.payload(action='confirm_no_expenses', step='expenses'); data.update(change)
+            self.assertEqual(self.post(data).status_code, 400)
+        self.post(self.payload(action='confirm_no_expenses', step='expenses'))
+        added = self.post(self.payload(step='expenses', expenses=[self.expense(15)]))
+        self.assertEqual(added.status_code, 200, added.get_json())
+        self.assertFalse(added.get_json()['no_expenses_confirmed'])
+        self.assertEqual(self.post(self.payload(action='confirm_no_expenses', step='expenses')).status_code, 400)
+        with application.app.app_context():
+            self.assertFalse(db.session.get(PI, self.pi_id).dispatch_no_expenses)
+            costs = Expense.query.filter_by(pi_id=self.pi_id).all()
+            self.assertEqual(len(costs), 2); self.assertEqual(sum(e.amount for e in costs), 15)
+            self.assertEqual(sum(e.is_no_expense_confirmation for e in costs), 1)
+
+    def test_no_expense_confirmation_permissions_and_removal(self):
+        data = self.payload(action='confirm_no_expenses', step='expenses')
+        response = self.client.post('/api/pi/{}/dispatch'.format(self.pi_id), data={'payload': json.dumps(data)})
+        self.assertEqual(response.status_code, 400)
+        self.as_user('bob'); self.assertEqual(self.post(data).status_code, 403)
+        self.as_user('alice'); self.assertEqual(self.post(data).status_code, 200)
+        history = self.client.get('/api/expenses?pi_id=' + str(self.pi_id)).get_json()
+        self.as_user('admin-test')
+        deleted = self.client.delete('/api/expenses/' + str(history[0]['id']), headers={'X-CSRFToken': self.csrf})
+        self.assertEqual(deleted.status_code, 200)
+        self.assertFalse(deleted.get_json()['dispatch']['no_expenses_confirmed'])
+        self.assertFalse(deleted.get_json()['dispatch']['can_ship'])
+        with application.app.app_context():
+            self.assertFalse(db.session.get(PI, self.pi_id).dispatch_no_expenses)
+        self.assertEqual(self.post(self.payload(action='next', step='expenses')).status_code, 400)
+        self.assertEqual(self.post(self.payload(action='confirm_no_expenses', step='expenses')).status_code, 200)
+
     def test_amount_category_forwarder_validation_and_atomic_batch(self):
         for amount in ('', None, True, -1, 'nan', 'inf', 'not a number'):
             result = self.post(self.payload(step='expenses', expenses=[self.expense(amount)]))

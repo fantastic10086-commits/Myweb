@@ -1022,6 +1022,11 @@ class Expense(db.Model):
 
     pi = db.relationship('PI', backref=db.backref('expenses', lazy=True, cascade='all, delete-orphan'))
 
+    @property
+    def is_no_expense_confirmation(self):
+        return (self.category == '无费用确认' and self.amount == 0
+                and self.currency == 'RMB' and self.note == '已确认无费用产生')
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -1031,6 +1036,7 @@ class Expense(db.Model):
             'currency': self.currency,
             'note': self.note,
             'has_attachment': bool(self.attachment),
+            'is_no_expense_confirmation': self.is_no_expense_confirmation,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M') if self.created_at else '',
         }
 

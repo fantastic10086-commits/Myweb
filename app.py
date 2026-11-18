@@ -4233,9 +4233,11 @@ def api_expense_delete(id):
         before=before,
     )
     db.session.delete(exp)
+    if pi and exp.is_no_expense_confirmation:
+        pi.dispatch_no_expenses = False
     db.session.commit()
     _remove_upload(attachment_name)
-    return jsonify({'success': True})
+    return jsonify({'success': True, 'dispatch': _shipping_record_payload(pi) if pi else None})
 
 
 @app.route('/expenses/<int:id>/attachment')
@@ -10069,7 +10071,8 @@ def api_procurement_confirm(pi_id):
 
 def _shipping_record_payload(pi):
     """Return a stable UI payload without exposing unrelated PI data."""
-    expense_count = Expense.query.filter_by(pi_id=pi.id).count()
+    records = Expense.query.filter_by(pi_id=pi.id).all()
+    expense_count = len(records)
     unavailable_reason = ''
     if pi.shipping_paused:
         unavailable_reason = '发货记录已暂停，请由管理员在采购页恢复原发货记录。'
@@ -10091,6 +10094,7 @@ def _shipping_record_payload(pi):
         'shipping_paused': bool(pi.shipping_paused),
         'version': pi.version,
         'expense_count': expense_count,
+        'no_expenses_confirmed': bool(records) and all(e.is_no_expense_confirmation for e in records),
         'forwarder_ready': bool(pi.freight_forwarder and pi.customs_required is not None),
         'can_ship': bool(not pi.shipping_completed and not unavailable_reason),
         'unavailable_reason': unavailable_reason,
@@ -10143,12 +10147,16 @@ def api_pi_dispatch(pi_id):
             return jsonify(success=False, error='此订单已被更新，请关闭窗口刷新后重试；当前输入尚未保存。'), 409
         complete = data.get('action') == 'complete'
         advancing = data.get('action') == 'next'
+        confirming_no_expenses = data.get('action') == 'confirm_no_expenses'
         step = data.get('step', '')
         if step not in ('', 'forwarder', 'expenses', 'shipping'):
             raise ValueError('保存分页无效。')
-        if data.get('action') not in ('save', 'next', 'complete') or (advancing and step not in ('forwarder', 'expenses')):
+        if data.get('action') not in ('save', 'next', 'complete', 'confirm_no_expenses') or (advancing and step not in ('forwarder', 'expenses')):
             raise ValueError('保存操作无效。')
-        expense_count = Expense.query.filter_by(pi_id=pi.id).count()
+        if confirming_no_expenses and step != 'expenses':
+            raise ValueError('请在费用情况页确认无费用。')
+        existing_expenses = Expense.query.filter_by(pi_id=pi.id).all()
+        expense_count = len(existing_expenses)
         if complete:
             if pi.shipping_completed or pi.shipping_paused:
                 raise ValueError('订单已发货或已暂停，不能重复确认发货。')
@@ -10170,6 +10178,9 @@ def api_pi_dispatch(pi_id):
         rows = data.get('expenses', [])
         if not isinstance(rows, list) or len(rows) > 50:
             raise ValueError('一次最多登记 50 笔费用。')
+        if confirming_no_expenses and (rows or any(key.startswith('expense_attachment_') for key in request.files)
+                                       or any(not e.is_no_expense_confirmation for e in existing_expenses)):
+            raise ValueError('已有或正在新增费用，请核对费用记录，不能同时确认无费用。')
         expenses = []
         for row in rows:
             if not isinstance(row, dict):
@@ -10182,11 +10193,15 @@ def api_pi_dispatch(pi_id):
             if not category or len(category) > 200 or len(note) > 500:
                 raise ValueError('请完整填写费用类别和金额（可以为 0），备注最多 500 字。')
             expenses.append(Expense(pi_id=pi.id, category=category, amount=amount, currency='RMB', note=note))
+        if confirming_no_expenses and not existing_expenses:
+            expenses.append(Expense(pi_id=pi.id, category='无费用确认', amount=0, currency='RMB', note='已确认无费用产生'))
         if step == 'expenses' and not expense_count and not expenses:
             raise ValueError('费用情况必须登记至少一条记录，金额可以为 0。')
         no_expenses = data.get('no_expenses') is True
         if no_expenses and (pi.expenses or expenses):
             raise ValueError('已有或正在新增费用，不能同时勾选无费用。')
+        if existing_expenses or expenses:
+            no_expenses = all(e.is_no_expense_confirmation for e in existing_expenses + expenses)
         edit_shipping = complete or data.get('edit_shipping') is True
         if edit_shipping and pi.shipping_paused:
             raise ValueError('发货已暂停，请管理员先恢复原发货记录。')
@@ -10246,8 +10261,9 @@ def api_pi_dispatch(pi_id):
         db.session.add(DispatchSubmission(token=token, pi_id=pi.id))
         db.session.flush()
         for expense in expenses:
-            _audit('create', 'expense', expense.id, f'登记 PI {pi.pi_number} 真实成本', after=expense.to_dict())
-        _audit('update', 'pi', pi.id, '确认发货完成' if complete else '保存报关/发货信息',
+            summary = f'PI {pi.pi_number} 确认无费用产生' if expense.is_no_expense_confirmation else f'登记 PI {pi.pi_number} 真实成本'
+            _audit('create', 'expense', expense.id, summary, after=expense.to_dict())
+        _audit('update', 'pi', pi.id, '确认发货完成' if complete else ('确认无费用产生' if confirming_no_expenses else '保存报关/发货信息'),
                before=before, after=_snapshot(pi, fields))
         db.session.commit()
         return jsonify(_shipping_record_payload(pi))
