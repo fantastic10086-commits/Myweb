@@ -10069,6 +10069,7 @@ def api_procurement_confirm(pi_id):
 
 def _shipping_record_payload(pi):
     """Return a stable UI payload without exposing unrelated PI data."""
+    expense_count = Expense.query.filter_by(pi_id=pi.id).count()
     unavailable_reason = ''
     if pi.shipping_paused:
         unavailable_reason = '发货记录已暂停，请由管理员在采购页恢复原发货记录。'
@@ -10078,6 +10079,10 @@ def _shipping_record_payload(pi):
         unavailable_reason = '该 PI 尚未回款，不能登记发货。'
     elif not pi.procurement_is_complete:
         unavailable_reason = '采购尚未完成，暂时不能登记发货。'
+    elif not pi.freight_forwarder or pi.customs_required is None:
+        unavailable_reason = '请先保存货代和报关情况。'
+    elif not expense_count:
+        unavailable_reason = '请先登记至少一条费用记录，金额可以为 0。'
     return {
         'success': True,
         'pi_number': pi.pi_number,
@@ -10085,6 +10090,8 @@ def _shipping_record_payload(pi):
         'shipping_completed': bool(pi.shipping_completed),
         'shipping_paused': bool(pi.shipping_paused),
         'version': pi.version,
+        'expense_count': expense_count,
+        'forwarder_ready': bool(pi.freight_forwarder and pi.customs_required is not None),
         'can_ship': bool(not pi.shipping_completed and not unavailable_reason),
         'unavailable_reason': unavailable_reason,
         'shipping_date': pi.shipping_date.isoformat() if pi.shipping_date else '',
@@ -10135,8 +10142,13 @@ def api_pi_dispatch(pi_id):
         if data.get('version') != pi.version:
             return jsonify(success=False, error='此订单已被更新，请关闭窗口刷新后重试；当前输入尚未保存。'), 409
         complete = data.get('action') == 'complete'
-        if data.get('action') not in ('save', 'complete'):
+        advancing = data.get('action') == 'next'
+        step = data.get('step', '')
+        if step not in ('', 'forwarder', 'expenses', 'shipping'):
+            raise ValueError('保存分页无效。')
+        if data.get('action') not in ('save', 'next', 'complete') or (advancing and step not in ('forwarder', 'expenses')):
             raise ValueError('保存操作无效。')
+        expense_count = Expense.query.filter_by(pi_id=pi.id).count()
         if complete:
             if pi.shipping_completed or pi.shipping_paused:
                 raise ValueError('订单已发货或已暂停，不能重复确认发货。')
@@ -10144,12 +10156,14 @@ def api_pi_dispatch(pi_id):
                 raise ValueError('必须实际回款付清尾款后才能发货。')
             if not pi.procurement_is_complete or _procurement_gaps(pi):
                 raise ValueError('采购尚未完成，暂时不能登记发货。')
+            if not expense_count:
+                raise ValueError('请先在费用情况页保存至少一条费用记录，金额可以为 0。')
         forwarder = _managed_field_value('freight_forwarder', data.get('freight_forwarder'), pi.freight_forwarder)
         required = data.get('customs_required')
         if required is not None and not isinstance(required, bool):
             raise ValueError('报关选项无效。')
-        if len(forwarder) > 200 or (complete and (not forwarder or required is None)):
-            raise ValueError('确认发货前请选择货代和是否正式报关。')
+        if len(forwarder) > 200 or ((complete or advancing) and (not forwarder or required is None)):
+            raise ValueError('请先选择货代和是否正式报关，再进行下一步。')
         customs_note = str(data.get('customs_note') or '').strip()
         if len(customs_note) > 500:
             raise ValueError('补充说明不能超过 500 字。')
@@ -10161,11 +10175,15 @@ def api_pi_dispatch(pi_id):
             if not isinstance(row, dict):
                 raise ValueError('费用参数无效。')
             category = _managed_field_value('expense_category', row.get('category'))
+            if row.get('amount') is None or isinstance(row.get('amount'), bool) or not str(row['amount']).strip():
+                raise ValueError('请填写费用金额，无费用时请明确填写 0。')
             amount = round(_nonnegative_float(row.get('amount'), '费用金额'), 2)
             note = str(row.get('note') or '').strip()
-            if not category or len(category) > 200 or amount <= 0 or len(note) > 500:
-                raise ValueError('请完整填写费用类别、正数金额，备注最多 500 字。')
+            if not category or len(category) > 200 or len(note) > 500:
+                raise ValueError('请完整填写费用类别和金额（可以为 0），备注最多 500 字。')
             expenses.append(Expense(pi_id=pi.id, category=category, amount=amount, currency='RMB', note=note))
+        if step == 'expenses' and not expense_count and not expenses:
+            raise ValueError('费用情况必须登记至少一条记录，金额可以为 0。')
         no_expenses = data.get('no_expenses') is True
         if no_expenses and (pi.expenses or expenses):
             raise ValueError('已有或正在新增费用，不能同时勾选无费用。')
@@ -10283,6 +10301,11 @@ def api_pi_shipping_record(pi_id):
     if not pi.procurement_is_complete or _procurement_gaps(pi):
         return jsonify({'success': False, 'error': '采购尚未完成，暂时不能登记发货。'}), 400
 
+    if not pi.freight_forwarder or pi.customs_required is None:
+        return jsonify(success=False, error='请先保存货代和报关情况。'), 400
+    if not Expense.query.filter_by(pi_id=pi.id).first():
+        return jsonify(success=False, error='请先登记至少一条费用记录，金额可以为 0。'), 400
+
     payload = request.get_json(silent=True) or request.form
     shipping_date_value = str(payload.get('shipping_date') or '').strip()
     try:
@@ -10377,6 +10400,10 @@ def api_pi_shipping_complete(pi_id):
         gaps = _procurement_gaps(pi)
         if gaps:
             return jsonify({'success': False, 'error': '采购单不完整，不能标记发货完成。'}), 400
+        if not pi.freight_forwarder or pi.customs_required is None:
+            return jsonify(success=False, error='请先保存货代和报关情况。'), 400
+        if not Expense.query.filter_by(pi_id=pi.id).first():
+            return jsonify(success=False, error='请先登记至少一条费用记录，金额可以为 0。'), 400
     fields = [
         'shipping_completed', 'shipping_date', 'shipping_tracking_no',
         'shipping_record_note', 'shipping_recorded_at', 'shipping_recorded_by',

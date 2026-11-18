@@ -358,10 +358,9 @@
             <div class="tab-pane" id="dispatchExpensesPane" role="tabpanel" aria-labelledby="dispatchExpensesTab">
             <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
                 <h6 class="fw-bold mb-0">报关及发货费用（RMB）</h6>
-                <label class="small"><input type="checkbox" id="dispatchNoExpenses"> 确认无费用</label>
             </div>
 
-            <p class="small text-muted mb-2">费用计入本单实际成本，用于利润核算。<span id="expensePINumber" class="d-none"></span></p>
+            <p class="small text-muted mb-2">至少登记一条费用记录，无费用时金额填 0。保存后可进入发货信息。<span id="expensePINumber" class="d-none"></span></p>
             <div id="expenseModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
             <div id="expenseModalSuccess" class="alert alert-success py-2 d-none" role="alert"></div>
             <div class="mb-3">
@@ -385,7 +384,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small mb-1" for="exp_amount">金额（RMB） <span class="text-danger">*</span></label>
-                    <input type="number" step="0.01" min="0.01" class="form-control form-control-sm" id="exp_amount" placeholder="0.00">
+                    <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="exp_amount" placeholder="无费用填 0">
                     <input type="hidden" id="exp_currency" value="RMB">
                 </div>
                 <div class="col-md-5">
@@ -442,8 +441,11 @@
 </div></section></div></div></div>
         <div class="modal-footer">
             <span id="dispatchSaveMessage" class="small text-muted me-auto" role="status">保存信息不会改变发货状态</span>
-            <button type="button" class="btn btn-primary" id="dispatchInfoBtn" disabled onclick="saveDispatch(false)">保存信息</button>
-            <button type="button" class="btn btn-success" id="shippingSaveBtn" disabled onclick="saveDispatch(true)">确认发货完成</button>
+            <div class="d-flex gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-outline-primary" id="dispatchInfoBtn" disabled onclick="saveDispatch(false)">保存信息</button>
+            <button type="button" class="btn btn-primary" id="dispatchNextBtn" disabled onclick="saveDispatch(false, true)">下一步</button>
+            <button type="button" class="btn btn-success d-none" id="shippingSaveBtn" disabled onclick="saveDispatch(true)">确认发货完成</button>
+            </div>
         </div>
     </div></div>
 </div>
@@ -531,9 +533,31 @@ window.addEventListener('beforeunload', function(event) {
 });
 function updateDispatchButtons() {
     var ready = dispatchShipping && !document.getElementById('customsFields').disabled;
+    var shippingTab = document.getElementById('dispatchShippingTab').classList.contains('active');
     document.getElementById('dispatchInfoBtn').disabled = !ready || dispatchBusy;
-    document.getElementById('shippingSaveBtn').disabled = !ready || dispatchBusy || !dispatchShipping.can_ship;
+    document.getElementById('dispatchNextBtn').classList.toggle('d-none', shippingTab);
+    document.getElementById('dispatchNextBtn').disabled = !ready || dispatchBusy;
+    document.getElementById('shippingSaveBtn').classList.toggle('d-none', !shippingTab || !dispatchShipping || dispatchShipping.shipping_completed || dispatchShipping.shipping_paused);
+    document.getElementById('shippingSaveBtn').disabled = !ready || dispatchBusy || !dispatchShipping.can_ship || !dispatchShipping.expense_count;
 }
+['Forwarder', 'Expenses', 'Shipping'].forEach(function(name) {
+    var tab = document.getElementById('dispatch' + name + 'Tab');
+    tab.addEventListener('show.bs.tab', function(event) {
+        if (dispatchBusy || dispatchPending) { event.preventDefault(); return; }
+        if (name !== 'Shipping') return;
+        if (dispatchShipping && (dispatchShipping.shipping_completed || dispatchShipping.shipping_paused)) return;
+        if (!dispatchShipping || !dispatchShipping.forwarder_ready || !dispatchShipping.expense_count) {
+            event.preventDefault();
+            document.getElementById('dispatchSaveMessage').textContent = !dispatchShipping || !dispatchShipping.forwarder_ready
+                ? '请先保存货代和报关情况，再进行下一步。'
+                : '请在费用情况页保存至少一条记录，无费用时填写 0。';
+        }
+    });
+    tab.addEventListener('shown.bs.tab', function() {
+        updateDispatchButtons();
+        dispatchModal.querySelector('.modal-body').scrollTop = 0;
+    });
+});
 function editShippingInformation() {
     if (!dispatchShipping || dispatchShipping.shipping_paused || dispatchBusy || dispatchPending) return;
     dispatchEditing = true;
@@ -546,7 +570,7 @@ function addDispatchExpenseRow() {
     if (dispatchBusy || dispatchPending) return;
     var row = document.createElement('div');
     row.className = 'dispatch-expense border-top pt-2 mt-2';
-    row.innerHTML = '<div class="row g-2"><div class="col-md-4"><label class="small">费用类别</label><select class="form-select form-select-sm" data-field="category"></select></div><div class="col-md-3"><label class="small">金额（RMB）</label><input type="number" min="0.01" step="0.01" class="form-control form-control-sm" data-field="amount"></div><div class="col-md-5"><label class="small">备注</label><input class="form-control form-control-sm" maxlength="500" data-field="note"></div></div><div class="d-flex gap-2 mt-2"><input aria-label="费用附件" type="file" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,image/gif" data-field="attachment"><button type="button" class="btn btn-sm btn-outline-danger">移除</button></div>';
+    row.innerHTML = '<div class="row g-2"><div class="col-md-4"><label class="small">费用类别</label><select class="form-select form-select-sm" data-field="category"></select></div><div class="col-md-3"><label class="small">金额（RMB）</label><input type="number" min="0" step="0.01" class="form-control form-control-sm" data-field="amount" placeholder="无费用填 0"></div><div class="col-md-5"><label class="small">备注</label><input class="form-control form-control-sm" maxlength="500" data-field="note"></div></div><div class="d-flex gap-2 mt-2"><input aria-label="费用附件" type="file" class="form-control form-control-sm" accept="image/jpeg,image/png,image/webp,image/gif" data-field="attachment"><button type="button" class="btn btn-sm btn-outline-danger">移除</button></div>';
     row.querySelector('select').innerHTML = document.getElementById('exp_category').innerHTML;
     row.querySelector('button').onclick = function() { row.remove(); dispatchDirty = true; };
     document.getElementById('extraExpenseRows').appendChild(row);
@@ -556,26 +580,28 @@ function dispatchLock(locked) {
     // Freeze values while saving, including uncertain network outcomes.
     dispatchModal.querySelector('.modal-body').inert = locked;
 }
-async function saveDispatch(complete) {
+async function saveDispatch(complete, next) {
     if (dispatchBusy || !dispatchShipping) return;
-    var form;
+    var form, nextTab = '';
     try {
         if (dispatchPending) {
             form = dispatchPending;
         } else {
             var selected = document.querySelector('input[name="customs_required"]:checked');
             var data = {
-                token: crypto.randomUUID(), version: dispatchVersion, action: complete ? 'complete' : 'save',
+                token: crypto.randomUUID(), version: dispatchVersion, action: complete ? 'complete' : (next ? 'next' : 'save'),
+                step: document.querySelector('#customsModal [role="tab"].active').id.replace('dispatch', '').replace('Tab', '').toLowerCase(),
                 freight_forwarder: document.getElementById('customsForwarder').value,
                 customs_required: selected ? selected.value === 'true' : null,
                 customs_note: document.getElementById('customsNote').value.trim(),
-                no_expenses: document.getElementById('dispatchNoExpenses').checked,
+                no_expenses: false,
                 edit_shipping: dispatchEditing,
                 shipping_date: document.getElementById('shippingDate').value,
                 tracking_no: document.getElementById('shippingTrackingNo').value.trim(),
                 shipping_note: document.getElementById('shippingRecordNote').value.trim(), expenses: []
             };
-            if (complete && (!data.freight_forwarder || data.customs_required === null)) { showDispatchTab('Forwarder'); throw new Error('确认发货前请选择货代和报关选项。'); }
+            if ((complete || next) && (!data.freight_forwarder || data.customs_required === null)) { showDispatchTab('Forwarder'); throw new Error('请先选择货代和是否正式报关，再进行下一步。'); }
+            if (complete && !dispatchShipping.expense_count) { showDispatchTab('Expenses'); throw new Error('请先保存至少一条费用记录，金额可以为 0。'); }
             if (complete && !data.shipping_date) { showDispatchTab('Shipping'); throw new Error('确认发货前请填写发货日期。'); }
             form = new FormData();
             var rows = [{category: document.getElementById('exp_category'), amount: document.getElementById('exp_amount'), note: document.getElementById('exp_note'), attachment: document.getElementById('exp_attachment')}];
@@ -585,12 +611,12 @@ async function saveDispatch(complete) {
             rows.forEach(function(row) {
                 var file = row.attachment.files[0];
                 if (!row.category.value && !row.amount.value && !row.note.value.trim() && !file) return;
-                if (!row.category.value || !(Number(row.amount.value) > 0)) { showDispatchTab('Expenses'); throw new Error('请完整填写每笔费用的类别和金额。'); }
+                if (!row.category.value || row.amount.value.trim() === '' || !Number.isFinite(Number(row.amount.value)) || Number(row.amount.value) < 0) { showDispatchTab('Expenses'); throw new Error('请完整填写每笔费用的类别和金额，无费用时明确填写 0。'); }
                 if (file && file.size > 12 * 1024 * 1024) throw new Error('每张费用图片最大 12 MB。');
                 if (file) form.append('expense_attachment_' + data.expenses.length, file);
                 data.expenses.push({category: row.category.value, amount: row.amount.value, note: row.note.value.trim()});
             });
-            if (data.no_expenses && data.expenses.length) throw new Error('新增费用时请取消“确认无费用”。');
+            if (data.step === 'expenses' && !dispatchShipping.expense_count && !data.expenses.length) throw new Error('费用情况必须登记至少一条记录，无费用时填写 0。');
             if (dispatchEditing && shippingImageFile) form.append('shipping_attachment', shippingImageFile, shippingImageFile.name || 'clipboard.png');
             var totalBytes = 0;
             for (var item of form.values()) { if (item instanceof Blob) totalBytes += item.size; }
@@ -610,17 +636,19 @@ async function saveDispatch(complete) {
             if (response.status < 500) dispatchPending = null;
             throw new Error(result.error || '保存失败，请检查输入。');
         }
+        var savedAction = JSON.parse(form.get('payload'));
         dispatchPending = null;
         dispatchChanged = true;
         dispatchDirty = false;
         setShippingImage(null);
         renderShippingRecord(result);
         document.getElementById('extraExpenseRows').replaceChildren();
-        openExpense(currentCustomsPiId, document.getElementById('customsPINumber').textContent);
+        await openExpense(currentCustomsPiId, document.getElementById('customsPINumber').textContent);
         document.getElementById('customsDocumentsBtn').classList.toggle('d-none', !document.getElementById('customsRequiredYes').checked);
         document.getElementById('customsRecordMeta').textContent = '信息已保存。';
         document.getElementById('dispatchSaveMessage').textContent = result.shipping_completed ? '已保存 · 发货完成' : '信息已保存 · 尚未确认发货';
         document.getElementById('shippingModalError').classList.add('d-none');
+        if (savedAction.action === 'next') nextTab = savedAction.step === 'forwarder' ? 'Expenses' : 'Shipping';
     } catch (error) {
         document.getElementById('dispatchSaveMessage').textContent = dispatchPending
             ? '网络结果未确认，请再次点击保存重试；不会重复登记费用。'
@@ -630,6 +658,7 @@ async function saveDispatch(complete) {
         dispatchLock(!!dispatchPending);
         updateDispatchButtons();
     }
+    if (nextTab) showDispatchTab(nextTab);
 }
 var expenseAttachmentPreviewUrl = '';
 var paymentAttachmentPreviewUrl = '';
@@ -756,7 +785,6 @@ function renderShippingRecord(data) {
     var completed = data.shipping_completed === true;
     var canShip = data.can_ship === true;
     var fields = document.getElementById('shippingFields');
-    var saveButton = document.getElementById('shippingSaveBtn');
     dispatchShipping = data;
     dispatchVersion = data.version;
     dispatchEditing = !completed && !data.shipping_paused;
@@ -772,8 +800,6 @@ function renderShippingRecord(data) {
         document.getElementById('shippingImagePreview').src = data.attachment_url;
         document.getElementById('shippingImagePreview').classList.remove('d-none');
     }
-    saveButton.classList.toggle('d-none', completed || data.shipping_paused);
-    saveButton.disabled = !canShip;
     var revertButton = document.getElementById('shippingRevertBtn');
     if (revertButton) revertButton.classList.toggle('d-none', !(completed && canRevertShipping));
     document.getElementById('shippingEditBtn').classList.toggle('d-none', !completed || data.shipping_paused);
@@ -797,7 +823,6 @@ function openShippingRecord(piId, piNumber) {
     document.getElementById('shippingRecordNote').value = '';
     document.getElementById('shippingFields').disabled = true;
     document.getElementById('shippingSaveBtn').disabled = true;
-    document.getElementById('shippingSaveBtn').classList.remove('d-none');
     var revertButton = document.getElementById('shippingRevertBtn');
     if (revertButton) revertButton.classList.add('d-none');
     document.getElementById('shippingRecordMeta').textContent = '正在读取记录……';
@@ -849,13 +874,14 @@ function showDispatchTab(name) {
     document.querySelector('#customsModal .modal-body').scrollTop = 0;
 }
 function openCustomsRecord(piId, piNumber) {
-    showDispatchTab('Forwarder');
     dispatchLock(false);
     dispatchDirty = false;
     dispatchBusy = false;
     dispatchPending = null;
     dispatchShipping = null;
     dispatchVersion = null;
+    showDispatchTab('Forwarder');
+    updateDispatchButtons();
     document.getElementById('extraExpenseRows').replaceChildren();
     document.getElementById('dispatchSaveMessage').textContent = '保存信息不会改变发货状态';
     document.getElementById('dispatchInfoBtn').disabled = true;
@@ -872,7 +898,6 @@ function openCustomsRecord(piId, piNumber) {
     document.getElementById('customsRequiredNo').checked = false;
     document.getElementById('customsNote').value = '';
     document.getElementById('customsForwarder').value = '';
-    document.getElementById('dispatchNoExpenses').checked = false;
     document.querySelectorAll('#customsForwarder option[data-historical]').forEach(option => option.remove());
     document.getElementById('customsFields').disabled = true;
     document.getElementById('customsDocumentsBtn').classList.add('d-none');
@@ -898,7 +923,6 @@ function openCustomsRecord(piId, piNumber) {
                 forwarderSelect.add(option);
             }
             forwarderSelect.value = forwarder;
-            document.getElementById('dispatchNoExpenses').checked = result.data.no_expenses === true;
             document.getElementById('customsDocumentsBtn').classList.toggle(
                 'd-none', result.data.customs_required !== true
             );
@@ -947,7 +971,7 @@ function openExpense(piId, piNumber) {
     clearExpenseAttachment();
     document.getElementById('expenseModalError').classList.add('d-none');
     document.getElementById('expenseModalSuccess').classList.add('d-none');
-    loadExpenseHistory(piId);
+    return loadExpenseHistory(piId);
 }
 function loadExpenseHistory(piId) {
     var history = document.getElementById('expenseHistory');
@@ -959,13 +983,14 @@ function loadExpenseHistory(piId) {
     history.appendChild(spinner);
     history.appendChild(document.createTextNode('正在读取记录……'));
     summary.textContent = '';
-    fetch('/api/expenses?pi_id=' + encodeURIComponent(piId))
+    return fetch('/api/expenses?pi_id=' + encodeURIComponent(piId), {cache: 'no-store'})
         .then(function(response) {
             if (!response.ok) throw new Error('读取真实成本记录失败。');
             return response.json();
         })
         .then(function(records) {
             if (currentExpensePiId !== piId) return;
+            if (dispatchShipping) { dispatchShipping.expense_count = records.length; updateDispatchButtons(); }
             history.replaceChildren();
             if (!records.length) {
                 history.className = 'border rounded p-3 text-center text-muted';
@@ -1031,6 +1056,7 @@ function loadExpenseHistory(piId) {
         });
 }
 function deleteExpenseFromPIList(expenseId) {
+    if (dispatchBusy || dispatchPending) return;
     if (!confirm('确定删除这条真实成本记录吗？')) return;
     fetch('/api/expenses/' + expenseId, {method: 'DELETE'})
         .then(function(response) {
@@ -1041,7 +1067,6 @@ function deleteExpenseFromPIList(expenseId) {
             document.getElementById('expenseModalSuccess').textContent = '真实成本记录已删除。';
             document.getElementById('expenseModalSuccess').classList.remove('d-none');
             dispatchChanged = true;
-            document.getElementById('dispatchNoExpenses').checked = false;
             loadExpenseHistory(currentExpensePiId);
         })
         .catch(function(error) { expenseError(error.message || '删除失败。'); });
