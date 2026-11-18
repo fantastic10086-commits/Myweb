@@ -203,8 +203,8 @@
                                     <span class="pi-list-workflow-status">{{ procurement_text }}</span>
                                 {% if is_admin and pi.procurement_allowed %}</a>{% else %}</button>{% endif %}
 
-                                {% set dispatch_state = 'complete' if pi.shipping_completed else ('partial' if pi.customs_required is not none or pi.shipping_paused else 'pending') %}
-                                {% set dispatch_status = '发货已暂停' if pi.shipping_paused else ('已发货' if pi.shipping_completed else ('待发货' if pi.customs_required is not none else '待安排')) %}
+                                {% set dispatch_state = 'complete' if pi.shipping_completed else ('partial' if pi.customs_required is not none or pi.shipping_paused or pi.shipped_batch_count else 'pending') %}
+                                {% set dispatch_status = '发货已暂停' if pi.shipping_paused else ('已发货' if pi.shipping_completed else ('部分发货' if pi.shipped_batch_count else ('待发货' if pi.customs_required is not none else '待安排'))) %}
                                 {% set details = dispatch_summaries[pi.id] %}
                                 <button type="button" role="listitem" id="shippingBtn-{{ pi.id }}"
                                         class="pi-list-workflow-stage is-{{ dispatch_state }} is-action"
@@ -410,7 +410,13 @@
             </div>
             <div id="extraExpenseRows"></div>
             <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addDispatchExpenseRow()">＋ 添加一笔费用</button>
-</div><div class="tab-pane" id="dispatchShippingPane" role="tabpanel" aria-labelledby="dispatchShippingTab"><section id="shippingSection"><h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+</div><div class="tab-pane" id="dispatchShippingPane" role="tabpanel" aria-labelledby="dispatchShippingTab"><section id="shippingSection">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <strong id="shippingBatchSummary">发货批次</strong>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="shippingAddBatchBtn" onclick="addShippingBatch()">＋ 新增发货批次</button>
+            </div>
+            <div id="shippingBatchHistory" class="mb-3"></div>
+            <h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
             <fieldset id="shippingFields" disabled>
                 <div class="mb-3">
                     <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
@@ -433,12 +439,16 @@
                               placeholder="选填，例如物流公司、发货说明"></textarea>
                 </div>
             </fieldset>
+            <div id="shippingFinalRow" class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="shippingFinalBatch" checked onchange="updateDispatchButtons()">
+                <label class="form-check-label" for="shippingFinalBatch">本批为最后一批，确认整单发货完成</label>
+            </div>
             <img id="shippingImagePreview" class="img-fluid rounded mb-3 d-none" alt="发货图片" style="max-height:420px;object-fit:contain">
             <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
 <div class="d-flex gap-2 mt-2">
             <button type="button" class="btn btn-sm btn-outline-primary d-none" id="shippingEditBtn" onclick="editShippingInformation()">重新编辑发货信息</button>
             {% if is_admin %}
-            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">撤销发货登记</button>
+            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">撤销本批发货登记</button>
             {% endif %}
 </div></section></div></div></div>
         <div class="modal-footer">
@@ -524,6 +534,7 @@ document.getElementById('customsModal').addEventListener('hidden.bs.modal', func
 });
 var dispatchDirty = false, dispatchBusy = false, dispatchPending = null;
 var dispatchVersion = null, dispatchShipping = null, dispatchEditing = false;
+var dispatchBatchId = null, dispatchNewBatch = false, dispatchBatch = null;
 var dispatchModal = document.getElementById('customsModal');
 dispatchModal.addEventListener('input', function() { dispatchDirty = true; });
 dispatchModal.addEventListener('change', function() { dispatchDirty = true; });
@@ -539,7 +550,12 @@ function updateDispatchButtons() {
     document.getElementById('dispatchInfoBtn').disabled = !ready || dispatchBusy;
     document.getElementById('dispatchNextBtn').classList.toggle('d-none', shippingTab);
     document.getElementById('dispatchNextBtn').disabled = !ready || dispatchBusy;
-    document.getElementById('shippingSaveBtn').classList.toggle('d-none', !shippingTab || !dispatchShipping || dispatchShipping.shipping_completed || dispatchShipping.shipping_paused);
+    var unsent = !dispatchBatch || dispatchBatch.status === 'draft';
+    document.getElementById('shippingSaveBtn').classList.toggle('d-none', !shippingTab || !dispatchShipping || !unsent || dispatchShipping.shipping_paused);
+    document.getElementById('shippingSaveBtn').textContent = document.getElementById('shippingFinalBatch').checked ? '确认发货完成' : '登记本批发货';
+    document.getElementById('shippingAddBatchBtn').disabled = !ready || dispatchBusy || !!dispatchPending || dispatchShipping.shipping_paused;
+    document.getElementById('shippingFinalBatch').disabled = dispatchBusy || !!dispatchPending;
+
     document.getElementById('shippingSaveBtn').disabled = !ready || dispatchBusy || !dispatchShipping.can_ship || !dispatchShipping.expense_count;
     var noExpensesBtn = document.getElementById('dispatchNoExpensesBtn');
     noExpensesBtn.disabled = !ready || dispatchBusy || !!dispatchPending || !!dispatchShipping.expense_count;
@@ -551,7 +567,7 @@ function updateDispatchButtons() {
     tab.addEventListener('show.bs.tab', function(event) {
         if (dispatchBusy || dispatchPending) { event.preventDefault(); return; }
         if (name !== 'Shipping') return;
-        if (dispatchShipping && (dispatchShipping.shipping_completed || dispatchShipping.shipping_paused)) return;
+        if (dispatchShipping && (dispatchShipping.shipped_batch_count || dispatchShipping.shipping_completed || dispatchShipping.shipping_paused)) return;
         if (!dispatchShipping || !dispatchShipping.forwarder_ready || !dispatchShipping.expense_count) {
             event.preventDefault();
             document.getElementById('dispatchSaveMessage').textContent = !dispatchShipping || !dispatchShipping.forwarder_ready
@@ -570,7 +586,7 @@ function editShippingInformation() {
     document.getElementById('shippingFields').disabled = false;
     document.getElementById('shippingEditBtn').classList.add('d-none');
     document.getElementById('shippingDate').focus();
-    document.getElementById('dispatchSaveMessage').textContent = '修改后点击“保存信息”，仍保持发货完成';
+    document.getElementById('dispatchSaveMessage').textContent = '修改后点击“保存信息”，保留本批及整单的发货状态';
 }
 function addDispatchExpenseRow() {
     if (dispatchBusy || dispatchPending) return;
@@ -601,7 +617,9 @@ async function saveDispatch(complete, next, confirmNoExpenses) {
                 customs_required: selected ? selected.value === 'true' : null,
                 customs_note: document.getElementById('customsNote').value.trim(),
                 no_expenses: false,
-                edit_shipping: dispatchEditing,
+                edit_shipping: dispatchEditing && document.getElementById('dispatchShippingTab').classList.contains('active'),
+                batch_id: dispatchBatchId, new_batch: dispatchNewBatch,
+                final_batch: document.getElementById('shippingFinalBatch').checked,
                 shipping_date: document.getElementById('shippingDate').value,
                 tracking_no: document.getElementById('shippingTrackingNo').value.trim(),
                 shipping_note: document.getElementById('shippingRecordNote').value.trim(), expenses: []
@@ -624,7 +642,7 @@ async function saveDispatch(complete, next, confirmNoExpenses) {
                 data.expenses.push({category: row.category.value, amount: row.amount.value, note: row.note.value.trim()});
             });
             if (data.step === 'expenses' && !confirmNoExpenses && !dispatchShipping.expense_count && !data.expenses.length) throw new Error('请先登记一条费用记录，或点击「确认无费用」。');
-            if (dispatchEditing && shippingImageFile) form.append('shipping_attachment', shippingImageFile, shippingImageFile.name || 'clipboard.png');
+            if (data.edit_shipping && shippingImageFile) form.append('shipping_attachment', shippingImageFile, shippingImageFile.name || 'clipboard.png');
             var totalBytes = 0;
             for (var item of form.values()) { if (item instanceof Blob) totalBytes += item.size; }
             if (totalBytes > 30 * 1024 * 1024) throw new Error('本次图片合计不能超过 30 MB，请压缩图片或分次保存费用。');
@@ -648,19 +666,19 @@ async function saveDispatch(complete, next, confirmNoExpenses) {
         dispatchChanged = true;
         dispatchDirty = false;
         setShippingImage(null);
-        renderShippingRecord(result);
+        renderShippingRecord(result, savedAction.new_batch ? 'latest' : savedAction.batch_id);
         document.getElementById('extraExpenseRows').replaceChildren();
         await openExpense(currentCustomsPiId, document.getElementById('customsPINumber').textContent);
         document.getElementById('customsDocumentsBtn').classList.toggle('d-none', !document.getElementById('customsRequiredYes').checked);
         document.getElementById('customsRecordMeta').textContent = '信息已保存。';
         document.getElementById('dispatchSaveMessage').textContent = savedAction.action === 'confirm_no_expenses'
             ? '已确认无费用产生，可点击下一步'
-            : (result.shipping_completed ? '已保存 · 发货完成' : '信息已保存 · 尚未确认发货');
+            : (result.shipping_completed ? '已保存 · 发货完成' : (result.shipped_batch_count ? '已保存 · 部分发货，整单尚未发完' : '信息已保存 · 尚未确认发货'));
         document.getElementById('shippingModalError').classList.add('d-none');
         if (savedAction.action === 'next') nextTab = savedAction.step === 'forwarder' ? 'Expenses' : 'Shipping';
     } catch (error) {
         document.getElementById('dispatchSaveMessage').textContent = dispatchPending
-            ? '网络结果未确认，请再次点击保存重试；不会重复登记费用。'
+            ? '网络结果未确认，请再次点击保存重试；不会重复登记。'
             : error.message;
     } finally {
         dispatchBusy = false;
@@ -790,38 +808,76 @@ async function openProcurementProgress(piId) {
         if (revision === procurementProgressRequest) body.textContent = error.message;
     }
 }
-function renderShippingRecord(data) {
-    var completed = data.shipping_completed === true;
-    var canShip = data.can_ship === true;
-    var fields = document.getElementById('shippingFields');
+function renderShippingRecord(data, preferred) {
     dispatchShipping = data;
     dispatchVersion = data.version;
-    dispatchEditing = !completed && !data.shipping_paused;
-    document.getElementById('shippingModalTitle').innerHTML = completed
-        ? '<i class="bi bi-truck me-1"></i>发货记录'
-        : '<i class="bi bi-truck me-1"></i>登记发货';
-    document.getElementById('shippingDate').value = data.shipping_date || (canShip ? localToday() : '');
-    document.getElementById('shippingTrackingNo').value = data.tracking_no || '';
-    document.getElementById('shippingRecordNote').value = data.note || '';
-    fields.disabled = !dispatchEditing;
-    if (data.attachment_url) {
-        setShippingImage(null);
-        document.getElementById('shippingImagePreview').src = data.attachment_url;
+    var batches = data.batches || [];
+    var active = batches.filter(function(b) { return b.status !== 'cancelled'; });
+    var selected = preferred !== 'latest' ? batches.find(function(b) { return b.id === preferred; }) : null;
+    selected = selected || active[active.length - 1] || null;
+    renderShippingBatchHistory();
+    selectShippingBatch(selected, false);
+}
+function renderShippingBatchHistory() {
+    var data = dispatchShipping, history = document.getElementById('shippingBatchHistory');
+    history.replaceChildren();
+    document.getElementById('shippingBatchSummary').textContent = '已发 ' + data.shipped_batch_count + ' 批 · ' + (data.shipping_paused ? '发货已暂停' : (data.shipping_completed ? '整单发货完成' : (data.shipped_batch_count ? '部分发货' : '尚未发货')));
+    (data.batches || []).forEach(function(batch) {
+        var row = document.createElement('div');
+        row.className = 'd-flex align-items-center gap-2 border-bottom py-2 small';
+        var title = document.createElement('strong'); title.className = 'text-nowrap'; title.textContent = '第 ' + batch.batch_no + ' 批';
+        var info = document.createElement('span'); info.className = 'flex-grow-1 text-break';
+        info.textContent = (batch.shipping_date || '日期待填') + ' · ' + (batch.tracking_no || '未填物流单号');
+        var status = document.createElement('span'); status.className = 'badge ' + (batch.status === 'shipped' ? 'bg-success' : 'bg-secondary');
+        status.textContent = batch.status === 'shipped' ? (batch.is_final ? '最后一批' : '已发货') : (batch.status === 'draft' ? '草稿' : '已撤销');
+        var button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-sm btn-outline-primary text-nowrap'; button.textContent = '查看';
+        button.onclick = function() {
+            if (dispatchBusy || dispatchPending) return;
+            if (dispatchDirty) { shippingError('请先保存当前输入，再切换批次。'); return; }
+            selectShippingBatch(batch, false);
+        };
+        row.append(title, info, status, button); history.appendChild(row);
+    });
+}
+function selectShippingBatch(batch, adding) {
+    dispatchBatch = batch;
+    dispatchBatchId = batch ? batch.id : null;
+    dispatchNewBatch = adding || !batch;
+    var readOnly = batch && batch.status !== 'draft';
+    dispatchEditing = !readOnly && !dispatchShipping.shipping_paused;
+    setShippingImage(null);
+    document.getElementById('shippingModalError').classList.add('d-none');
+    document.getElementById('shippingModalTitle').textContent = '第 ' + (batch ? batch.batch_no : dispatchShipping.next_batch_no) + ' 批 · ' + (readOnly ? '发货记录' : '登记发货');
+    document.getElementById('shippingDate').value = batch ? batch.shipping_date : localToday();
+    document.getElementById('shippingTrackingNo').value = batch ? batch.tracking_no : '';
+    document.getElementById('shippingRecordNote').value = batch ? batch.note : '';
+    document.getElementById('shippingFields').disabled = !dispatchEditing;
+    document.getElementById('shippingFinalRow').classList.toggle('d-none', !!readOnly || dispatchShipping.shipping_paused);
+    document.getElementById('shippingFinalBatch').checked = batch ? batch.is_final : !dispatchShipping.shipped_batch_count;
+    if (batch && batch.attachment_url) {
+        document.getElementById('shippingImagePreview').src = batch.attachment_url;
         document.getElementById('shippingImagePreview').classList.remove('d-none');
     }
     var revertButton = document.getElementById('shippingRevertBtn');
-    if (revertButton) revertButton.classList.toggle('d-none', !(completed && canRevertShipping));
-    document.getElementById('shippingEditBtn').classList.toggle('d-none', !completed || data.shipping_paused);
+    if (revertButton) revertButton.classList.toggle('d-none', !(batch && batch.id && batch.status !== 'cancelled' && canRevertShipping && !dispatchShipping.shipping_paused));
+    document.getElementById('shippingEditBtn').classList.toggle('d-none', !(batch && batch.status === 'shipped') || dispatchShipping.shipping_paused);
+    document.getElementById('shippingRecordMeta').textContent = batch && batch.status === 'cancelled' ? '本批已撤销，原记录和图片保留。'
+        : (batch && batch.recorded_at ? '登记人：' + batch.recorded_by + ' · 登记时间：' + batch.recorded_at + '（北京时间）'
+        : (dispatchShipping.unavailable_reason || '保存信息可暂存本批；登记后保留独立的发货记录。'));
     updateDispatchButtons();
-    if (completed) {
-        document.getElementById('shippingRecordMeta').textContent = data.recorded_at
-            ? '登记人：' + (data.recorded_by || '未知用户') + ' · 登记时间：' + data.recorded_at
-            : '已登记发货完成。';
-    } else if (canShip) {
-        document.getElementById('shippingRecordMeta').textContent = '采购已完成，请填写发货日期。';
-    } else {
-        document.getElementById('shippingRecordMeta').textContent = data.unavailable_reason || '当前不能登记发货。';
+}
+function addShippingBatch() {
+    if (!dispatchShipping || dispatchBusy || dispatchPending || dispatchShipping.shipping_paused) return;
+    if (dispatchDirty) { shippingError('请先保存当前输入，再新增发货批次。'); return; }
+    var draft = dispatchShipping.batches.find(function(b) { return b.status === 'draft'; });
+    if (draft) {
+        selectShippingBatch(draft, false);
+        document.getElementById('dispatchSaveMessage').textContent = '请先完成当前草稿批次，再新增下一批。';
+        return;
     }
+    selectShippingBatch(null, true);
+    document.getElementById('dispatchSaveMessage').textContent = '正在新增发货批次；最后一批请勾选整单发货完成。';
+    document.getElementById('shippingDate').focus();
 }
 function openShippingRecord(piId, piNumber) {
     setShippingImage(null);
@@ -847,31 +903,22 @@ function openShippingRecord(piId, piNumber) {
         })
         .catch(function(error) { shippingError(error.message || '读取发货记录失败。'); });
 }
-function revertShippingRecord() {
-    if (!currentShippingPiId) { shippingError('没有识别到对应的 PI，请关闭后重试。'); return; }
-    var message = '确认撤销发货登记吗？\n\n将清空：发货日期、物流单号、发货备注、登记人和登记时间。\n\n回款、采购、装箱和报关记录都会保留。撤销后如需修改采购，还要在采购页面单独取消“采购完成”。';
-    if (!confirm(message)) return;
-    var button = document.getElementById('shippingRevertBtn');
-    button.disabled = true;
-    button.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>正在撤销……';
-    document.getElementById('shippingModalError').classList.add('d-none');
-    fetch('/api/pi/' + currentShippingPiId + '/shipping-complete', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({completed: false, confirm_downstream_reset: true})
-    })
-        .then(function(response) {
-            return response.json().then(function(data) { return {ok: response.ok, data: data}; });
-        })
-        .then(function(result) {
-            if (!result.ok || !result.data.success) throw new Error(result.data.error || '撤销发货登记失败。');
-            window.location.reload();
-        })
-        .catch(function(error) {
-            shippingError(error.message || '撤销发货登记失败。');
-            button.disabled = false;
-            button.innerHTML = '<i class="bi bi-arrow-counterclockwise"></i> 撤销发货登记';
+async function revertShippingRecord() {
+    if (!currentShippingPiId || !dispatchBatchId || dispatchBusy || dispatchPending) return;
+    if (dispatchDirty) { shippingError('请先保存当前输入，再撤销批次。'); return; }
+    if (!confirm('确认撤销第 ' + dispatchBatch.batch_no + ' 批发货登记？本批原记录和图片仍会保留，其他批次不受影响。撤销最后一批后整单恢复未发完状态。')) return;
+    dispatchBusy = true; dispatchLock(true); updateDispatchButtons();
+    try {
+        var response = await fetch('/api/pi/' + currentShippingPiId + '/shipping-batches/' + dispatchBatchId + '/cancel', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({version:dispatchVersion})
         });
+        var data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || '撤销失败，请刷新核对。');
+        dispatchChanged = true;
+        renderShippingRecord(data, dispatchBatchId);
+        document.getElementById('dispatchSaveMessage').textContent = '本批已撤销，其他批次和归档图片保留。';
+    } catch (error) { shippingError(error.message); }
+    finally { dispatchBusy = false; dispatchLock(false); updateDispatchButtons(); }
 }
 function customsError(message) {
     var box = document.getElementById('customsModalError');
@@ -888,6 +935,8 @@ function openCustomsRecord(piId, piNumber) {
     dispatchBusy = false;
     dispatchPending = null;
     dispatchShipping = null;
+    dispatchBatchId = null; dispatchBatch = null; dispatchNewBatch = false;
+    document.getElementById('shippingBatchHistory').replaceChildren();
     dispatchVersion = null;
     showDispatchTab('Forwarder');
     updateDispatchButtons();

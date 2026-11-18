@@ -52,10 +52,11 @@ from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Currency, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
     FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission, PayrollProfile, PayrollSlip,
-    DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem,
+    DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem, ShippingBatch,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
 import order_archive  # Register transactional order attachment archival.
+from shipping_batches import migrate_shipping_batches, ensure_batches, legacy_batch, sync_summary, batch_snapshot
 from payroll import migrate_payroll_accounts, register_payroll
 from list_preferences import FILTERS as LIST_FILTERS, register_list_preferences
 from pdf_generator import generate_pi_pdf
@@ -560,6 +561,7 @@ def _migrate_db():
                END
         """))
     db.session.commit()
+    migrate_shipping_batches()
     if all(inspector.has_table(table) for table in ('packing_lists', 'packing_batches', 'packing_boxes')):
         # Every historical packing list becomes shipment batch 1.  Boxes keep
         # their identity and are only linked to the new batch container.
@@ -6442,6 +6444,7 @@ def pi_list():
             joinedload(PI.customer),
             selectinload(PI.expenses),
             selectinload(PI.packing_list),
+            selectinload(PI.shipping_batches),
             selectinload(PI.items),
             selectinload(PI.procurements),
         ),
@@ -6528,7 +6531,9 @@ def pi_list():
             Payment.order_no.contains(payment_reference_filter, autoescape=True))))
     tracking_no_filter = request.args.get('tracking_no', '').strip()
     if tracking_no_filter:
-        query = query.filter(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True))
+        query = query.filter(or_(PI.shipping_tracking_no.contains(tracking_no_filter, autoescape=True),
+            PI.shipping_batches.any(and_(ShippingBatch.status == 'shipped',
+                ShippingBatch.tracking_no.contains(tracking_no_filter, autoescape=True)))))
     pis = query.order_by(PI.created_at.desc()).all()
     if international_freight:
         pis = [pi for pi in pis if has_international_freight(pi) == (international_freight == 'yes')]
@@ -6564,6 +6569,7 @@ def pi_list():
         expense_total = sum(currency_to_rmb(pi, expense.amount, expense.currency)
                             for expense in pi.expenses)
         dispatch_summaries[pi.id] = ' · '.join(part for part in [
+            ('已发 %s 批' % pi.shipped_batch_count) if pi.shipped_batch_count > 1 or (pi.shipped_batch_count and not pi.shipping_completed) else '',
             pi.freight_forwarder or '',
             ('正式报关' if pi.customs_required else '无需报关') if pi.customs_required is not None else '',
             ('RMB %.2f' % expense_total) if pi.expenses else ('无费用' if pi.dispatch_no_expenses else ''),
@@ -7209,14 +7215,16 @@ def packing_list_save(pi_id):
         all_batches_shipped = all(
             row.status == 'shipped' for row in packing_list.batches
         )
-        pi.shipping_completed = bool(all_allocated and all_batches_shipped)
-        if pi.shipping_completed:
-            shipped_dates = [row.shipping_date for row in packing_list.batches
-                             if row.shipping_date]
-            pi.shipping_date = max(shipped_dates) if shipped_dates else None
-            pi.shipping_tracking_no = '；'.join(
-                row.tracking_no for row in packing_list.batches if row.tracking_no
-            )[:200]
+        # Once dispatch records exist, optional packing edits cannot change shipment facts.
+        if not pi.shipping_batches:
+            pi.shipping_completed = bool(all_allocated and all_batches_shipped)
+            if pi.shipping_completed:
+                shipped_dates = [row.shipping_date for row in packing_list.batches
+                                 if row.shipping_date]
+                pi.shipping_date = max(shipped_dates) if shipped_dates else None
+                pi.shipping_tracking_no = '；'.join(
+                    row.tracking_no for row in packing_list.batches if row.tracking_no
+                )[:200]
         after = _packing_list_payload(pi, packing_list, batch)
         _audit(
             'complete' if action == 'complete' else 'save', 'packing_list',
@@ -9908,7 +9916,7 @@ def api_procurement_save():
         abort(404)
     if not pi.procurement_allowed:
         return jsonify({'success': False, 'error': '该 PI 尚未获准采购，请先登记实际回款或由管理员批准水单申请；不能开始采购。'}), 400
-    if pi.shipping_completed:
+    if pi.shipping_completed or (pi.shipped_batch_count and not pi.shipping_paused):
         return jsonify({
             'success': False,
             'error': '该 PI 已登记发货。请先在发货记录中单独撤销发货，再修改采购单。',
@@ -10036,8 +10044,8 @@ def api_procurement_confirm(pi_id):
         return jsonify({'success': False, 'error': '该 PI 尚未获准采购，请先登记实际回款或由管理员批准水单申请；不能确认采购。'}), 400
     action = request.args.get('action', 'confirm')
     if action == 'unconfirm':
-        if pi.shipping_completed:
-            return jsonify({'success': False, 'error': '请先撤销“发货完成”，再修改采购单。'}), 409
+        if pi.shipping_completed or (pi.shipped_batch_count and not pi.shipping_paused):
+            return jsonify({'success': False, 'error': '请先核对并撤销已有发货批次，再修改采购单。'}), 409
         pi.procurement_confirmed = False
         pi.procurement_status = '部分采购' if pi.procurements else '待采购'
         _audit('update', 'procurement', pi.id, '取消采购完成确认')
@@ -10071,6 +10079,19 @@ def api_procurement_confirm(pi_id):
 
 def _shipping_record_payload(pi):
     """Return a stable UI payload without exposing unrelated PI data."""
+    batches = list(pi.shipping_batches)
+    if not batches:
+        old = legacy_batch(pi)
+        if old:
+            batches = [old]
+    batch_data = []
+    for batch in batches:
+        item = batch_snapshot(batch)
+        item.pop('attachment')
+        item['attachment_url'] = (url_for('shipping_batch_attachment', pi_id=pi.id, batch_id=batch.id)
+            if batch.id else url_for('shipping_attachment', pi_id=pi.id)) if batch.attachment else ''
+        item['recorded_at'] = (batch.recorded_at + timedelta(hours=8)).strftime('%Y-%m-%d %H:%M') if batch.recorded_at else ''
+        batch_data.append(item)
     records = Expense.query.filter_by(pi_id=pi.id).all()
     expense_count = len(records)
     unavailable_reason = ''
@@ -10096,7 +10117,10 @@ def _shipping_record_payload(pi):
         'expense_count': expense_count,
         'no_expenses_confirmed': bool(records) and all(e.is_no_expense_confirmation for e in records),
         'forwarder_ready': bool(pi.freight_forwarder and pi.customs_required is not None),
-        'can_ship': bool(not pi.shipping_completed and not unavailable_reason),
+        'batches': batch_data,
+        'shipped_batch_count': sum(b.status == 'shipped' for b in batches),
+        'next_batch_no': max([b.batch_no for b in batches] or [0]) + 1,
+        'can_ship': not bool(unavailable_reason),
         'unavailable_reason': unavailable_reason,
         'shipping_date': pi.shipping_date.isoformat() if pi.shipping_date else '',
         'tracking_no': pi.shipping_tracking_no or '',
@@ -10122,6 +10146,47 @@ def shipping_attachment(pi_id):
     if not os.path.isfile(filepath):
         abort(404)
     return send_file(filepath, conditional=True)
+
+
+@app.route('/pi/<int:pi_id>/shipping-batches/<int:batch_id>/attachment')
+@login_required
+def shipping_batch_attachment(pi_id, batch_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    batch = ShippingBatch.query.filter_by(id=batch_id, pi_id=pi.id).first_or_404()
+    filename = secure_filename(batch.attachment or '')
+    if not filename or filename != batch.attachment:
+        abort(404)
+    filepath = os.path.join(current_app.config['UPLOAD_DIR'], filename)
+    if not os.path.isfile(filepath):
+        abort(404)
+    return send_file(filepath, conditional=True)
+
+
+@app.route('/api/pi/<int:pi_id>/shipping-batches/<int:batch_id>/cancel', methods=['POST'])
+@admin_required
+def cancel_shipping_batch(pi_id, batch_id):
+    pi = PI.query.get_or_404(pi_id)
+    require_pi_access(pi)
+    batch = ShippingBatch.query.filter_by(id=batch_id, pi_id=pi.id).first_or_404()
+    data = request.get_json(silent=True) or {}
+    if data.get('version') != pi.version:
+        return jsonify(success=False, error='订单已更新，请刷新后重试。'), 409
+    if pi.shipping_paused:
+        return jsonify(success=False, error='发货记录已暂停，请先恢复。'), 409
+    before = batch_snapshot(batch)
+    batch.status = 'cancelled'
+    batch.is_final = False
+    batch.updated_by = get_current_user().username
+    sync_summary(pi)
+    _audit('cancel', 'shipping_batch', batch.id, '撤销 PI %s 第 %s 批发货' % (pi.pi_number, batch.batch_no),
+           before=before, after=batch_snapshot(batch))
+    try:
+        db.session.commit()
+    except StaleDataError:
+        db.session.rollback()
+        return jsonify(success=False, error='订单已更新，请刷新后重试。'), 409
+    return jsonify(_shipping_record_payload(pi))
 
 
 @app.route('/api/pi/<int:pi_id>/dispatch', methods=['POST'])
@@ -10158,8 +10223,8 @@ def api_pi_dispatch(pi_id):
         existing_expenses = Expense.query.filter_by(pi_id=pi.id).all()
         expense_count = len(existing_expenses)
         if complete:
-            if pi.shipping_completed or pi.shipping_paused:
-                raise ValueError('订单已发货或已暂停，不能重复确认发货。')
+            if pi.shipping_paused:
+                raise ValueError('发货已暂停，请管理员先恢复原记录。')
             if not pi.actual_payment_complete or (pi.received_amount or 0) <= 0:
                 raise ValueError('必须实际回款付清尾款后才能发货。')
             if not pi.procurement_is_complete or _procurement_gaps(pi):
@@ -10205,12 +10270,40 @@ def api_pi_dispatch(pi_id):
         edit_shipping = complete or data.get('edit_shipping') is True
         if edit_shipping and pi.shipping_paused:
             raise ValueError('发货已暂停，请管理员先恢复原发货记录。')
+        batch = None
+        batch_before = None
+        if edit_shipping:
+            batches = ensure_batches(pi)
+            if data.get('batch_id') is not None and (type(data['batch_id']) is not int or data['batch_id'] <= 0):
+                raise ValueError('发货批次编号无效。')
+            if not isinstance(data.get('new_batch', False), bool):
+                raise ValueError('新增批次参数无效。')
+            if data.get('new_batch') is True:
+                if data.get('batch_id') is not None:
+                    raise ValueError('新批次不能带有已有批次编号。')
+                if any(b.status == 'draft' for b in batches):
+                    raise ValueError('请先完成已有草稿批次，再新增发货批次。')
+            elif data.get('batch_id') is not None:
+                batch = next((b for b in batches if b.id == data['batch_id']), None)
+                if not batch:
+                    raise ValueError('没有找到本订单的发货批次，请刷新重试。')
+            else:
+                active = [b for b in batches if b.status != 'cancelled']
+                batch = active[-1] if active else None
+            if batch and batch.status == 'cancelled':
+                raise ValueError('已撤销的发货批次不能修改。')
+            if complete and batch and batch.status == 'shipped':
+                raise ValueError('本批已登记发货，请点击新增发货批次。')
+            if batch:
+                batch_before = batch_snapshot(batch)
+            if not isinstance(data.get('final_batch', True), bool):
+                raise ValueError('请选择是否为最后一批。')
         shipping_date = None
         if edit_shipping:
             raw_date = str(data.get('shipping_date') or '').strip()
             if raw_date:
                 shipping_date = date.fromisoformat(raw_date)
-            if (complete or pi.shipping_completed) and not shipping_date:
+            if (complete or (batch and batch.status == 'shipped')) and not shipping_date:
                 raise ValueError('请选择发货日期。')
             tracking = str(data.get('tracking_no') or '').strip()
             shipping_note = str(data.get('shipping_note') or '').strip()
@@ -10244,26 +10337,41 @@ def api_pi_dispatch(pi_id):
         pi.customs_recorded_at = datetime.utcnow()
         pi.customs_recorded_by = get_current_user().username
         if edit_shipping:
-            pi.shipping_date = shipping_date
-            pi.shipping_tracking_no = tracking
-            pi.shipping_record_note = shipping_note
+            if batch is None:
+                batch = ShippingBatch(batch_no=max([b.batch_no for b in pi.shipping_batches] or [0]) + 1,
+                                      status='draft', is_final=False)
+                pi.shipping_batches.append(batch)
+            batch.shipping_date = shipping_date
+            batch.tracking_no = tracking
+            batch.note = shipping_note
+            batch.updated_by = get_current_user().username
+            if batch.status == 'draft':
+                batch.is_final = data.get('final_batch', True)
             attachment = save_image('shipping_attachment')
             if attachment:
-                pi.shipping_attachment = attachment
-        if complete:
-            pi.shipping_completed = True
-            pi.shipping_recorded_at = datetime.utcnow()
-            pi.shipping_recorded_by = get_current_user().username
-            pi.procurement_status = '发货完成'
+                batch.attachment = attachment
+            if complete:
+                # Only the newest registered batch can finish the entire order.
+                for old in pi.shipping_batches:
+                    old.is_final = False
+                batch.status = 'shipped'
+                batch.is_final = data.get('final_batch', True)
+                batch.recorded_at = datetime.utcnow()
+                batch.recorded_by = get_current_user().username
+            sync_summary(pi)
         for i, expense in enumerate(expenses):
             expense.attachment = save_image('expense_attachment_' + str(i))
             db.session.add(expense)
         db.session.add(DispatchSubmission(token=token, pi_id=pi.id))
         db.session.flush()
+        if batch:
+            _audit('update' if batch_before else 'create', 'shipping_batch', batch.id,
+                   ('登记' if complete else '保存') + ' PI ' + pi.pi_number + ' 第 %s 批发货' % batch.batch_no,
+                   before=batch_before, after=batch_snapshot(batch))
         for expense in expenses:
             summary = f'PI {pi.pi_number} 确认无费用产生' if expense.is_no_expense_confirmation else f'登记 PI {pi.pi_number} 真实成本'
             _audit('create', 'expense', expense.id, summary, after=expense.to_dict())
-        _audit('update', 'pi', pi.id, '确认发货完成' if complete else ('确认无费用产生' if confirming_no_expenses else '保存报关/发货信息'),
+        _audit('update', 'pi', pi.id, ('确认整单发货完成' if pi.shipping_completed else '登记分批发货') if complete else ('确认无费用产生' if confirming_no_expenses else '保存报关/发货信息'),
                before=before, after=_snapshot(pi, fields))
         db.session.commit()
         return jsonify(_shipping_record_payload(pi))
@@ -10306,6 +10414,8 @@ def api_pi_shipping_record(pi_id):
     if request.method == 'GET':
         return jsonify(_shipping_record_payload(pi))
 
+    if pi.shipping_batches:
+        return jsonify(success=False, error='请刷新页面，通过发货批次登记、编辑或撤销发货。'), 409
     if pi.shipping_paused:
         return jsonify(success=False, error='发货记录已暂停，请在采购页恢复原记录。'), 409
     if pi.shipping_completed:
@@ -10362,6 +10472,7 @@ def api_pi_shipping_record(pi_id):
     pi.shipping_recorded_at = datetime.utcnow()
     pi.shipping_recorded_by = get_current_user().username
     pi.procurement_status = '发货完成'
+    ensure_batches(pi)
     _audit(
         'update', 'pi', pi.id,
         f'登记 PI {pi.pi_number} 发货完成',
@@ -10390,6 +10501,8 @@ def api_pi_shipping_complete(pi_id):
     pi = PI.query.options(db.joinedload(PI.items).joinedload(PIItem.product)).filter_by(id=pi_id).first_or_404()
     if pi.deleted_at is not None:
         abort(404)
+    if pi.shipping_batches:
+        return jsonify(success=False, error='请刷新页面，通过发货批次登记、编辑或撤销发货。'), 409
     if pi.shipping_paused:
         return jsonify(success=False, error='发货记录已暂停，请在采购页恢复原记录。'), 409
     if (pi.received_amount or 0) <= 0:
@@ -10442,6 +10555,8 @@ def api_pi_shipping_complete(pi_id):
         pi.shipping_recorded_at = None
         pi.shipping_recorded_by = ''
     pi.procurement_status = '发货完成' if completed else ('采购完成' if pi.procurement_confirmed else '待采购')
+    if completed:
+        ensure_batches(pi)
     _audit(
         'update', 'pi', pi.id,
         f'订单进度：{previous} → {pi.procurement_status}',

@@ -9,7 +9,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import Session
 from werkzeug.utils import secure_filename
 from export_filenames import stored_pi_filename
-from models import db, PI, PIItem, Payment, Expense, Procurement, CustomerFile
+from models import db, PI, PIItem, Payment, Expense, Procurement, CustomerFile, ShippingBatch
 
 
 def sync_order_files(session, pi):
@@ -22,6 +22,7 @@ def sync_order_files(session, pi):
     sources += [('UPLOAD_DIR', e.attachment, '费用附件') for e in pi.expenses]
     sources += [('UPLOAD_DIR', i.display_image, '订单产品图片') for i in pi.items]
     sources += [('UPLOAD_DIR', p.image_snapshot, '采购产品图片') for p in pi.procurements]
+    sources += [('UPLOAD_DIR', b.attachment, '第 {} 批发货图片'.format(b.batch_no)) for b in pi.shipping_batches]
     existing = {f.stored_name for f in session.query(CustomerFile).filter_by(pi_id=pi.id)}
     count = 0
     for directory, name, label in sources:
@@ -68,7 +69,7 @@ def collect_order_changes(session, flush_context, instances):
     if not has_app_context():
         return
     changed = [obj for obj in session.new.union(session.dirty)
-               if isinstance(obj, (PI, PIItem, Payment, Expense, Procurement))]
+               if isinstance(obj, (PI, PIItem, Payment, Expense, Procurement, ShippingBatch))]
     if changed:
         session.info.setdefault('archive_order_changes', []).extend(changed)
 

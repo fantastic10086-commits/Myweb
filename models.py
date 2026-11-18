@@ -630,7 +630,11 @@ class PI(db.Model):
 
     @property
     def shipping_payment_shortfall(self):
-        return bool(self.shipping_completed and not self.actual_payment_complete)
+        return bool((self.shipping_completed or self.shipped_batch_count) and not self.actual_payment_complete)
+
+    @property
+    def shipped_batch_count(self):
+        return sum(batch.status == 'shipped' for batch in self.shipping_batches)
 
     @property
     def procurement_allowed(self):
@@ -822,6 +826,27 @@ class PIItem(db.Model):
             'unit_price': self.unit_price,
             'amount': self.amount,
         }
+
+
+class ShippingBatch(db.Model):
+    """Shipment facts independent of optional packing plans."""
+    __tablename__ = 'shipping_batches'
+    __table_args__ = (db.UniqueConstraint('pi_id', 'batch_no', name='uq_shipping_pi_batch'),)
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False, index=True)
+    batch_no = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='draft')
+    is_final = db.Column(db.Boolean, nullable=False, default=False)
+    shipping_date = db.Column(db.Date, nullable=True)
+    tracking_no = db.Column(db.String(200), default='')
+    note = db.Column(db.Text, default='')
+    attachment = db.Column(db.String(500), default='')
+    recorded_at = db.Column(db.DateTime, nullable=True)
+    recorded_by = db.Column(db.String(100), default='')
+    updated_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.String(100), default='')
+    pi = db.relationship('PI', backref=db.backref('shipping_batches', lazy=True,
+                         cascade='all, delete-orphan', order_by='ShippingBatch.batch_no'))
 
 
 class PackingList(db.Model):
