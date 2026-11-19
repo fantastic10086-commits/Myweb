@@ -469,6 +469,28 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         totalDisplay = document.getElementById('total_display');
         totalInput = document.getElementById('total_input');
 
+        selectedTableBody.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 ||
+                e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.defaultPrevented) return;
+            var fields = ['sel-name', 'sel-spec', 'sel-code', 'sel-price', 'sel-qty', 'sel-weight'];
+            var field = fields.find(function(name) { return e.target.classList.contains(name); });
+            if (!field || !e.target.matches('input')) return;
+            // Keep Enter from submitting the PI, including on the final row or a held key.
+            e.preventDefault();
+            if (e.repeat) return;
+            var nextRow = e.target.closest('tr').nextElementSibling;
+            while (nextRow) {
+                var nextInput = nextRow.querySelector('.' + field);
+                if (nextInput && !nextInput.matches(':disabled') && !nextInput.readOnly &&
+                    nextInput.getClientRects().length) {
+                    nextInput.focus();
+                    nextInput.select();
+                    break;
+                }
+                nextRow = nextRow.nextElementSibling;
+            }
+        });
+
         productSearch.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') { e.preventDefault(); openProductPicker(); }
         });
@@ -862,7 +884,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div class="card-body">
                     <div class="table-responsive mt-2" id="selected_products_area">
-                        <small class="text-muted d-block mb-2">品名、规格、编码、单重和图片仅修改当前 PI，产品库资料不变。</small>
+                        <small class="text-muted d-block mb-2">品名、规格、编码、单重和图片仅修改当前 PI，产品库资料不变。Enter 跳到下一行同列，Tab 切换下一个输入框。</small>
                         <table class="table table-hover mb-0 align-middle" id="selected_products_table">
                             <colgroup><col style="width:4%"><col style="width:25%"><col style="width:12%"><col style="width:12%"><col style="width:8%"><col style="width:10%"><col style="width:10%"><col style="width:11%"><col style="width:6%"></colgroup>
                             <thead class="table-light"><tr><th>#</th><th>产品</th><th>编码</th><th class="text-end">单价</th><th style="width:80px;">数量</th><th>单重（kg）</th><th class="text-end">单项总重（kg）</th><th class="text-end">金额</th><th style="width:40px;"></th></tr></thead>
