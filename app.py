@@ -51,7 +51,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.orm.exc import StaleDataError
 from models import (
     db, Currency, PINumberSequence, PICreateSubmission, Customer, CustomerType, CustomerFollowUp, CustomerFile, Product, PI, PIItem, PIDraft, Salesperson, User, Account,
-    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, AuditLog, DispatchSubmission, PayrollProfile, PayrollSlip,
+    FieldOption, Payment, FinanceReview, Expense, Supplier, Procurement, ProcurementAttachment, AuditLog, DispatchSubmission, PayrollProfile, PayrollSlip,
     DocumentTemplate, PackingList, PackingBatch, PackingBox, PackingItem, ShippingBatch,
     CustomsDocument, CustomsRevision, TranslationCache,
 )
@@ -3709,6 +3709,119 @@ def customs_attachments(pi_id):
         folder_url=url_for('customer_detail',id=pi.customer_id,_anchor='customer-files'))
     response.headers['Cache-Control']='private, no-store'
     return response
+
+
+@app.route('/api/pi/<int:pi_id>/procurement-attachments', methods=['GET', 'POST'])
+@admin_required
+def procurement_attachments(pi_id):
+    pi = PI.query.filter_by(id=pi_id).filter(PI.deleted_at.is_(None)).first_or_404()
+    if request.method == 'POST':
+        uploads = [f for f in request.files.getlist('files') if f and f.filename]
+        if not uploads or len(uploads) > 8:
+            return jsonify(error='请选择文件，每次最多 8 个。'), 400
+        try:
+            validated = [(f, *_validate_customer_file(f)) for f in uploads]
+            if sum(item[3] for item in validated) > 30 * 1024 * 1024:
+                raise ValueError('每批附件合计不能超过 30 MB，请分批上传。')
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+
+        saved_names = []
+        try:
+            for upload, name, extension, size, mime in validated:
+                stored_name = 'procurement_' + uuid.uuid4().hex + extension
+                # Track the name before writing, so rollback also removes partial writes.
+                saved_names.append(stored_name)
+                upload.save(os.path.join(current_app.config['UPLOAD_DIR'], stored_name))
+                record = ProcurementAttachment(
+                    pi_id=pi.id, stored_name=stored_name,
+                    original_name=name, mime_type=mime, size_bytes=size,
+                    created_by=get_current_user().username,
+                )
+                db.session.add(record)
+                db.session.flush()
+                _audit('create', 'procurement_attachment', record.id, '上传采购附件',
+                       after=dict(pi_id=pi.id, original_name=name, size_bytes=size))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            for stored_name in saved_names:
+                _remove_upload(stored_name)
+            raise
+
+    return _procurement_attachments_response(pi.id)
+
+
+def _procurement_attachments_response(pi_id):
+    files = ProcurementAttachment.query.filter_by(pi_id=pi_id).filter(
+        ProcurementAttachment.deleted_at.is_(None),
+    ).order_by(
+        ProcurementAttachment.created_at.desc(), ProcurementAttachment.id.desc(),
+    ).all()
+    response = jsonify(
+        files=[dict(
+            id=f.id, name=f.original_name, size=f.size_label,
+            is_image=f.is_image,
+            url=url_for('procurement_attachment_view', id=f.id),
+            thumbnail_url=(url_for('procurement_attachment_thumbnail', id=f.id) if f.is_image else ''),
+            download_url=url_for('procurement_attachment_view', id=f.id, download=1),
+            delete_url=url_for('procurement_attachment_delete', id=f.id),
+        ) for f in files],
+    )
+    response.headers['Cache-Control'] = 'private, no-store'
+    return response
+
+
+def _procurement_attachment_record(id):
+    return ProcurementAttachment.query.join(PI).filter(
+        ProcurementAttachment.id == id,
+        ProcurementAttachment.deleted_at.is_(None), PI.deleted_at.is_(None),
+    ).first_or_404()
+
+
+def _procurement_attachment_path(record):
+    safe_name = secure_filename(record.stored_name or '')
+    if not safe_name or safe_name != record.stored_name:
+        abort(404)
+    path = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
+    if not os.path.isfile(path):
+        abort(404)
+    return path
+
+
+@app.route('/procurement-attachments/<int:id>')
+@admin_required
+def procurement_attachment_view(id):
+    record = _procurement_attachment_record(id)
+    return send_file(
+        _procurement_attachment_path(record),
+        mimetype=record.mime_type or 'application/octet-stream',
+        as_attachment=(request.args.get('download') == '1'
+                       or not (record.is_image or record.mime_type == 'application/pdf')),
+        download_name=record.original_name, conditional=True,
+    )
+
+
+@app.route('/procurement-attachments/<int:id>/thumbnail')
+@admin_required
+def procurement_attachment_thumbnail(id):
+    record = _procurement_attachment_record(id)
+    if not record.is_image:
+        abort(404)
+    return send_file(_ensure_product_thumbnail(record.stored_name,
+                                               _procurement_attachment_path(record)), conditional=True)
+
+
+@app.route('/procurement-attachments/<int:id>/delete', methods=['POST'])
+@admin_required
+def procurement_attachment_delete(id):
+    record = _procurement_attachment_record(id)
+    record.deleted_at = datetime.utcnow()
+    _audit('soft_delete', 'procurement_attachment', record.id, '删除采购附件', before=dict(
+        pi_id=record.pi_id, original_name=record.original_name, stored_name=record.stored_name,
+    ))
+    db.session.commit()
+    return _procurement_attachments_response(record.pi_id)
 
 
 @app.route('/customer-files/<int:id>')

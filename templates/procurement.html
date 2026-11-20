@@ -756,6 +756,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCalculations();
 });
 </script>
+<script src="{{ url_for('static', filename='procurement_attachments.js', v='20261120') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -805,6 +806,15 @@ document.addEventListener('DOMContentLoaded', function() {
     background-color: #fd7e14;
     border-color: #fd7e14;
 }
+#procAttachments .proc-attachment-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:8px; }
+#procAttachments .proc-attachment-item { min-width:0; display:flex; align-items:center; gap:10px; border:1px solid #dee2e6; border-radius:6px; padding:8px; }
+#procAttachments .proc-attachment-thumb { width:64px; height:64px; object-fit:contain; background:#fff; border:1px solid #eee; border-radius:4px; flex-shrink:0; }
+#procAttachments .proc-attachment-details { min-width:0; flex:1; }
+#procAttachments .proc-attachment-name { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#procAttachmentPaste { border:1px dashed #adb5bd; border-radius:6px; padding:10px; }
+#procAttachmentPaste:focus { outline:2px solid #0d6efd; outline-offset:2px; }
+#procAttachmentList { max-height:260px; overflow-y:auto; }
+@media (max-width:575.98px) { #procAttachments .proc-attachment-grid { grid-template-columns:minmax(0,1fr); } }
 </style>
 {% set order_status = pi.effective_procurement_status %}
 {% set order_status_class = {'待采购':'warning text-dark', '部分采购':'info text-dark', '采购完成':'primary', '发货完成':'success'}.get(order_status, 'secondary') %}
@@ -989,6 +999,25 @@ document.addEventListener('DOMContentLoaded', function() {
                 <small class="text-muted">填写从供应商处采购本单产品产生的运费。</small>
             </div>
         </div>
+        <section id="procAttachments" class="border-top mt-3 pt-3" aria-labelledby="procAttachmentHeading"
+                 data-url="{{ url_for('procurement_attachments', pi_id=pi.id) }}">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <h6 id="procAttachmentHeading" class="mb-0 fw-bold"><i class="bi bi-paperclip me-1"></i>采购附件 <span id="procAttachmentCount" class="badge bg-secondary">0</span></h6>
+                <button type="button" id="procAttachmentReload" class="btn btn-link btn-sm p-0">刷新附件</button>
+            </div>
+            <div id="procAttachmentPaste" tabindex="0" aria-label="采购附件粘贴区域" aria-describedby="procAttachmentHelp">
+                <div class="d-flex align-items-center flex-wrap gap-2">
+                    <button type="button" id="procAttachmentChoose" class="btn btn-outline-primary btn-sm"><i class="bi bi-plus-lg me-1"></i>选择附件</button>
+                    <input type="file" id="procAttachmentInput" class="d-none" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip">
+                    <span id="procAttachmentHelp" class="small text-muted">可直接按 Ctrl+V / ⌘V 粘贴图片，点击上传后保存。</span>
+                    <button type="button" id="procAttachmentUpload" class="btn btn-primary btn-sm ms-sm-auto" disabled>上传附件</button>
+                </div>
+                <div class="small text-muted mt-1">支持图片、PDF、Office 文档、TXT、CSV、ZIP；每次最多 8 个，单个 20 MB、合计 30 MB。</div>
+                <div id="procAttachmentPending" class="proc-attachment-grid mt-2 d-none" aria-label="待上传附件"></div>
+            </div>
+            <div id="procAttachmentStatus" class="small mt-2" role="status" aria-live="polite"></div>
+            <div id="procAttachmentList" class="proc-attachment-grid mt-2" aria-label="已上传采购附件"></div>
+        </section>
     </div>
 </div>
 

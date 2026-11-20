@@ -1163,6 +1163,36 @@ class Procurement(db.Model):
         }
 
 
+class ProcurementAttachment(db.Model):
+    """Private procurement documents; separate from the customer file archive."""
+    __tablename__ = 'procurement_attachments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    pi_id = db.Column(db.Integer, db.ForeignKey('pis.id'), nullable=False, index=True)
+    stored_name = db.Column(db.String(100), nullable=False, unique=True)
+    original_name = db.Column(db.String(255), nullable=False)
+    mime_type = db.Column(db.String(100), nullable=False, default='application/octet-stream')
+    size_bytes = db.Column(db.Integer, nullable=False, default=0)
+    created_by = db.Column(db.String(100), nullable=False, default='')
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    pi = db.relationship('PI', backref=db.backref('procurement_attachments', lazy=True,
+                                                cascade='all, delete-orphan'))
+
+    @property
+    def is_image(self):
+        return (self.mime_type or '').startswith('image/')
+
+    @property
+    def size_label(self):
+        if self.size_bytes < 1024:
+            return f'{self.size_bytes} B'
+        if self.size_bytes < 1024 * 1024:
+            return f'{self.size_bytes / 1024:.1f} KB'
+        return f'{self.size_bytes / (1024 * 1024):.1f} MB'
+
+
 class PIDraft(db.Model):
     __tablename__ = 'pi_drafts'
     id = db.Column(db.Integer, primary_key=True)
