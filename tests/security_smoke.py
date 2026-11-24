@@ -3303,6 +3303,7 @@ class SecuritySmokeTests(unittest.TestCase):
             audit_count_before = AuditLog.query.filter_by(entity_type='payment', action='create').count()
         first_token = 'a' * 32
         response = self.client.post(f'/pi/{self.alice_pi}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '2', 'fee': '0', 'order_no': ' BANK-REF-001 ',
             'receiving_account_id': self.approved_account,
             'attachment': self.image_upload('bank-ref.png'),
@@ -3310,6 +3311,7 @@ class SecuritySmokeTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 302)
         response = self.client.post(f'/pi/{self.alice_pi}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '2', 'fee': '0', 'order_no': 'bank-ref-001',
             'receiving_account_id': self.approved_account,
             'idempotency_key': 'b' * 32, 'csrf_token': self.token('/pi/list'),
@@ -3342,17 +3344,20 @@ class SecuritySmokeTests(unittest.TestCase):
             rmb_account_id = rmb_account.id
 
         missing = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'NO-ACCOUNT',
             'idempotency_key': 'd' * 32, 'csrf_token': self.token('/pi/list'),
         })
         self.assertEqual(missing.status_code, 302)
         wrong_currency = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'WRONG-CURRENCY',
             'receiving_account_id': rmb_account_id,
             'idempotency_key': 'e' * 32, 'csrf_token': self.token('/pi/list'),
         })
         self.assertEqual(wrong_currency.status_code, 302)
         first = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '4', 'fee': '0', 'order_no': 'USD-PRIMARY',
             'receiving_account_id': self.approved_account,
             'attachment': self.image_upload('primary.png'),
@@ -3360,6 +3365,7 @@ class SecuritySmokeTests(unittest.TestCase):
         })
         self.assertEqual(first.status_code, 302)
         switched = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'USD-ALTERNATE',
             'receiving_account_id': usd_alternate_id,
             'attachment': self.image_upload('alternate.png'),
@@ -3401,6 +3407,7 @@ class SecuritySmokeTests(unittest.TestCase):
             pi_id = pi.id
 
         missing = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-MISSING',
             'receiving_account_id': self.approved_account,
             'idempotency_key': 'h' * 32, 'csrf_token': self.token('/pi/list'),
@@ -3408,6 +3415,7 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('请上传回款凭证图片', missing.get_data(as_text=True))
 
         invalid = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-INVALID',
             'receiving_account_id': self.approved_account,
             'attachment': (BytesIO(b'not-an-image'), 'fake.png'),
@@ -3416,6 +3424,7 @@ class SecuritySmokeTests(unittest.TestCase):
         self.assertIn('必须是有效的 JPG', invalid.get_data(as_text=True))
 
         saved = self.client.post(f'/pi/{pi_id}/toggle-paid', data={
+            'received_on': date.today().isoformat(),
             'received_amount': '1', 'fee': '0', 'order_no': 'RECEIPT-VALID',
             'receiving_account_id': self.approved_account,
             'attachment': self.image_upload('receipt.png'),

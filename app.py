@@ -7910,8 +7910,12 @@ def pi_toggle_paid(id):
     fee_str = request.form.get('fee', '0').strip()
     order_no = request.form.get('order_no', '').strip()
     payment_note = request.form.get('note', '').strip()
+    received_on_text = request.form.get('received_on', '').strip()
+    if not received_on_text:
+        flash('请选择实际到账日期。', 'danger')
+        return redirect(url_for('pi_list'))
     try:
-        received_on = date.fromisoformat(request.form.get('received_on', '').strip() or date.today().isoformat())
+        received_on = date.fromisoformat(received_on_text)
     except ValueError:
         flash('实际到账日期格式不正确。', 'danger')
         return redirect(url_for('pi_list'))
@@ -8272,6 +8276,8 @@ def payment_attachment(id):
     filepath = os.path.join(current_app.config['UPLOAD_DIR'], safe_name)
     if not os.path.isfile(filepath):
         abort(404)
+    if request.args.get('thumbnail') == '1':
+        return send_file(_ensure_product_thumbnail(safe_name, filepath), conditional=True)
     extension = os.path.splitext(safe_name)[1].lower()
     return send_file(
         filepath,

@@ -7,8 +7,7 @@
     }
     window.openPaymentEdit = function (row, payment, piId, shipped) {
         document.querySelectorAll('.payment-edit-row').forEach(function (node) { node.remove(); });
-        var editor = element('tr', 'payment-edit-row');
-        var cell = editor.insertCell(); cell.colSpan = 9; cell.className = 'bg-light p-3';
+        var editor = element('div', 'payment-edit-row bg-light rounded p-3 mt-2');
         var form = element('form', 'row g-2');
         function field(label, type, value, columns) {
             var col = element('div', columns), caption = element('label', 'form-label small', label);
@@ -49,16 +48,15 @@
                 save.disabled = false; cancel.disabled = false;
             }
         };
-        cell.append(form); row.after(editor); amount.focus();
+        editor.append(form); row.after(editor); amount.focus();
     };
     window.appendPaymentEdits = function (body, payment) {
         if (!payment.edits || !payment.edits.length) return;
-        var row = body.insertRow(), cell = row.insertCell(); cell.colSpan = 9;
-        var details = element('details', 'small text-muted');
+        var details = element('details', 'payment-edit-history small text-muted mt-2');
         details.append(element('summary', '', '修改记录（' + payment.edits.length + '）'));
         payment.edits.forEach(function (edit) {
             details.append(element('div', 'py-1 border-bottom', edit.actor + ' · ' + edit.time + '：金额 ' + edit.before_amount + ' → ' + edit.after_amount + '；到账日期 ' + (edit.before_date || '未填写') + ' → ' + edit.after_date + '；原因：' + edit.reason));
-        }); cell.append(details);
+        }); body.append(details);
     };
     document.addEventListener('DOMContentLoaded', function () {
         try {
