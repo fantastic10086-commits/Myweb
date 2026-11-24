@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}订单发货 · {{ pi.pi_number }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='dispatch.css', v='20261124-page') }}">
+{% endblock %}
+{% block content %}
+<header class="dispatch-page-header mb-3">
+    <div class="d-flex flex-wrap align-items-center gap-3">
+        <a class="btn btn-outline-secondary" id="dispatchReturnLink" href="{{ return_to }}"><i class="bi bi-arrow-left me-1"></i>返回 PI 列表</a>
+        <h1 class="h4 mb-0"><i class="bi bi-truck me-2"></i>订单发货</h1>
+        <span id="dispatchPageStatus" class="badge bg-secondary">正在读取</span>
+    </div>
+    <div class="dispatch-order-summary mt-3">
+        <div><span class="text-muted small">PI 编号</span><strong>{{ pi.pi_number }}</strong></div>
+        <div><span class="text-muted small">客户</span><strong>{{ pi.customer.name if pi.customer else '—' }}</strong></div>
+        <div><span class="text-muted small">业务员</span><span>{{ pi.salesperson or '—' }}</span></div>
+        <div><span class="text-muted small">订单金额</span><strong>{{ pi.currency or 'USD' }} {{ '%.2f'|format(pi.grand_total) }}</strong></div>
+        <div><span class="text-muted small">回款 / 采购</span><span>{{ '已付清' if pi.actual_payment_complete else ('部分回款' if pi.received_amount else '未回款') }} · {{ '采购完成' if pi.procurement_is_complete else ('部分采购' if pi.procurements else '待采购') }}</span></div>
+    </div>
+</header>
+{% if pi.shipping_payment_shortfall %}<div class="alert alert-warning">此订单已有发货记录，但当前回款未付清，请核对回款；已有发货记录保留。</div>{% endif %}
+{% include '_dispatch_panel.html' %}
+{% endblock %}
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='dispatch.js', v='20261124-page') }}"></script>
+{% endblock %}

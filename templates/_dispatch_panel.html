@@ -1,0 +1,167 @@
+<div id="customsModal" {% if dispatch_page %}data-pi-id="{{ pi.id }}" data-pi-number="{{ pi.pi_number }}"{% endif %} data-page="{{ 'true' if dispatch_page else 'false' }}" data-admin="{{ 'true' if is_admin else 'false' }}"
+     {% if dispatch_page %}class="dispatch-page card border-0 shadow-sm"{% else %}class="modal fade" tabindex="-1" aria-hidden="true"{% endif %}>
+    <div class="{{ 'dispatch-page-inner' if dispatch_page else 'modal-dialog modal-lg modal-dialog-scrollable' }}"><div class="{{ 'dispatch-page-content' if dispatch_page else 'modal-content' }}">
+        {% if not dispatch_page %}<div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-clipboard-check me-1"></i>报关 / 发货</h5>
+            <div class="d-flex align-items-center gap-3 ms-auto"><a id="dispatchFullPageLink" class="btn btn-sm btn-outline-primary" href="#"><i class="bi bi-box-arrow-up-right me-1"></i>打开完整页面</a>
+            <button type="button" class="btn-close m-0" data-bs-dismiss="modal" aria-label="关闭"></button></div>
+        </div>
+        {% endif %}<nav class="px-3 pt-2 border-bottom dispatch-navigation" aria-label="报关发货分页">
+            <div class="nav nav-tabs dispatch-tabs border-0" role="tablist">
+                <button class="nav-link active" id="dispatchForwarderTab" data-bs-toggle="tab" data-bs-target="#dispatchForwarderPane" type="button" role="tab" aria-controls="dispatchForwarderPane" aria-selected="true">1.货代和报关情况</button>
+                <button class="nav-link" id="dispatchExpensesTab" data-bs-toggle="tab" data-bs-target="#dispatchExpensesPane" type="button" role="tab" aria-controls="dispatchExpensesPane" aria-selected="false">2.费用情况</button>
+                <button class="nav-link" id="dispatchShippingTab" data-bs-toggle="tab" data-bs-target="#dispatchShippingPane" type="button" role="tab" aria-controls="dispatchShippingPane" aria-selected="false">3.发货情况</button>
+            </div>
+        </nav>
+        <div class="modal-body">
+            <div class="small text-muted mb-3{% if dispatch_page %} d-none{% endif %}">PI：<strong id="customsPINumber"></strong></div>
+            <div id="customsModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <div class="tab-content">
+            <div class="tab-pane show active" id="dispatchForwarderPane" role="tabpanel" aria-labelledby="dispatchForwarderTab">
+            <fieldset id="customsFields" disabled>
+                <div class="row g-3 mb-2"><div class="col-md-6">
+                <label class="form-label fw-bold" for="customsForwarder">货代 <span class="text-danger">*</span></label>
+                <select class="form-select form-select-sm" id="customsForwarder">
+                    <option value="">— 请选择货代 —</option>
+                    {% for option in freight_forwarder_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
+                </select></div><div class="col-md-6">
+                <div class="form-label fw-bold mb-2">是否正式报关 <span class="text-danger">*</span></div>
+                <div class="d-flex gap-4 mb-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredYes" value="true">
+                        <label class="form-check-label" for="customsRequiredYes">需要报关</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="customs_required" id="customsRequiredNo" value="false">
+                        <label class="form-check-label" for="customsRequiredNo">无需报关</label>
+                    </div>
+                </div>
+                </div></div>
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between"><label class="form-label small" for="customsNote">补充说明</label>
+                    </div>
+                    <textarea class="form-control" id="customsNote" rows="2" maxlength="500"
+                              placeholder="可填写报关要求、特殊说明等（选填）"></textarea>
+                </div>
+            </fieldset>
+            <div class="border-top pt-3 mt-3 mb-3">
+                <label class="form-label fw-semibold" for="customsAttachments">报关资料附件</label>
+                <div class="d-flex gap-2"><input type="file" class="form-control" id="customsAttachments" multiple accept=".jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"><button type="button" class="btn btn-outline-primary text-nowrap" id="customsUploadBtn" onclick="uploadCustomsAttachments()">上传附件</button></div>
+                <small class="text-muted">每次最多8个，单个20MB以内，每批合计建议不超过30MB。点击上传后直接保存到当前客户的本单文件夹。</small>
+                <div id="customsAttachmentStatus" class="small mt-1" role="status"></div>
+                <div id="customsAttachmentList" class="mt-2"></div>
+                <a id="customsFolderLink" class="small d-none" target="_blank">打开客户订单文件资料</a>
+            </div>
+            <small class="text-muted" id="customsRecordMeta">正在读取记录……</small>
+            <div class="d-flex flex-wrap gap-2 mt-3">
+            <a href="#" class="btn btn-outline-success d-none" id="customsDocumentsBtn">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>制作报关资料
+            </a>
+            </div>
+            </div>
+            <div class="tab-pane" id="dispatchExpensesPane" role="tabpanel" aria-labelledby="dispatchExpensesTab">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+                <h6 class="fw-bold mb-0">报关及发货费用（RMB）</h6>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="dispatchNoExpensesBtn"
+                        onclick="saveDispatch(false, false, true)">确认无费用</button>
+            </div>
+
+            <p class="small text-muted mb-2">至少保存一条费用记录，金额可以为 0；没有费用可点击「确认无费用」，保存确认记录后再点击下一步。<span id="expensePINumber" class="d-none"></span></p>
+            <div id="expenseModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <div id="expenseModalSuccess" class="alert alert-success py-2 d-none" role="alert"></div>
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="mb-0">已登记记录</h6>
+                    <small class="text-muted" id="expenseHistorySummary"></small>
+                </div>
+                <div id="expenseHistory" class="border rounded p-3 text-center text-muted">
+                    <span class="spinner-border spinner-border-sm me-1"></span>正在读取记录……
+                </div>
+            </div>
+            <hr>
+            <div id="expenseEntry">
+            <div class="row g-2 mb-2">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1" for="exp_category">费用类别 <span class="text-danger">*</span></label>
+                    <select class="form-select form-select-sm" id="exp_category">
+                        <option value="">— 请选择 —</option>
+                        {% for option in expense_category_options %}<option value="{{ option.value }}">{{ option.value }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1" for="exp_amount">金额（RMB） <span class="text-danger">*</span></label>
+                    <input type="number" step="0.01" min="0" class="form-control form-control-sm" id="exp_amount" placeholder="无费用填 0">
+                    <input type="hidden" id="exp_currency" value="RMB">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small mb-1" for="exp_note">备注</label>
+                    <input type="text" class="form-control form-control-sm" id="exp_note" maxlength="500" placeholder="选填">
+                </div>
+            </div>
+            <div class="mb-1">
+                <label class="form-label" for="exp_attachment">附件图片（选填）</label>
+                <input type="file" class="form-control form-control-sm" id="exp_attachment"
+                       accept="image/jpeg,image/png,image/webp,image/gif"
+                       onchange="previewExpenseAttachment(this)">
+                <small class="text-muted">可上传发票、报关单、运费单或付款凭证；支持 JPG、PNG、WebP、GIF，最大 12 MB。</small>
+                <div id="exp_attachment_preview_wrap" class="d-none mt-2">
+                    <img id="exp_attachment_preview" class="img-thumbnail" alt="真实成本凭证预览"
+                         style="max-height:180px;max-width:100%;object-fit:contain;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary ms-2"
+                            onclick="clearExpenseAttachment()">移除图片</button>
+                </div>
+            </div>
+            </div>
+            <div id="extraExpenseRows"></div>
+            <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addDispatchExpenseRow()">＋ 添加一笔费用</button>
+</div><div class="tab-pane" id="dispatchShippingPane" role="tabpanel" aria-labelledby="dispatchShippingTab"><section id="shippingSection">
+            <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                <strong id="shippingBatchSummary">发货批次</strong>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="shippingAddBatchBtn" onclick="addShippingBatch()">＋ 新增发货批次</button>
+            </div>
+            <div class="dispatch-shipping-layout"><aside class="dispatch-batch-sidebar"><div id="shippingBatchHistory" class="mb-3"></div></aside><div class="dispatch-batch-detail">
+            <h6 class="fw-bold" id="shippingModalTitle">发货登记</h6><span id="shippingPINumber" class="d-none"></span>            <div id="shippingModalError" class="alert alert-danger py-2 d-none" role="alert"></div>
+            <fieldset id="shippingFields" disabled>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingDate">发货日期 <span class="text-danger">*</span></label>
+                    <input type="date" class="form-control" id="shippingDate" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingTrackingNo">物流单号</label>
+                    <input type="text" class="form-control" id="shippingTrackingNo" maxlength="200"
+                           placeholder="选填，例如快递单号、提单号">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingAttachment">发货图片（选填）</label>
+                    <input type="file" id="shippingAttachment" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                    <div class="form-text">选择图片，或在发货区域内按 Ctrl+V / ⌘V 粘贴。单张最大 12 MB。</div>
+                    <button type="button" id="shippingImageClear" class="btn btn-sm btn-outline-secondary mt-2" onclick="setShippingImage(null)">移除待上传图片</button>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="shippingRecordNote">备注</label>
+                    <textarea class="form-control" id="shippingRecordNote" rows="2" maxlength="1000"
+                              placeholder="选填，例如物流公司、发货说明"></textarea>
+                </div>
+            </fieldset>
+            <div id="shippingFinalRow" class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="shippingFinalBatch" checked onchange="updateDispatchButtons()">
+                <label class="form-check-label" for="shippingFinalBatch">本批为最后一批，确认整单发货完成</label>
+            </div>
+            <img id="shippingImagePreview" class="img-fluid rounded mb-3 d-none" alt="发货图片" style="max-height:420px;object-fit:contain">
+            <small class="text-muted" id="shippingRecordMeta">正在读取记录……</small>
+<div class="d-flex gap-2 mt-2">
+            <button type="button" class="btn btn-sm btn-outline-primary d-none" id="shippingEditBtn" onclick="editShippingInformation()">重新编辑发货信息</button>
+            {% if is_admin %}
+            <button type="button" class="btn btn-sm btn-outline-danger d-none" id="shippingRevertBtn" onclick="revertShippingRecord()">撤销本批发货登记</button>
+            {% endif %}
+</div></div></div></section></div></div></div>
+        <div class="modal-footer">
+            <span id="dispatchSaveMessage" class="small text-muted me-auto" role="status">保存信息不会改变发货状态</span>
+            <div class="d-flex gap-2 flex-shrink-0">
+            <button type="button" class="btn btn-outline-primary" id="dispatchInfoBtn" disabled onclick="saveDispatch(false)">保存信息</button>
+            <button type="button" class="btn btn-primary" id="dispatchNextBtn" disabled onclick="saveDispatch(false, true)">下一步</button>
+            <button type="button" class="btn btn-success d-none" id="shippingSaveBtn" disabled onclick="saveDispatch(true)">确认发货完成</button>
+            </div>
+        </div>
+    </div></div>
+</div>

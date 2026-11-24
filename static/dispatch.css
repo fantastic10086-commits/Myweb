@@ -1,0 +1,58 @@
+    #customsModal .dispatch-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+    #customsModal .dispatch-tabs .nav-link { min-width:0; width:100%; padding:.7rem .5rem; text-align:center; white-space:normal; overflow-wrap:anywhere; }
+    @media(max-width:575px) { #customsModal .dispatch-tabs .nav-link { padding:.6rem .25rem; font-size:.8rem; } }
+    #shippingFields { display:grid; grid-template-columns:1fr 1fr; gap:.5rem .75rem; }
+    #shippingFields > div { margin-bottom:.25rem !important; min-width:0; }
+    #shippingFields .form-label { font-size:.85rem; margin-bottom:.25rem; }
+    #shippingFields .form-control { font-size:.875rem; padding:.3rem .5rem; }
+    @media(max-width:575px) { #shippingFields { grid-template-columns:1fr; } }
+
+/* The same panel expands into a document page without nested modal scrolling. */
+.dispatch-page-header { background:#fff; padding:1.25rem; border:1px solid #e8edf2; border-radius:.65rem; }
+.dispatch-order-summary { display:grid; grid-template-columns:1.1fr 1.6fr .8fr 1fr 1.1fr; gap:1rem; }
+.dispatch-order-summary > div { min-width:0; display:flex; flex-direction:column; gap:.25rem; overflow-wrap:anywhere; }
+#customsModal.dispatch-page { overflow:visible; }
+.dispatch-page .dispatch-navigation { background:#fff; position:sticky; top:0; z-index:10; border-radius:.5rem .5rem 0 0; }
+.dispatch-page .dispatch-tabs .nav-link { font-weight:600; padding:1rem .5rem !important; }
+.dispatch-page .dispatch-tabs .nav-link.active { color:#0759bd; background:#f5f9ff; border-color:#dee7f0 #dee7f0 #f5f9ff; }
+.dispatch-page .modal-body { padding:1.5rem; min-height:420px; overflow:visible; }
+.dispatch-page .modal-footer { position:sticky; bottom:0; z-index:10; padding:1rem 1.5rem; background:#fff; box-shadow:0 -3px 12px rgba(35,60,85,.05); border-radius:0 0 .5rem .5rem; }
+.dispatch-page .dispatch-shipping-layout { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,2fr); gap:1.5rem; margin-top:1rem; }
+.dispatch-page .dispatch-batch-sidebar { min-width:0; border-right:1px solid #e7ebef; padding-right:1.25rem; }
+.dispatch-page .dispatch-batch-detail { min-width:0; }
+.dispatch-page .dispatch-batch-row { display:grid !important; grid-template-columns:1fr auto; padding:.75rem !important; border:1px solid #e7ebef; border-radius:.4rem; margin-bottom:.6rem; background:#f9fafc; }
+.dispatch-page .dispatch-batch-row.is-selected { border-color:#9ec5fe; background:#edf5ff; }
+.dispatch-page .dispatch-batch-row > span.flex-grow-1 { grid-column:1/-1; grid-row:2; white-space:pre-wrap; overflow-wrap:anywhere; }
+.dispatch-page .dispatch-batch-row > .badge { grid-column:2; grid-row:1; }
+.dispatch-page .dispatch-batch-row > button { grid-column:1/-1; }
+.dispatch-page #shippingFields { gap:1rem; }
+.dispatch-page #shippingFields .form-control { padding:.5rem .65rem; }
+.dispatch-page #shippingBatchHistory:empty::after { content:'尚无发货批次，填写右侧信息后保存。'; display:block; color:#6c757d; font-size:.875rem; padding:1rem 0; }
+#customsModal #expenseHistory td { overflow-wrap:anywhere; white-space:pre-wrap; }
+#customsModal #expenseHistory table { table-layout:fixed; }
+#customsModal #expenseHistory th:nth-child(2) { width:28%; }
+#customsModal #customsAttachmentList > div { flex-wrap:wrap; }
+@media(max-width:767px) {
+    .dispatch-order-summary { grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; }
+    .dispatch-order-summary > div:nth-child(2) { grid-column:1/-1; grid-row:2; }
+    .dispatch-page-header { padding:1rem; }
+    .dispatch-page .modal-body { padding:1rem; min-height:0; }
+    .dispatch-page .modal-footer { padding:.75rem; }
+    .dispatch-page .modal-footer > span { width:100%; margin-bottom:.5rem; }
+    .dispatch-page .dispatch-shipping-layout { grid-template-columns:minmax(0,1fr); gap:1rem; }
+    .dispatch-page .dispatch-batch-sidebar { border-right:0; border-bottom:1px solid #e7ebef; padding-right:0; }
+    .dispatch-page #shippingBatchHistory:empty::after { content:'尚无发货批次，填写下方信息后保存。'; }
+}
+@media(max-width:575px) {
+    #customsModal #expenseHistory thead { display:none; }
+    #customsModal #expenseHistory tbody, #customsModal #expenseHistory tr { display:block; }
+    #customsModal #expenseHistory tr { border-bottom:1px solid #dee2e6; padding:.5rem; }
+    #customsModal #expenseHistory td { display:grid; grid-template-columns:3.5rem minmax(0,1fr); gap:.5rem; border:0; align-items:start; }
+    #customsModal #expenseHistory td::before { content:attr(data-label); color:#6c757d; font-size:.8rem; }
+    #customsModal #expenseHistory td a, #customsModal #expenseHistory td button { justify-self:start; }
+    #customsModal #shippingSection > .d-flex { flex-wrap:wrap; }
+    #customsModal .modal-footer > span { flex-basis:100%; }
+    #customsModal .modal-header .modal-title { font-size:1rem; }
+    #customsModal .modal-header { gap:.5rem; }
+    #customsModal .dispatch-navigation { padding-left:.5rem !important; padding-right:.5rem !important; }
+}

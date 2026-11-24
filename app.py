@@ -7096,6 +7096,22 @@ def _packing_return_to_pi_list(pi_id):
     return url_for('pi_list', _anchor=f'pi-row-{pi_id}', **(filters or {'stage': ''}))
 
 
+@app.route('/pi/<int:pi_id>/dispatch')
+@login_required
+def pi_dispatch_detail(pi_id):
+    """Open the shared dispatch editor without changing the order's state."""
+    pi = PI.query.options(joinedload(PI.customer)).filter_by(id=pi_id).first_or_404()
+    require_pi_access(pi)
+    return_to = _packing_return_to_pi_list(pi_id) or url_for(
+        'pi_list', stage='', _anchor=f'pi-row-{pi_id}',
+    )
+    response = make_response(render_template(
+        'dispatch_detail.html', pi=pi, return_to=return_to, dispatch_page=True,
+    ))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+
 @app.route('/packing-list/<int:pi_id>')
 @login_required
 def packing_list_detail(pi_id):
