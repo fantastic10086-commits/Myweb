@@ -77,6 +77,7 @@ body > .container { max-width: 1320px; }
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='pi_prices.js') }}"></script>
 <script src="{{ url_for('static', filename='pi_item_images.js') }}"></script>
+<script src="{{ url_for('static', filename='pi_picker_quick_add.js') }}"></script>
 <script src="{{ url_for('static', filename='pi_row_drag.js') }}"></script>
 <div id="js_status" style="background:#ffe0e0;border:2px solid red;padding:4px 8px;margin:4px 0;font-size:13px;">JS：等待中……</div>
 <script>
@@ -428,7 +429,7 @@ var defaultBusinessRate = {{ exchange_rate|tojson }};
         var query = document.getElementById('picker_search').value.trim();
         error.classList.add('d-none');
         body.innerHTML = '<tr><td colspan="7" class="text-center py-5"><span class="spinner-border text-primary" role="status"></span><div class="mt-2 text-muted">正在加载产品……</div></td></tr>';
-        fetch('/api/products/search?picker=1&page=' + page + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
+        return fetch('/api/products/search?picker=1&page=' + page + '&per_page=' + pickerPageSize + '&q=' + encodeURIComponent(query), {
             headers: {'Accept': 'application/json'}
         })
         .then(function(response) {
@@ -960,19 +961,23 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="modal-body p-0">
                 <div class="p-3 border-bottom bg-light sticky-top" style="z-index:2;">
                     <div class="row g-2 align-items-center">
-                        <div class="col-md-8">
+                        <div class="col-12 col-lg" style="min-width:0;">
                             <div class="input-group input-group-lg">
                                 <span class="input-group-text"><i class="bi bi-search"></i></span>
                                 <input type="search" class="form-control" id="picker_search" placeholder="搜索产品名称、中文名称、编码或规格……" autocomplete="off">
                                 <button type="button" class="btn btn-primary" id="picker_search_btn">搜索</button>
                             </div>
                         </div>
-                        <div class="col-md-4 text-md-end">
-                            <span class="badge bg-secondary fs-6 me-2" id="picker_total_count">共 0 个产品</span>
+                        <div class="col-auto">
+                            <button type="button" class="btn btn-success btn-lg text-nowrap" id="picker_quick_add"><i class="bi bi-plus-lg"></i> 快速新增</button>
+                        </div>
+                        <div class="col d-flex flex-wrap justify-content-end align-items-center gap-2 col-lg-auto">
+                            <span class="badge bg-secondary fs-6" id="picker_total_count">共 0 个产品</span>
                             <span class="badge bg-primary fs-6" id="picker_selected_count">已选 0 项</span>
                         </div>
                     </div>
                 </div>
+                <div id="product_picker_notice" class="alert alert-success m-3 py-2 d-none" role="status"></div>
                 <div id="product_picker_error" class="alert alert-danger m-3 d-none" role="alert"></div>
                 <div class="table-responsive" style="min-height:420px;">
                     <table class="table table-hover align-middle mb-0">
@@ -1063,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', function() {
         var fd=new FormData(); fd.append('name',name); fd.append('chinese_name',chineseName); fd.append('product_code',document.getElementById('qa_product_code').value.trim()); fd.append('specification',document.getElementById('qa_specification').value.trim()); fd.append('unit_price',document.getElementById('qa_unit_price').value); fd.append('notes',document.getElementById('qa_notes').value.trim()); var imgFile=document.getElementById('qa_image').files[0]; if(imgFile)fd.append('image',imgFile);
         fetch('{{ url_for("api_product_add") }}',{method:'POST',body:fd})
         .then(function(r){return r.json();})
-        .then(function(d){if(d.success){addQuickProduct(d.product);clear();bootstrap.Modal.getInstance(modalEl).hide();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
+        .then(function(d){if(d.success){addQuickProduct(d.product);PIPickerQuickAdd.added(d.product);clear();bootstrap.Modal.getInstance(modalEl).hide();}else{errorEl.textContent=d.error||'操作失败。';errorEl.classList.remove('d-none');}})
         .catch(function(){errorEl.textContent='网络错误。';errorEl.classList.remove('d-none');})
         .finally(function(){btn.disabled=false;translateBtn.disabled=false;btn.innerHTML='<i class="bi bi-check-lg"></i> 添加产品';});
     });
