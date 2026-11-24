@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "_order_sort.html" import sort_header, updated_date, mobile_sort with context %}
 {% block title %}PI 列表{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='order_list.css', v='20261124') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='dispatch.css', v='20261124-page') }}">
 <style>
     #paymentModal .modal-dialog { max-width:860px; }
@@ -142,6 +144,7 @@
 
 <div class="card">
     <div class="card-body p-0">
+        {{ mobile_sort('pi') }}
         {% if pis %}
         <div class="table-responsive pi-list-table-wrap">
             <table class="table table-hover mb-0 align-middle pi-list-table">
@@ -150,19 +153,19 @@
                     <col>
                     <col style="width:100px;">
                     <col style="width:85px;">
-                    <col style="width:105px;">
+                    <col style="width:130px;">
                     <col style="width:120px;">
                     <col style="width:290px;">
                     <col style="width:200px;">
                 </colgroup>
                 <thead class="table-light">
                     <tr>
-                        <th>PI 编号</th>
+                        {{ sort_header('pi_number', 'PI 编号') }}
                         <th>客户</th>
                         <th>国家</th>
                         <th>业务员</th>
-                        <th>日期</th>
-                        <th class="text-end">订单总金额</th>
+                        {{ sort_header('updated_at', '最近更新日期', hint='订单最近更新时间（北京时间）') }}
+                        {{ sort_header('amount', '订单总金额', 'text-end', '按各 PI 保存的业务汇率折合人民币比较；显示仍为原币种') }}
                         <th class="text-center">订单流程</th>
                         <th class="text-end">操作</th>
                     </tr>
@@ -183,7 +186,7 @@
                         </td>
                         <td title="{{ pi.customer.country if pi.customer else '' }}">{{ pi.customer.country if pi.customer and pi.customer.country else '-' }}</td>
                         <td>{{ pi.salesperson }}</td>
-                        <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                        <td>{{ updated_date(pi) }}</td>
                         <td class="text-end">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</td>
                         {% set total_received = pi.received_amount or 0 %}
                         {% set sym = currency_symbol(pi.currency) %}

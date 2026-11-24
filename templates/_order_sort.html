@@ -1,0 +1,35 @@
+{% macro sort_link(key, label, hint='') -%}
+    {% set selected = sort_key == key %}
+    {% set next_direction = 'asc' if selected and sort_direction == 'desc' else 'desc' %}
+    {% set next_label = '升序' if next_direction == 'asc' else '降序' %}
+    <a class="order-sort-link{{ ' is-active' if selected else '' }}" href="{{ sort_urls[key] }}"
+       title="{{ hint ~ '；' if hint else '' }}{{ ('当前' ~ ('升序' if sort_direction == 'asc' else '降序') ~ '；') if selected else '' }}点击按{{ label }}{{ next_label }}"
+       aria-label="按{{ label }}{{ next_label }}排列">
+        <span>{{ label }}</span>
+        <i class="bi bi-{{ ('arrow-up' if sort_direction == 'asc' else 'arrow-down') if selected else 'arrow-down-up' }}" aria-hidden="true"></i>
+    </a>
+{%- endmacro %}
+
+{% macro sort_header(key, label, css_class='', hint='') -%}
+    <th scope="col" class="order-sort-header {{ css_class }}" aria-sort="{{ ('ascending' if sort_direction == 'asc' else 'descending') if sort_key == key else 'none' }}">
+        {{ sort_link(key, label, hint) }}
+    </th>
+{%- endmacro %}
+
+{% macro updated_date(pi) -%}
+    {% set updated = order_updated_at.get(pi.id) %}
+    <span class="order-updated-date" title="最近更新：{{ updated.strftime('%Y-%m-%d %H:%M:%S') if updated else '未记录' }}（北京时间）；开单日期：{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '未填写' }}">
+        {% if updated %}
+        <span>{{ updated.strftime('%Y-%m-%d') }}</span><small class="text-muted">{{ updated.strftime('%H:%M') }}</small>
+        {% else %}—{% endif %}
+    </span>
+{%- endmacro %}
+
+{% macro mobile_sort(kind, amount=true) -%}
+    <nav class="order-sort-mobile order-sort-mobile--{{ kind }}" aria-label="订单列表排序">
+        <span class="text-muted">排序</span>
+        {{ sort_link('pi_number', 'PI 编号') }}
+        {{ sort_link('updated_at', '最近更新', '按订单最近更新时间排列') }}
+        {% if amount %}{{ sort_link('amount', '总金额', '按各 PI 保存的业务汇率折合人民币比较；显示仍为原币种') }}{% endif %}
+    </nav>
+{%- endmacro %}

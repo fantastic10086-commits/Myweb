@@ -1,6 +1,7 @@
 {% set advanced_active = date_from or date_to or payment_reference_filter or tracking_no_filter or payment_status or order_status or customs_status or active_record_filters %}
 <div class="card mb-3">
 <form method="get" id="piFilters">
+    {% include '_order_sort_fields.html' %}
     <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true">应用当前筛选</button>
     <input type="hidden" name="stage" value="{{ stage }}">
     <div class="pi-filter-grid">
@@ -30,7 +31,7 @@
             </div>
         <div class="pi-filter-actions">
             <button type="submit" class="btn btn-sm btn-primary px-3"><i class="bi bi-funnel"></i> 筛选</button>
-            <a href="{{ url_for('pi_list') }}" class="btn btn-sm btn-outline-secondary">重置</a>
+            <a href="{{ url_for('pi_list', clear_filters=1) }}" class="btn btn-sm btn-outline-secondary">重置</a>
             <button type="button" class="btn btn-sm btn-light text-secondary" data-bs-toggle="collapse" data-bs-target="#piAdvancedFilters" aria-expanded="{{ 'true' if advanced_active else 'false' }}" aria-controls="piAdvancedFilters"><i class="bi bi-sliders"></i> 更多筛选{{ ' · 已设置' if advanced_active else '' }}</button>
         </div>
     </div>
@@ -58,11 +59,11 @@
         </div>
         <div class="pi-advanced-grid border-top p-3">
 <div class="pi-filter-cell">
-                <label class="form-label small mb-1">开始日期</label>
+                <label class="form-label small mb-1">开单开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
 <div class="pi-filter-cell">
-                <label class="form-label small mb-1">结束日期</label>
+                <label class="form-label small mb-1">开单结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
 <div class="pi-filter-cell">
@@ -117,8 +118,8 @@
     {% if tracking_no_filter %}，物流单号：<strong>{{ tracking_no_filter }}</strong>{% endif %}
     {% if customer_name_filter %}，客户／联系人：<strong>{{ customer_name_filter }}</strong>{% endif %}
     {% if salesperson_filter %}，业务员：<strong>{{ salesperson_filter }}</strong>{% endif %}
-    {% if date_from %}，开始日期：<strong>{{ date_from }}</strong>{% endif %}
-    {% if date_to %}，结束日期：<strong>{{ date_to }}</strong>{% endif %}
+    {% if date_from %}，开单开始日期：<strong>{{ date_from }}</strong>{% endif %}
+    {% if date_to %}，开单结束日期：<strong>{{ date_to }}</strong>{% endif %}
     {% if payment_status %}，回款状态：<strong>{{ payment_status_label }}</strong>{% endif %}
     {% if order_status %}，订单进度：<strong>{{ order_status_label }}</strong>{% endif %}
     {% if customs_status %}，报关登记：<strong>{{ customs_status_label }}</strong>{% endif %}

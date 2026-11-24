@@ -1,7 +1,9 @@
 {% extends "base.html" %}
+{% from "_order_sort.html" import sort_header, updated_date, mobile_sort with context %}
 {% block title %}采购 — 选择 PI{% endblock %}
 
 {% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='order_list.css', v='20261124') }}">
 <style>
 .procurement-list-table {
     table-layout: fixed;
@@ -85,15 +87,16 @@
 
 <div class="card">
     <div class="card-body p-0">
+        {{ mobile_sort('procurement') }}
         {% if pis %}
         <div class="table-responsive">
             <table class="table table-hover table-sm mb-0 align-middle procurement-list-table">
                 <colgroup>
                     <col style="width:14%;">
-                    <col style="width:16%;">
-                    <col style="width:7%;">
-                    <col style="width:9%;">
                     <col style="width:15%;">
+                    <col style="width:7%;">
+                    <col style="width:11%;">
+                    <col style="width:14%;">
                     <col style="width:11%;">
                     <col style="width:5%;">
                     <col style="width:8%;">
@@ -102,12 +105,12 @@
                 </colgroup>
                 <thead class="table-light">
                     <tr>
-                        <th>PI 编号</th>
+                        {{ sort_header('pi_number', 'PI 编号') }}
                         <th>客户</th>
                         <th>国家</th>
-                        <th>日期</th>
+                        {{ sort_header('updated_at', '最近更新日期', hint='订单最近更新时间（北京时间）') }}
                         <th class="text-center">产品数</th>
-                        <th>总额</th>
+                        {{ sort_header('amount', '总额', hint='按各 PI 保存的业务汇率折合人民币比较；显示仍为原币种') }}
                         <th class="text-center">回款</th>
                         <th>订单进度</th>
                         <th>业务员</th>
@@ -121,7 +124,7 @@
                             {% if p.advance_payment_required %}<div class="small text-warning">{{ '水单采购 · 已付清' if p.actual_payment_complete else '凭水单采购 · 尾款未清' }}</div>{% endif %}</td>
                         <td data-label="客户" class="proc-customer-cell">{{ p.customer.name if p.customer else '—' }}</td>
                         <td data-label="国家" class="proc-country-cell"><small>{{ p.customer.country if p.customer else '-' }}</small></td>
-                        <td data-label="日期">{{ p.issue_date }}</td>
+                        <td data-label="最近更新日期">{{ updated_date(p) }}</td>
                         <td data-label="产品" class="proc-products-cell">
                             <strong class="proc-products-summary">{{ p.items|length }} 项产品</strong>
                             {% set item_names = [] %}

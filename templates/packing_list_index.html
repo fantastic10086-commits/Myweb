@@ -1,6 +1,10 @@
 {% extends "base.html" %}
 {% from "_packing_company.html" import company_select %}
+{% from "_order_sort.html" import sort_header, updated_date, mobile_sort with context %}
 {% block title %}装箱单{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='order_list.css', v='20261124') }}">
+{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
@@ -15,6 +19,7 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" class="row g-2 align-items-end">
+            {% include '_order_sort_fields.html' %}
             <div class="col-md-3 col-xl-2">
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
                 <input id="piNumberFilter" type="text" class="form-control form-control-sm" name="pi_number" value="{{ pi_number_filter }}" placeholder="完整或部分 PI 编号">
@@ -42,11 +47,11 @@
             </div>
             {% endif %}
             <div class="col-md-3 col-xl-2">
-                <label class="form-label small mb-1">开始日期</label>
+                <label class="form-label small mb-1">开单开始日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
             <div class="col-md-3 col-xl-2">
-                <label class="form-label small mb-1">结束日期</label>
+                <label class="form-label small mb-1">开单结束日期</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
             <div class="col-md-3 col-xl-2">
@@ -68,7 +73,7 @@
                     <button type="submit" name="preset" value="this_year" class="btn btn-outline-secondary {% if preset == 'this_year' %}active{% endif %}">本年</button>
                 </div>
             </div>
-            {% if customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset or status_filter %}
+            {% if customer_name_filter or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset or status_filter or sort_key != 'updated_at' or sort_direction != 'desc' %}
             <div class="col-md-auto"><a href="{{ url_for('packing_list_index', clear_filters=1) }}" class="btn btn-sm btn-outline-danger">清除</a></div>
             {% endif %}
         </form>
@@ -77,12 +82,14 @@
 
 <div class="card">
     <div class="card-body p-0">
+        {{ mobile_sort('packing', false) }}
         {% if pis %}
         <div class="table-responsive">
             <table class="table table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
-                        <th>PI 编号</th><th>客户</th><th>业务员</th><th>开单日期</th>
+                        {{ sort_header('pi_number', 'PI 编号') }}<th>客户</th><th>业务员</th>
+                        {{ sort_header('updated_at', '最近更新日期', hint='订单最近更新时间（北京时间）') }}
                         <th class="text-end">PI 数量</th><th class="text-end">已装数量</th>
                         <th class="text-end">批次 / 箱数</th><th>状态</th><th class="text-end">操作</th>
                     </tr>
@@ -101,7 +108,7 @@
                         <td class="fw-bold">{{ pi.pi_number }}</td>
                         <td>{{ pi.customer.name if pi.customer else '-' }}</td>
                         <td>{{ pi.salesperson or '-' }}</td>
-                        <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                        <td>{{ updated_date(pi) }}</td>
                         <td class="text-end">{{ ns.pi_qty }}</td>
                         <td class="text-end">{{ ns.packed_qty if pi.packing_list else '-' }}</td>
                         <td class="text-end">{% if pi.packing_list %}{{ pi.packing_list.batches|length }} 批 / {{ ns.box_count }} 箱{% else %}-{% endif %}</td>

@@ -2,6 +2,7 @@
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="get" action="{{ url_for(filter_endpoint) }}" class="row g-2 align-items-end">
+            {% include '_order_sort_fields.html' %}
 {% if pi_number_filter is defined %}
             <div class="{{ report_input_class }}">
                 <label class="form-label small mb-1" for="piNumberFilter">PI 编号</label>
@@ -29,11 +30,11 @@
                 </select>
             </div>
             <div class="{{ report_input_class }}">
-                <label class="form-label small mb-1">开始日期</label>
+                <label class="form-label small mb-1">{{ '开单开始日期' if filter_endpoint == 'procurement_select' else '开始日期' }}</label>
                 <input type="date" class="form-control form-control-sm" name="date_from" value="{{ date_from }}">
             </div>
             <div class="{{ report_input_class }}">
-                <label class="form-label small mb-1">结束日期</label>
+                <label class="form-label small mb-1">{{ '开单结束日期' if filter_endpoint == 'procurement_select' else '结束日期' }}</label>
                 <input type="date" class="form-control form-control-sm" name="date_to" value="{{ date_to }}">
             </div>
             {% if filter_endpoint == 'fees_report' %}
@@ -100,7 +101,7 @@
                 </div>
             </div>
             {% endif %}
-            {% if customer_name_filter or order_status or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset or profit_status %}
+            {% if customer_name_filter or order_status or country_filter or pi_number_filter or salesperson_filter or date_from or date_to or preset or profit_status or (sort_key is defined and (sort_key != 'updated_at' or sort_direction != 'desc')) %}
             <div class="col-md-3 col-xl-auto">
                 <a href="{{ url_for(filter_endpoint, clear_filters=1) }}" class="btn btn-sm btn-outline-danger">清除</a>
             </div>

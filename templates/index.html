@@ -102,7 +102,7 @@
                             <th>PI 编号</th>
                             <th>客户</th>
                             {% if current_user.role == 'admin' %}<th class="text-nowrap">业务员</th>{% endif %}
-                            <th>日期</th>
+                            <th class="text-nowrap">最近更新日期</th>
                             <th class="text-end">订单总金额</th>
                             <th></th>
                         </tr>
@@ -113,7 +113,11 @@
                             <td><strong>{{ pi.pi_number }}</strong></td>
                             <td>{{ pi.customer.name }}</td>
                             {% if current_user.role == 'admin' %}<td class="text-nowrap">{{ pi.salesperson or '—' }}</td>{% endif %}
-                            <td>{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '-' }}</td>
+                            <td class="text-nowrap" title="开单日期：{{ pi.issue_date.strftime('%Y-%m-%d') if pi.issue_date else '—' }}；更新时间为北京时间">
+                                {% set updated = order_updated_at.get(pi.id) %}
+                                {{ updated.strftime('%Y-%m-%d') if updated else '—' }}
+                                {% if updated %}<small class="d-block text-muted">{{ updated.strftime('%H:%M') }}</small>{% endif %}
+                            </td>
                             <td class="text-end fw-bold"><span translate="no" class="notranslate">{{ currency_symbol(pi.currency) }}{{ '%.2f'|format(pi.grand_total) }}</span></td>
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-primary" onclick="previewPI({{ pi.id }})">查看</button>

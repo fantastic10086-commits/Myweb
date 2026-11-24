@@ -59,6 +59,8 @@ import order_archive  # Register transactional order attachment archival.
 from shipping_batches import migrate_shipping_batches, ensure_batches, legacy_batch, sync_summary, batch_snapshot
 from payroll import migrate_payroll_accounts, register_payroll
 from list_preferences import FILTERS as LIST_FILTERS, register_list_preferences
+from order_list_sorting import sort_order_list
+from order_activity import effective_order_updates
 from pdf_generator import generate_pi_pdf
 from excel_generator import generate_pi_excel
 from document_export import (
@@ -383,8 +385,17 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record):
 
 @event.listens_for(PI, 'before_update')
 def _touch_pi_updated_at(mapper, connection, pi):
-    """Keep a reliable modification timestamp for dashboard ordering."""
-    pi.updated_at = datetime.utcnow()
+    """Timestamp real business edits, not cache generation or no-op saves."""
+    from sqlalchemy import inspect
+    state = inspect(pi)
+    # Shipment handling may deliberately set a timestamp; historical callers
+    # can also supply one without having it silently replaced by today's date.
+    if state.attrs.updated_at.history.has_changes():
+        return
+    ignored = {'id', 'created_at', 'updated_at', 'version', 'pdf_path', 'excel_path'}
+    if any(state.attrs[column.key].history.has_changes()
+           for column in mapper.column_attrs if column.key not in ignored):
+        pi.updated_at = datetime.utcnow()
 
 def _migrate_db():
     """Auto-add missing columns to existing tables without data loss."""
@@ -2774,14 +2785,18 @@ def index():
     product_count = Product.query.filter(Product.active.is_(True)).count()
     pi_q = filter_by_user(PI.query, PI, 'salesperson')
     pi_count = pi_q.count()
-    recent_pis = pi_q.order_by(
-        PI.updated_at.desc(), PI.created_at.desc(), PI.id.desc()
-    ).limit(5).all()
+    recent_candidates = pi_q.options(joinedload(PI.customer)).all()
+    recent_updates = effective_order_updates(recent_candidates)
+    recent_pis = sorted(recent_candidates,
+                        key=lambda pi: (recent_updates.get(pi.id) or datetime.min, pi.id),
+                        reverse=True)[:5]
     return render_template('index.html',
                            customer_count=customer_count,
                            product_count=product_count,
                            pi_count=pi_count,
                            recent_pis=recent_pis,
+                           order_updated_at={pi.id: recent_updates[pi.id] + timedelta(hours=8)
+                                             if recent_updates.get(pi.id) else None for pi in recent_pis},
                            follow_up_today=follow_up_today,
                            follow_up_overdue=follow_up_overdue,
                            today=today)
@@ -6673,6 +6688,7 @@ def pi_list():
         previous_stage = transition_labels[transition][0]
         pis = [pi for pi in pis if stage_completed(pi, previous_stage)
                and not stage_completed(pi, transition)]
+    pis, sorting = sort_order_list(pis)
     dispatch_summaries = {}
     for pi in pis:
         has_record = bool(pi.freight_forwarder or pi.customs_required is not None or pi.expenses
@@ -6714,7 +6730,7 @@ def pi_list():
                            customs_status_label=customs_labels.get(customs_status, ''),
                            filtered_totals=filtered_totals,
                            payment_account_ids=payment_account_ids,
-                           payment_token=uuid.uuid4().hex))
+                           payment_token=uuid.uuid4().hex, **sorting))
     resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
@@ -7070,6 +7086,7 @@ def packing_list_index():
     if pi_number_filter:
         query = query.filter(PI.pi_number.contains(pi_number_filter, autoescape=True))
     pis = query.order_by(PI.issue_date.desc(), PI.id.desc()).all()
+    pis, sorting = sort_order_list(pis, allow_amount=False)
     salespeople = []
     if is_admin():
         salespeople = [row[0] for row in db.session.query(PI.salesperson).filter(
@@ -7078,7 +7095,7 @@ def packing_list_index():
     return render_template(
         'packing_list_index.html', customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options, pis=pis, salespeople=salespeople,
         salesperson_filter=salesperson_filter, date_from=date_from,
-        date_to=date_to, preset=preset, status_filter=status_filter,
+        date_to=date_to, preset=preset, status_filter=status_filter, **sorting,
     )
 
 
@@ -9782,12 +9799,14 @@ def procurement_select():
     if selected_statuses:
         selected_labels = {order_labels[key] for key in selected_statuses}
         pis = [pi for pi in pis if pi.effective_procurement_status in selected_labels]
+    pis, sorting = sort_order_list(pis)
     pi_complete = {pi.id for pi in pis if pi.procurement_is_complete}
     resp = make_response(render_template(
         'procurement_select.html', customer_name_filter=customer_name_filter, pi_number_filter=pi_number_filter, country_filter=country_filter, country_options=country_options,
         pis=pis, order_status=order_status, order_labels=order_labels,
         selected_statuses=selected_statuses,
         pi_complete=pi_complete,
+        **sorting,
         salesperson_filter=salesperson_filter,
         date_from=date_from,
         date_to=date_to,
